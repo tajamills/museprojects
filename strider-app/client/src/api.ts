@@ -7,11 +7,11 @@ type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
 type BasicResult = { ok: boolean; message: string };
 type AuthResult = BasicResult & {
   sessionToken: string | null;
-  user: { id: number; email: string; displayName: string; demoMode: boolean } | null;
+  user: { id: number; email: string; displayName: string; demoMode: boolean; role: string } | null;
 };
 type WorkspaceResult = {
   authenticated: boolean;
-  user: { id: number; email: string; displayName: string; demoMode: boolean } | null;
+  user: { id: number; email: string; displayName: string; demoMode: boolean; role: string } | null;
   accounts: Array<{ id: number; platform: Platform; handle: string; status: string; authMode: string; connectedAt: string; retryAfter: string | null }>;
   posts: Array<{
     id: number;
