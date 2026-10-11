@@ -1,4 +1,4 @@
-// CorpVault Postgres schema. Ported from the TS-space's
+// kovala Postgres schema. Ported from the TS-space's
 // drizzle-orm/sqlite-core schema; column names are unchanged so the action
 // logic ports 1:1. SQLite INTEGER ms timestamps became TIMESTAMPTZ, and
 // INTEGER PRIMARY KEY AUTOINCREMENT became GENERATED ALWAYS AS IDENTITY.

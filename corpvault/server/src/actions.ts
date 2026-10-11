@@ -1,4 +1,4 @@
-// CorpVault server actions. Ported 1:1 from the TS-space's
+// kovala server actions. Ported 1:1 from the TS-space's
 // server/src/actions.ts.
 //
 // The SDK's `defineAction` wrappers are replaced with a plain registry of

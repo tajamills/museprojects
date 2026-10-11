@@ -1,6 +1,6 @@
-# CorpVault — Railway deployment guide
+# kovala — Railway deployment guide
 
-CorpVault is a Railway-deployable Node.js port of the Hatch TS-space
+kovala is a Railway-deployable Node.js port of the Hatch TS-space
 `bizkeep` (a business entity manager: entities, document vault, compliance
 reminders, meeting minutes). One service serves the Express API and the
 built React client.
@@ -53,7 +53,7 @@ See `.env.example` for a copy-paste template.
 
 ## Branding
 
-The user-visible name is **CorpVault** everywhere (auth screen, nav,
+The user-visible name is **kovala** everywhere (auth screen, nav,
 title). The internal artifact slug `bizkeep` survives only in invisible
 spots (browser `localStorage` keys), which is intentional.
 

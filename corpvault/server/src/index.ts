@@ -1,4 +1,4 @@
-// CorpVault Express server (Node 20).
+// kovala Express server (Node 20).
 //
 // - POST /actions   — JSON RPC: {action, args} → {data} | {error}
 // - GET  /files/*   — token-scoped document downloads (local-disk blob store)
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
   const app = createApp(db, DATA_DIR);
   const port = Number(process.env.PORT ?? 3000);
   app.listen(port, () => {
-    console.log(`CorpVault listening on :${port} (DATA_DIR=${DATA_DIR})`);
+    console.log(`kovala listening on :${port} (DATA_DIR=${DATA_DIR})`);
   });
 }
 

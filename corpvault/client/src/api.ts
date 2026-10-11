@@ -1,4 +1,4 @@
-// Typed RPC client for the CorpVault Express backend.
+// Typed RPC client for the kovala Express backend.
 //
 // Ported from the Hatch TS-space version (which used
 // `createActionClient` from "@hatch/space-sdk/client"). The wire protocol

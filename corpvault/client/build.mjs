@@ -1,4 +1,4 @@
-// CorpVault client bundle (Node, no Bun).
+// kovala client bundle (Node, no Bun).
 //
 // Replaces the TS-space's `client/build.mjs`, which delegated to
 // `@hatch/space-sdk/build`'s Bun.build() pipeline. This does the equivalent
@@ -77,7 +77,7 @@ const html = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="data:," />
-    <title>CorpVault</title>
+    <title>kovala</title>
     <link rel="stylesheet" href="./assets/theme.css" />
     <script type="module" src="./assets/${jsFile}"></script>
   </head>
