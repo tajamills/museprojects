@@ -2,7 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
-import { actions } from "./actions.js";
+import { actions, handleFacebookOAuthCallback } from "./actions.js";
 import { stripeWebhookHandler } from "./billing.js";
 import { createCtx, resolveMediaDir } from "./ctx.js";
 import { createDb, createPool, migrate } from "./db.js";
@@ -43,6 +43,17 @@ async function main() {
   app.use(express.json({ limit: "20mb" }));
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+  // Facebook OAuth callback. Must be registered in the Meta app as a Valid
+  // OAuth Redirect URI: {APP_BASE_URL}/oauth/facebook/callback
+  app.get("/oauth/facebook/callback", async (req, res) => {
+    const result = await handleFacebookOAuthCallback(db, req.query as Record<string, unknown>);
+    if (result.ok) {
+      res.redirect(302, "/?oauth=facebook_ok");
+      return;
+    }
+    res.redirect(302, `/?oauth=facebook_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+  });
 
   // Action RPC: POST /actions { action, args } -> { data } | { error }.
   // Same wire protocol the SDK's createActionClient used ("./actions").

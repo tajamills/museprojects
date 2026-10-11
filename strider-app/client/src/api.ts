@@ -51,6 +51,9 @@ type BillingStatusResult = {
 };
 type RedirectResult = { url: string };
 
+type ConnectFacebookResult = BasicResult & { mode: "oauth" | "demo"; authUrl: string | null };
+type FacebookPagesResult = { ok: boolean; pages: Array<{ id: string; name: string }>; selectedPageId: string | null; error?: string };
+
 type PublicConfigResult = { demoMode: boolean };
 type ClientApi = {
   getPublicConfig(args: Record<string, never>): Promise<PublicConfigResult>;
@@ -61,6 +64,9 @@ type ClientApi = {
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string }): Promise<BasicResult>;
   connectDemoAccount(args: { sessionToken: string; platform: Platform }): Promise<BasicResult>;
+  connectFacebook(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
+  listFacebookPages(args: { sessionToken: string }): Promise<FacebookPagesResult>;
+  selectFacebookPage(args: { sessionToken: string; pageId: string }): Promise<BasicResult>;
   disconnectAccount(args: { sessionToken: string; accountId: number }): Promise<BasicResult>;
   createPost(args: CreatePostRequest): Promise<BasicResult & { postId: number | null }>;
   advanceBumpDemo(args: { sessionToken: string; postId: number }): Promise<BasicResult>;

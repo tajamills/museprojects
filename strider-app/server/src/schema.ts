@@ -60,6 +60,38 @@ export const connectedAccounts = pgTable(
   (table) => [uniqueIndex("connected_accounts_user_platform").on(table.userId, table.platform)],
 );
 
+/** Single-use OAuth CSRF states (currently Facebook). */
+export const oauthStates = pgTable(
+  "oauth_states",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    state: text("state").notNull().unique(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    /** Exact redirect_uri used in the auth URL; token exchange must match it. */
+    redirectUri: text("redirect_uri").notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+  },
+  (table) => [uniqueIndex("idx_oauth_states_state").on(table.state)],
+);
+
+/**
+ * Real Facebook connection per user. Tokens are AES-256-GCM encrypted
+ * (see TOKEN_ENCRYPTION_KEY); never plaintext.
+ */
+export const facebookConnections = pgTable("facebook_connections", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  fbUserId: text("fb_user_id").notNull(),
+  userTokenEncrypted: text("user_token_encrypted").notNull(),
+  pageId: text("page_id").notNull(),
+  pageName: text("page_name").notNull(),
+  pageTokenEncrypted: text("page_token_encrypted").notNull(),
+  connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
 export const posts = pgTable("posts", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

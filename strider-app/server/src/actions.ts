@@ -1,8 +1,23 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import type { AppCtx } from "./ctx.js";
+import type { Db } from "./db.js";
 import * as schema from "./schema.js";
 import { TRIAL_DAYS, baseUrl, getStripe } from "./billing.js";
+import {
+  buildFacebookAuthUrl,
+  decryptToken,
+  encryptToken,
+  exchangeCodeForToken,
+  exchangeForLongLivedToken,
+  facebookRedirectUri,
+  getFacebookUserId,
+  getManagedPages,
+  isRealFacebookConfig,
+  requireTokenEncryption,
+} from "./facebook.js";
+import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
+import { resolvePlatformSecret } from "./secrets.js";
 
 const platformSchema = z.enum(["facebook", "instagram", "tiktok", "youtube", "x"]);
 type Platform = z.infer<typeof platformSchema>;
@@ -152,6 +167,50 @@ const accountResponse = z.object({
 export interface ActionDef {
   request: z.ZodTypeAny;
   handler: (ctx: AppCtx, args: any) => Promise<unknown>;
+}
+
+/** Shared simulated-connect used by connectDemoAccount and as the Facebook
+ *  fallback when no real credentials are configured. */
+async function demoConnectAccount(
+  ctx: AppCtx,
+  user: { id: number; demoMode: boolean },
+  platform: Platform,
+): Promise<{ ok: boolean; message: string }> {
+  if (!user.demoMode) return { ok: false, message: "Live OAuth needs a deployed callback URL and approved developer app. Finish the checklist in Settings first." };
+  const existing = await ctx.db.select().from(schema.connectedAccounts).where(and(eq(schema.connectedAccounts.userId, user.id), eq(schema.connectedAccounts.platform, platform))).limit(1);
+  if (existing[0]?.status === "rate_limited" && existing[0].retryAfter && existing[0].retryAfter.getTime() > Date.now()) {
+    return { ok: false, message: `Too many attempts. Do not retry yet; try again after ${existing[0].retryAfter.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.` };
+  }
+  await ctx.db.insert(schema.connectedAccounts).values({
+    userId: user.id,
+    platform,
+    handle: DEMO_HANDLES[platform],
+    status: "connected",
+    authMode: "demo",
+    tokenHint: "demo-token-never-used",
+    retryAfter: null,
+    connectedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+    set: { handle: DEMO_HANDLES[platform], status: "connected", authMode: "demo", tokenHint: "demo-token-never-used", retryAfter: null, connectedAt: new Date() },
+  });
+  ctx.invalidateQueries();
+  return { ok: true, message: `${PLATFORM_INFO[platform].label} demo OAuth completed. No external account was contacted.` };
+}
+
+/** Real Facebook app credentials for a user, or null when the simulated
+ *  fallback should be used. App ID comes from Settings; the secret from
+ *  FACEBOOK_CLIENT_SECRET (never from the database). */
+async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ clientId: string; clientSecret: string } | null> {
+  const rows = await ctx.db
+    .select()
+    .from(schema.platformConfigs)
+    .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
+    .limit(1);
+  const clientId = (rows[0]?.clientId ?? "").trim();
+  const clientSecret = resolvePlatformSecret("facebook");
+  if (!isRealFacebookConfig(clientId, Boolean(clientSecret))) return null;
+  return { clientId, clientSecret: clientSecret as string };
 }
 
 export const actions: Record<string, ActionDef> = {
@@ -340,26 +399,99 @@ export const actions: Record<string, ActionDef> = {
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
-      if (!user.demoMode) return { ok: false, message: "Live OAuth needs a deployed callback URL and approved developer app. Finish the checklist in Settings first." };
-      const existing = await ctx.db.select().from(schema.connectedAccounts).where(and(eq(schema.connectedAccounts.userId, user.id), eq(schema.connectedAccounts.platform, args.platform))).limit(1);
-      if (existing[0]?.status === "rate_limited" && existing[0].retryAfter && existing[0].retryAfter.getTime() > Date.now()) {
-        return { ok: false, message: `Too many attempts. Do not retry yet; try again after ${existing[0].retryAfter.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.` };
+      return demoConnectAccount(ctx, user, args.platform);
+    },
+  },
+
+  /**
+   * Facebook connect entry point. Uses real OAuth when the App ID is set in
+   * Settings and FACEBOOK_CLIENT_SECRET is configured; otherwise falls back
+   * to the simulated demo connect (existing behavior).
+   */
+  connectFacebook: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; mode: "oauth" | "demo"; authUrl: string | null }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
+      const creds = await facebookAppCredentials(ctx, user.id);
+      if (!creds) {
+        const demo = await demoConnectAccount(ctx, user, "facebook");
+        return { ...demo, mode: "demo", authUrl: null };
       }
-      await ctx.db.insert(schema.connectedAccounts).values({
+      try {
+        requireTokenEncryption();
+      } catch {
+        return { ok: false, message: "Set TOKEN_ENCRYPTION_KEY on the server before connecting Facebook.", mode: "oauth", authUrl: null };
+      }
+      const redirectUri = facebookRedirectUri(ctx.origin);
+      const state = crypto.randomUUID();
+      const now = new Date();
+      await ctx.db.insert(schema.oauthStates).values({
+        state,
         userId: user.id,
-        platform: args.platform,
-        handle: DEMO_HANDLES[args.platform as Platform],
-        status: "connected",
-        authMode: "demo",
-        tokenHint: "demo-token-never-used",
-        retryAfter: null,
-        connectedAt: new Date(),
-      }).onConflictDoUpdate({
-        target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
-        set: { handle: DEMO_HANDLES[args.platform as Platform], status: "connected", authMode: "demo", tokenHint: "demo-token-never-used", retryAfter: null, connectedAt: new Date() },
+        platform: "facebook",
+        redirectUri,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
       });
+      const authUrl = buildFacebookAuthUrl({ clientId: creds.clientId, redirectUri, state });
+      return { ok: true, message: "Opening Facebook…", mode: "oauth", authUrl };
+    },
+  },
+
+  /** Pages on the connected Facebook account (for the Page picker). */
+  listFacebookPages: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; pages: Array<{ id: string; name: string }>; selectedPageId: string | null; error?: string }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, pages: [], selectedPageId: null };
+      const rows = await ctx.db.select().from(schema.facebookConnections).where(eq(schema.facebookConnections.userId, user.id)).limit(1);
+      const conn = rows[0];
+      if (!conn) return { ok: true, pages: [], selectedPageId: null };
+      let userToken: string;
+      try {
+        userToken = decryptToken(conn.userTokenEncrypted);
+      } catch {
+        return { ok: false, pages: [], selectedPageId: conn.pageId, error: "Stored token could not be decrypted." };
+      }
+      try {
+        const pages = await getManagedPages(userToken);
+        return { ok: true, pages: pages.map((p) => ({ id: p.id, name: p.name })), selectedPageId: conn.pageId };
+      } catch (err) {
+        return { ok: false, pages: [], selectedPageId: conn.pageId, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  },
+
+  /** Switch the Page that zepostia posts as. */
+  selectFacebookPage: {
+    request: z.object({ sessionToken: z.string().min(1), pageId: z.string().min(1).max(100) }),
+    async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      const rows = await ctx.db.select().from(schema.facebookConnections).where(eq(schema.facebookConnections.userId, user.id)).limit(1);
+      const conn = rows[0];
+      if (!conn) return { ok: false, message: "Facebook is not connected." };
+      let userToken: string;
+      try {
+        userToken = decryptToken(conn.userTokenEncrypted);
+      } catch {
+        return { ok: false, message: "The stored Facebook token could not be decrypted. Reconnect the channel." };
+      }
+      const pages = await getManagedPages(userToken).catch(() => []);
+      const page = pages.find((p) => p.id === args.pageId);
+      if (!page) return { ok: false, message: "That Page was not found on your Facebook account." };
+      const now = new Date();
+      await ctx.db
+        .update(schema.facebookConnections)
+        .set({ pageId: page.id, pageName: page.name, pageTokenEncrypted: encryptToken(page.accessToken), updatedAt: now })
+        .where(eq(schema.facebookConnections.id, conn.id));
+      await ctx.db
+        .update(schema.connectedAccounts)
+        .set({ handle: page.name })
+        .where(and(eq(schema.connectedAccounts.userId, user.id), eq(schema.connectedAccounts.platform, "facebook")));
       ctx.invalidateQueries();
-      return { ok: true, message: `${PLATFORM_INFO[args.platform as Platform].label} demo OAuth completed. No external account was contacted.` };
+      return { ok: true, message: `Now posting as ${page.name}.` };
     },
   },
 
@@ -411,7 +543,6 @@ export const actions: Record<string, ActionDef> = {
         await ctx.blobs.put(mediaBlobKey, bytes, { contentType: args.media.mimeType });
       }
       const now = new Date();
-      const status = args.publishMode === "now" ? "published" as const : "pending" as const;
       const inserted = await ctx.db.insert(schema.posts).values({
         userId: user.id,
         body: args.body.trim(),
@@ -421,7 +552,7 @@ export const actions: Record<string, ActionDef> = {
         mediaType: args.media?.mimeType ?? null,
         publishMode: args.publishMode,
         scheduledAt,
-        status,
+        status: "pending",
         bumpEnabled: Boolean(args.bumpComments?.length),
         createdAt: now,
         updatedAt: now,
@@ -432,11 +563,23 @@ export const actions: Record<string, ActionDef> = {
         postId: post.id,
         accountId: account.id,
         platform: account.platform,
-        status,
+        status: "pending" as const,
         errorMessage: null,
-        remoteId: args.publishMode === "now" ? `demo-${crypto.randomUUID()}` : null,
-        publishedAt: args.publishMode === "now" ? now : null,
+        remoteId: null,
+        publishedAt: null,
       })));
+      let publishNote: string;
+      if (args.publishMode === "now") {
+        const result = await publishPendingTargets(ctx, post.id);
+        if (result.published === 0 && result.failed > 0) {
+          return { ok: false, message: `Publishing failed: ${result.firstError ?? "unknown error"}`, postId: post.id };
+        }
+        publishNote = result.real > 0
+          ? `Published to Facebook${result.published > result.real ? " and simulated targets" : ""}.`
+          : "Publish complete (simulated — no external API was called).";
+      } else {
+        publishNote = "Post scheduled.";
+      }
       if (args.bumpComments?.length) {
         const baseTime = scheduledAt ?? now;
         const offsets = bumpOffsets(args.bumpComments.length);
@@ -454,7 +597,7 @@ export const actions: Record<string, ActionDef> = {
       const scheduleNote = args.bumpComments?.length ? ` ${args.bumpComments.length} follow-up comments are staggered across the next 24 hours.` : "";
       return {
         ok: true,
-        message: (args.publishMode === "now" ? "Demo publish complete. No external API was called." : "Post added to the demo schedule.") + scheduleNote,
+        message: publishNote + scheduleNote,
         postId: post.id,
       };
     },
@@ -470,9 +613,11 @@ export const actions: Record<string, ActionDef> = {
       const pending = await ctx.db.select().from(schema.bumpComments).where(and(eq(schema.bumpComments.postId, args.postId), eq(schema.bumpComments.status, "pending"))).orderBy(schema.bumpComments.sequence).limit(1);
       const next = pending[0];
       if (!next) return { ok: false, message: "This post has no pending bump comments." };
-      await ctx.db.update(schema.bumpComments).set({ status: "published", publishedAt: new Date(), errorMessage: null }).where(eq(schema.bumpComments.id, next.id));
+      // Real Facebook comments go out through the Graph API when the post
+      // went out through a real connection; otherwise simulated as before.
+      const result = await publishBumpCommentNow(ctx, next.id);
       ctx.invalidateQueries();
-      return { ok: true, message: `Demo comment ${next.sequence} published. No external API was called.` };
+      return result;
     },
   },
 
@@ -587,3 +732,118 @@ export const actions: Record<string, ActionDef> = {
     },
   },
 };
+
+/**
+ * Handles GET /oauth/facebook/callback. Verifies the single-use state,
+ * exchanges the code for tokens, stores the encrypted connection, and marks
+ * the Facebook channel connected with the Page name as its handle.
+ */
+export async function handleFacebookOAuthCallback(
+  db: Db,
+  query: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (typeof query.error === "string" && query.error) {
+    return { ok: false, error: String(query.error_description ?? query.error) };
+  }
+  const state = typeof query.state === "string" ? query.state : "";
+  const code = typeof query.code === "string" ? query.code : "";
+  if (!state || !code) return { ok: false, error: "Missing code or state." };
+
+  const stateRows = await db.select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
+  const stateRow = stateRows[0];
+  // Single-use: consume whatever we found.
+  if (stateRow) await db.delete(schema.oauthStates).where(eq(schema.oauthStates.id, stateRow.id));
+  if (!stateRow || stateRow.platform !== "facebook") {
+    return { ok: false, error: "Invalid login request. Try connecting again." };
+  }
+  if (stateRow.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, error: "Login request expired. Try connecting again." };
+  }
+  // Opportunistic cleanup of other expired states.
+  await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
+
+  const cfgRows = await db
+    .select()
+    .from(schema.platformConfigs)
+    .where(and(eq(schema.platformConfigs.userId, stateRow.userId), eq(schema.platformConfigs.platform, "facebook")))
+    .limit(1);
+  const clientId = (cfgRows[0]?.clientId ?? "").trim();
+  const clientSecret = resolvePlatformSecret("facebook");
+  if (!isRealFacebookConfig(clientId, Boolean(clientSecret))) {
+    return { ok: false, error: "Facebook credentials changed during login. Reconnect." };
+  }
+
+  let fbUserId: string;
+  let userTokenEncrypted: string;
+  let pages: Array<{ id: string; name: string; accessToken: string }>;
+  try {
+    const shortToken = await exchangeCodeForToken({
+      clientId,
+      clientSecret: clientSecret as string,
+      redirectUri: stateRow.redirectUri,
+      code,
+    });
+    const longToken = await exchangeForLongLivedToken({
+      clientId,
+      clientSecret: clientSecret as string,
+      shortLivedToken: shortToken.accessToken,
+    });
+    fbUserId = await getFacebookUserId(longToken.accessToken);
+    pages = await getManagedPages(longToken.accessToken);
+    userTokenEncrypted = encryptToken(longToken.accessToken);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Facebook login failed." };
+  }
+  if (pages.length === 0) {
+    return { ok: false, error: "No Facebook Pages found. Connect a Page you manage first." };
+  }
+  const page = pages[0] as { id: string; name: string; accessToken: string };
+  const now = new Date();
+  await db
+    .insert(schema.facebookConnections)
+    .values({
+      userId: stateRow.userId,
+      fbUserId,
+      userTokenEncrypted,
+      pageId: page.id,
+      pageName: page.name,
+      pageTokenEncrypted: encryptToken(page.accessToken),
+      connectedAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.facebookConnections.userId],
+      set: {
+        fbUserId,
+        userTokenEncrypted,
+        pageId: page.id,
+        pageName: page.name,
+        pageTokenEncrypted: encryptToken(page.accessToken),
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(schema.connectedAccounts)
+    .values({
+      userId: stateRow.userId,
+      platform: "facebook",
+      handle: page.name,
+      status: "connected",
+      authMode: "oauth",
+      tokenHint: `page:${page.id}`,
+      retryAfter: null,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+      set: {
+        handle: page.name,
+        status: "connected",
+        authMode: "oauth",
+        tokenHint: `page:${page.id}`,
+        retryAfter: null,
+        connectedAt: now,
+      },
+    });
+  return { ok: true };
+}

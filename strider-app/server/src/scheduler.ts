@@ -1,6 +1,7 @@
 import { and, eq, lte } from "drizzle-orm";
 import type { AppCtx } from "./ctx.js";
 import * as schema from "./schema.js";
+import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
 
 // In-process scheduler. The original Hatch app had no scheduler at all —
 // scheduled posts stayed "pending" until cancelled, and demo bump comments
@@ -12,9 +13,10 @@ import * as schema from "./schema.js";
 // IMPORTANT: this only makes sense with a single replica. Two processes
 // ticking against the same database would double-publish. See DEPLOY.md.
 //
-// Demo-mode semantics: the app has no real OAuth tokens yet, so "publishing"
-// a due post marks it published with a `demo-` remote id, exactly like the
-// "Post now" path in createPost. No external API is ever called.
+// Demo-mode semantics: targets without real OAuth credentials are still
+// "published" with a `demo-` remote id, exactly like the original "Post now"
+// path. Facebook targets with a real OAuth connection publish through the
+// Graph API (see publish.ts).
 
 export async function publishDuePosts(ctx: AppCtx): Promise<number> {
   const now = new Date();
@@ -23,29 +25,29 @@ export async function publishDuePosts(ctx: AppCtx): Promise<number> {
     .from(schema.posts)
     .where(and(eq(schema.posts.status, "pending"), lte(schema.posts.scheduledAt, now)));
   for (const post of due) {
-    const remoteId = `demo-${crypto.randomUUID()}`;
-    await ctx.db.transaction(async (tx) => {
-      await tx
-        .update(schema.postTargets)
-        .set({ status: "published", remoteId, publishedAt: now, errorMessage: null })
-        .where(and(eq(schema.postTargets.postId, post.id), eq(schema.postTargets.status, "pending")));
-      await tx
-        .update(schema.posts)
-        .set({ status: "published", updatedAt: now })
-        .where(eq(schema.posts.id, post.id));
-    });
+    try {
+      await publishPendingTargets(ctx, post.id);
+    } catch (err) {
+      console.error(`[scheduler] failed to publish post ${post.id}:`, err);
+    }
   }
   return due.length;
 }
 
 export async function publishDueBumpComments(ctx: AppCtx): Promise<number> {
   const now = new Date();
-  const result = await ctx.db
-    .update(schema.bumpComments)
-    .set({ status: "published", publishedAt: now, errorMessage: null })
-    .where(and(eq(schema.bumpComments.status, "pending"), lte(schema.bumpComments.scheduledAt, now)))
-    .returning({ id: schema.bumpComments.id });
-  return result.length;
+  const due = await ctx.db
+    .select({ id: schema.bumpComments.id })
+    .from(schema.bumpComments)
+    .where(and(eq(schema.bumpComments.status, "pending"), lte(schema.bumpComments.scheduledAt, now)));
+  for (const bump of due) {
+    try {
+      await publishBumpCommentNow(ctx, bump.id);
+    } catch (err) {
+      console.error(`[scheduler] failed to publish bump comment ${bump.id}:`, err);
+    }
+  }
+  return due.length;
 }
 
 export async function pruneExpiredSessions(ctx: AppCtx): Promise<number> {

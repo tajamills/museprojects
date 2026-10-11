@@ -280,6 +280,26 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
   </div>;
 }
 
+function FacebookPagePicker({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+  const queryClient = useQueryClient();
+  const pages = useQuery({ queryKey: ["fb-pages", token], queryFn: () => api.listFacebookPages({ sessionToken: token }) });
+  const select = useMutation({
+    mutationFn: (pageId: string) => api.selectFacebookPage({ sessionToken: token, pageId }),
+    onSuccess: async (result) => {
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+      await queryClient.invalidateQueries({ queryKey: ["fb-pages", token] });
+    },
+  });
+  if (!pages.data?.ok || (pages.data.pages?.length ?? 0) < 2) return null;
+  return <label className="page-picker"><span>Posting as</span><select
+    aria-label="Facebook Page"
+    value={pages.data.selectedPageId ?? ""}
+    disabled={select.isPending}
+    onChange={(event) => select.mutate(event.target.value)}
+  >{pages.data.pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}</select></label>;
+}
+
 function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
@@ -287,6 +307,18 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
   const connect = useMutation({
     mutationFn: (platform: Platform) => api.connectDemoAccount({ sessionToken: token, platform }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
+    onSettled: () => setBusyPlatform(null),
+  });
+  const connectFb = useMutation({
+    mutationFn: () => api.connectFacebook({ sessionToken: token }),
+    onSuccess: async (result) => {
+      if (result.ok && result.mode === "oauth" && result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
     onSettled: () => setBusyPlatform(null),
   });
   const disconnect = useMutation({
@@ -301,9 +333,14 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
       const setting = settings.find((item) => item.platform === platform);
       const account = accounts.find((item) => item.platform === platform);
       const needsReconnect = account && account.status !== "connected";
+      const isFacebook = platform === "facebook";
+      const connectBusy = busyPlatform === platform;
+      const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else connect.mutate(platform); };
+      const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
       return <article className="connect-row" key={platform}>
         <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} /></div>{needsReconnect ? <button className="warning-button" onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending} onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>{busyPlatform === platform ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect"}</button>}
+        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending || connectFb.isPending} onClick={startConnect}>{connectLabel}</button>}
+        {isFacebook && account?.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
         <details><summary>If connecting fails</summary><p>{setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
@@ -428,6 +465,15 @@ export function App() {
     const timer = window.setTimeout(() => setToast(""), 4500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+  // Facebook OAuth lands back here via /oauth/facebook/callback -> /?oauth=...
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    if (oauth === "facebook_ok") setToast("Facebook connected — posting as your Page.");
+    else if (oauth === "facebook_error") setToast(`Facebook connection failed: ${params.get("reason") ?? "unknown error"}`);
+    else return;
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   const authenticate = (token: string) => { localStorage.setItem("marketing-app-session", token); setSessionToken(token); };
   const signOut = () => { localStorage.removeItem("marketing-app-session"); setSessionToken(""); setPage("dashboard"); };
