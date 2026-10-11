@@ -201,7 +201,7 @@ async function demoConnectAccount(
 /** Real Facebook app credentials for a user, or null when the simulated
  *  fallback should be used. App ID comes from Settings; the secret from
  *  FACEBOOK_CLIENT_SECRET (never from the database). */
-async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ clientId: string; clientSecret: string } | null> {
+async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ clientId: string; clientSecret: string; missing: string } | { missing: string }> {
   const rows = await ctx.db
     .select()
     .from(schema.platformConfigs)
@@ -209,8 +209,9 @@ async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ cl
     .limit(1);
   const clientId = (rows[0]?.clientId ?? "").trim();
   const clientSecret = resolvePlatformSecret("facebook");
-  if (!isRealFacebookConfig(clientId, Boolean(clientSecret))) return null;
-  return { clientId, clientSecret: clientSecret as string };
+  if (!clientId || clientId.startsWith("DEMO_")) return { missing: "app-id" };
+  if (!clientSecret) return { missing: "app-secret" };
+  return { clientId, clientSecret: clientSecret as string, missing: "" };
 }
 
 export const actions: Record<string, ActionDef> = {
@@ -417,9 +418,12 @@ export const actions: Record<string, ActionDef> = {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
       const creds = await facebookAppCredentials(ctx, user.id);
-      if (!creds) {
+      if (creds.missing) {
         if (!isDemoMode()) {
-          return { ok: false, message: "Add your Facebook App ID in Settings \u2192 Facebook first, then connect.", mode: "oauth", authUrl: null };
+          const what = creds.missing === "app-id"
+            ? "Add your Facebook App ID in Settings \u2192 Facebook first, then connect."
+            : "Set FACEBOOK_CLIENT_SECRET in Railway (and redeploy), then connect.";
+          return { ok: false, message: what, mode: "oauth", authUrl: null };
         }
         const demo = await demoConnectAccount(ctx, user, "facebook");
         return { ...demo, mode: "demo", authUrl: null };
