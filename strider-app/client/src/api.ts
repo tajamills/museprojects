@@ -51,7 +51,9 @@ type BillingStatusResult = {
 };
 type RedirectResult = { url: string };
 
+type PublicConfigResult = { demoMode: boolean };
 type ClientApi = {
+  getPublicConfig(args: Record<string, never>): Promise<PublicConfigResult>;
   createDemoSession(args: Record<string, never>): Promise<AuthResult>;
   signup(args: { email: string; displayName: string; password: string }): Promise<AuthResult>;
   login(args: { email: string; password: string }): Promise<AuthResult>;

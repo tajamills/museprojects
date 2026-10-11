@@ -100,6 +100,11 @@ function isAdminEmail(email: string): boolean {
   return adminEmails().has(email.toLowerCase());
 }
 
+/** Server-wide demo mode. Default false (production): demo UI chrome is hidden. */
+export function isDemoMode(): boolean {
+  return (process.env.DEMO_MODE ?? "").trim().toLowerCase() === "true";
+}
+
 async function requireUser(ctx: AppCtx, token: string) {
   const rows = await ctx.db
     .select({
@@ -150,6 +155,12 @@ export interface ActionDef {
 }
 
 export const actions: Record<string, ActionDef> = {
+  getPublicConfig: {
+    request: z.object({}),
+    async handler() {
+      return { demoMode: isDemoMode() };
+    },
+  },
   createDemoSession: {
     request: z.object({}),
     async handler(ctx): Promise<z.infer<typeof authResponse>> {

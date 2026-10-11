@@ -26,6 +26,12 @@ const NAV: Array<{ id: Page; label: string; glyph: string }> = [
   { id: "settings", label: "Settings", glyph: "⌁" },
 ];
 
+/** Server-wide demo mode (DEMO_MODE env). Default false: demo UI chrome is hidden. */
+function useServerDemoMode(): boolean {
+  const config = useQuery({ queryKey: ["public-config"], queryFn: () => api.getPublicConfig({}), staleTime: 60000 });
+  return config.data?.demoMode ?? false;
+}
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
@@ -46,6 +52,7 @@ function EmptyState({ title, body, action }: { title: string; body: string; acti
 }
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => void }) {
+  const demoMode = useServerDemoMode();
   const [mode, setMode] = useState<"login" | "signup">("signup");
   const [message, setMessage] = useState("");
   const demo = useMutation({ mutationFn: () => api.createDemoSession({}) });
@@ -87,7 +94,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
         </section>
 
         <section className="auth-panel" aria-label="zepostia account access">
-          <div className="demo-ribbon">DEMO / TEST MODE</div>
+          {demoMode && <div className="demo-ribbon">DEMO / TEST MODE</div>}
           <div className="auth-tabs" role="tablist" aria-label="Account access mode">
             <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} role="tab" aria-selected={mode === "signup"}>Create account</button>
             <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} role="tab" aria-selected={mode === "login"}>Sign in</button>
@@ -99,8 +106,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
             <button className="primary-button wide" type="submit" disabled={busy}>{busy ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}</button>
           </form>
           {message && <p className="form-message" role="status">{message}</p>}
-          <div className="or-rule"><span>or</span></div>
-          <button className="secondary-button wide" disabled={busy} onClick={async () => finish(await demo.mutateAsync())}>Enter a fresh demo workspace</button>
+          {demoMode && <><div className="or-rule"><span>or</span></div>
+          <button className="secondary-button wide" disabled={busy} onClick={async () => finish(await demo.mutateAsync())}>Enter a fresh demo workspace</button></>}
           <p className="auth-note">App sign-in uses email and password from any provider. Google is only involved if you later connect YouTube.</p>
         </section>
       </main>
@@ -109,12 +116,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
 }
 
 function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]; go: (page: Page) => void }) {
+  const demoMode = useServerDemoMode();
   const connected = accounts.filter((account) => account.status === "connected").length;
   const pending = posts.filter((post) => post.status === "pending").length;
   const needsAttention = accounts.filter((account) => account.status !== "connected");
   return <div className="page-stack">
     <section className="command-hero">
-      <div><span className="section-code">CONTROL ROOM</span><h1>{connected === 0 ? "Connect your first channel" : `${connected} channels standing by`}</h1><p>{connected === 0 ? "Official OAuth only. Demo connections let you test the flow without contacting a platform." : "Compose once, review each format, then send now or place it in the queue."}</p></div>
+      <div><span className="section-code">CONTROL ROOM</span><h1>{connected === 0 ? "Connect your first channel" : `${connected} channels standing by`}</h1><p>{connected === 0 ? (demoMode ? "Official OAuth only. Demo connections let you test the flow without contacting a platform." : "Official OAuth only. Connect your channels to start publishing.") : "Compose once, review each format, then send now or place it in the queue."}</p></div>
       <button className="primary-button" onClick={() => go(connected === 0 ? "accounts" : "compose")}>{connected === 0 ? "Connect channels" : "Create post"}</button>
     </section>
 
@@ -142,12 +150,13 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
 
     <section className="content-section">
       <div className="section-heading"><div><span className="section-code">LATEST RUNS</span><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("queue")}>Open queue</button></div>
-      {posts.length === 0 ? <EmptyState title="No posts yet" body="Your first demo publish or scheduled post will appear here." action={<button className="secondary-button" onClick={() => go("compose")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
+      {posts.length === 0 ? <EmptyState title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("compose")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
     </section>
   </div>;
 }
 
 function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: { posts: Post[]; onCancel?: (id: number) => void; onCancelBump?: (id: number) => void; onAdvanceBump?: (id: number) => void; cancelling?: boolean }) {
+  const demoMode = useServerDemoMode();
   return <div className="post-list">{posts.map((post) => <article className="post-row" key={post.id}>
     <div className="post-topline"><StatusPill status={post.status} /><time>{post.publishMode === "scheduled" ? formatDate(post.scheduledAt) : formatDate(post.createdAt)}</time></div>
     {post.youtubeTitle && <h3>{post.youtubeTitle}</h3>}
@@ -158,7 +167,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
       <summary><span><i className={post.bumpEnabled ? "pulse-dot" : ""} />24-hour bump plan</span><strong>{post.bumpComments.filter((comment) => comment.status === "published").length}/{post.bumpComments.length} sent</strong></summary>
       <ol>{post.bumpComments.map((comment) => <li key={comment.id} className={`bump-${comment.status}`}><span>{comment.status === "published" ? "Sent" : comment.status === "cancelled" ? "Stopped" : formatDate(comment.scheduledAt)}</span><p>{comment.body}</p></li>)}</ol>
       {post.bumpEnabled && post.bumpComments.some((comment) => comment.status === "pending") && <div className="bump-actions">
-        {onAdvanceBump && <button className="secondary-button" disabled={cancelling} onClick={() => onAdvanceBump(post.id)}>Run next demo comment</button>}
+        {onAdvanceBump && <button className="secondary-button" disabled={cancelling} onClick={() => onAdvanceBump(post.id)}>{demoMode ? "Run next demo comment" : "Run next comment"}</button>}
         {onCancelBump && <button className="danger-text" disabled={cancelling} onClick={() => onCancelBump(post.id)}>Stop remaining comments</button>}
       </div>}
     </details>}
@@ -167,6 +176,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
 }
 
 function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]; token: string; onDone: (message: string) => void; goAccounts: () => void }) {
+  const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const connected = accounts.filter((account) => account.status === "connected");
   const [body, setBody] = useState("");
@@ -219,7 +229,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
   const toggle = (id: number) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   return <div className="page-stack composer-page">
     <div className="page-heading"><span className="section-code">MASTER COMPOSER</span><h1>Build once. Check every cut.</h1><p>One source post, with platform rules enforced before it enters the queue.</p></div>
-    {connected.length === 0 ? <EmptyState title="No channels connected" body="Run a demo OAuth connection first. No platform passwords are ever requested." action={<button className="primary-button" onClick={goAccounts}>Connect a channel</button>} /> : <>
+    {connected.length === 0 ? <EmptyState title="No channels connected" body={demoMode ? "Run a demo OAuth connection first. No platform passwords are ever requested." : "Connect a channel first. No platform passwords are ever requested."} action={<button className="primary-button" onClick={goAccounts}>Connect a channel</button>} /> : <>
       <section className="composer-grid">
         <div className="compose-form">
           <label className="field-label">Post text <span className={body.length > 280 && selectedPlatforms.includes("x") ? "limit-bad" : ""}>{body.length}{selectedPlatforms.includes("x") ? "/280 for X" : " characters"}</span>
@@ -252,13 +262,13 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
           {requirements.length > 0 && <div className="requirements" role="status">{requirements.map((item) => <p key={item}>{item}</p>)}</div>}
           {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary-button wide" disabled={publish.isPending || selected.length === 0 || requirements.length > 0} onClick={() => publish.mutate()}>{publish.isPending ? "Preparing…" : mode === "now" ? `Publish to ${selected.length || 0}` : `Add ${selected.length || 0} to queue`}</button>
-          <p className="demo-action-note">Demo mode simulates the final official API response and never contacts an external account.</p>
+          {demoMode ? <p className="demo-action-note">Demo mode simulates the final official API response and never contacts an external account.</p> : <p className="demo-action-note">Publishing activates once your platform credentials are connected in Settings.</p>}
         </div>
 
         <aside className="preview-panel">
           <div className="preview-tabs" role="tablist" aria-label="Platform preview">{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <button key={platform} className={preview === platform ? "active" : ""} onClick={() => setPreview(platform)} role="tab" aria-selected={preview === platform}><PlatformBadge platform={platform} small /></button>)}</div>
           <div className={`platform-preview preview-${preview}`}>
-            <div className="preview-account"><PlatformBadge platform={preview} /><div><strong>{connected.find((account) => account.platform === preview)?.handle ?? PLATFORM_META[preview].label}</strong><small>Sponsored nowhere · demo preview</small></div></div>
+            <div className="preview-account"><PlatformBadge platform={preview} /><div><strong>{connected.find((account) => account.platform === preview)?.handle ?? PLATFORM_META[preview].label}</strong><small>Sponsored nowhere · {demoMode ? "demo preview" : "preview"}</small></div></div>
             {preview === "youtube" && <h3>{title || "Your video title"}</h3>}
             {file && objectUrl ? file.type.startsWith("video/") ? <video src={objectUrl} controls preload="metadata" /> : <img src={objectUrl} alt="Selected upload preview" /> : <div className="preview-media-empty">{preview === "instagram" || preview === "tiktok" || preview === "youtube" ? "Media required" : "Media preview"}</div>}
             <p>{preview === "x" ? body.slice(0, 280) : body || "Your post will appear here."}</p>
@@ -271,6 +281,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
 }
 
 function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void }) {
+  const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
   const connect = useMutation({
@@ -283,7 +294,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
   });
   return <div className="page-stack">
-    <div className="page-heading"><span className="section-code">OFFICIAL OAUTH ONLY</span><h1>Connect channels without sharing passwords.</h1><p>Every connection is isolated per platform. In demo mode, the authorization step is simulated and no external service is contacted.</p></div>
+    <div className="page-heading"><span className="section-code">OFFICIAL OAUTH ONLY</span><h1>Connect channels without sharing passwords.</h1><p>{demoMode ? "Every connection is isolated per platform. In demo mode, the authorization step is simulated and no external service is contacted." : "Every connection is isolated per platform. Add your credentials in Settings to enable live connections."}</p></div>
     <div className="oauth-rule"><strong>What this app never does</strong><span>No browser automation · no credential stuffing · no platform password forms</span></div>
     <div className="connect-list">{PLATFORM_ORDER.map((platform) => {
       const meta = PLATFORM_META[platform];
@@ -292,7 +303,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
       const needsReconnect = account && account.status !== "connected";
       return <article className="connect-row" key={platform}>
         <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} /></div>{needsReconnect ? <button className="warning-button" onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending} onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>{busyPlatform === platform ? "Connecting…" : "Run demo OAuth"}</button>}
+        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} /></div>{needsReconnect ? <button className="warning-button" onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending} onClick={() => { setBusyPlatform(platform); connect.mutate(platform); }}>{busyPlatform === platform ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect"}</button>}
         <details><summary>If connecting fails</summary><p>{setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
@@ -331,8 +342,8 @@ function PlatformSettingsCard({ setting, token, onMessage }: { setting: Platform
     mutationFn: () => api.savePlatformConfig({ sessionToken: token, platform: setting.platform, clientId, secretReference }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["settings", token] }); },
   });
-  return <details className="settings-card">
-    <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Configure</span></summary>
+  return <details className="settings-card" open>
+    <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
     <div className="settings-body">
       <div className="go-live-list"><p><b>1</b><span>Create:</span> {setting.developerApp}</p><p><b>2</b><span>Collect:</span> {setting.credentialFields}</p><p><b>3</b><span>Callback:</span> Deploy the app on your host, then add the exact OAuth callback URL for that deployment (see DEPLOY.md).</p><p><b>4</b><span>Permissions:</span> Request only sign-in, profile/account discovery, and content publishing scopes.</p></div>
       <label>Client ID<input value={clientId} onChange={(event) => setClientId(event.target.value)} /></label>
@@ -391,6 +402,7 @@ function Settings({ settings, token, user, onMessage, onSignOut }: { settings: P
 }
 
 export function App() {
+  const demoMode = useServerDemoMode();
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem("marketing-app-session") ?? "");
   const [page, setPage] = useState<Page>("dashboard");
   const [toast, setToast] = useState("");
@@ -431,11 +443,11 @@ export function App() {
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
       <strong className="mobile-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
-      <div className="mobile-status"><span className="live-dot" /><span>Demo</span><button aria-label="Open settings" onClick={() => setPage("settings")}>⌁</button></div>
+      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Open settings" onClick={() => setPage("settings")}>⌁</button></div>
     </header>
     <aside className="side-rail">
       <div className="rail-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
-      <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>
+      {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
       <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span>{item.label}</button>)}</nav>
       <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small></div>
     </aside>
