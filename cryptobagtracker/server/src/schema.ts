@@ -80,6 +80,7 @@ export const transactions = pgTable("transactions", {
 export const alertSettings = pgTable("alert_settings", {
   userId: integer("user_id").primaryKey(),
   telegramHint: text("telegram_hint"),
+  telegramChatId: text("telegram_chat_id"),
   phoneHint: text("phone_hint"),
   pushEnabled: boolean("push_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
@@ -95,6 +96,7 @@ export const priceAlerts = pgTable("price_alerts", {
   targetPrice: doublePrecision("target_price").notNull(),
   channels: text("channels").notNull(),
   active: boolean("active").notNull().default(true),
+  lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
 });
 

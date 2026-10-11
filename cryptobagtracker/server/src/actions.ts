@@ -159,7 +159,7 @@ const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.s
 const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY", "SELL", "TRADE", "SEND", "RECEIVE", "STAKING", "AIRDROP"]), asset: z.string().min(2).max(12), amount: z.number().positive(), priceUsd: z.number().nonnegative(), feeUsd: z.number().nonnegative(), receivedAsset: z.string().max(12).optional(), receivedAmount: z.number().positive().optional(), receivedPriceUsd: z.number().nonnegative().optional(), fromWalletId: z.number().int().positive().optional(), toWalletId: z.number().int().positive().optional(), note: z.string().max(200).optional(), occurredAt: z.string() });
 const addTransactionResponse = z.object({ ok: z.literal(true), classification: z.string() });
 const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum(["FIFO", "LIFO", "HIFO"]) });
-const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), phone: z.string().optional(), pushEnabled: z.boolean() });
+const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
 const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable() });
@@ -260,7 +260,7 @@ export const Actions = {
         exchanges: exchanges.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
         alerts: alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), channels: a.channels.split(",").filter(Boolean) })),
         alertHistory: history.map((h) => ({ ...h, deliveredAt: h.deliveredAt.toISOString() })),
-        alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled } : { telegramHint: null, phoneHint: null, pushEnabled: false },
+        alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false },
         portfolio: { assets: [...assetMap.entries()].filter(([, v]) => Math.abs(v.amount) > 1e-10).map(([asset, v]) => ({ asset, amount: Number(v.amount.toFixed(10)), value: money(v.value) })), totalValue: money([...assetMap.values()].reduce((s, v) => s + v.value, 0)) },
         tax, selfTest: runSelfTest(), affiliate: { count: user.affiliateReferralCount, earnings: money(user.affiliateEarnings) },
       };
@@ -325,9 +325,10 @@ export const Actions = {
       const db = ctx.db;
       const existing = await db.select().from(schema.alertSettings).where(eq(schema.alertSettings.userId, user.id)).limit(1);
       const telegramHint = args.telegramToken ? `••••${args.telegramToken.slice(-4)}` : existing[0]?.telegramHint ?? null;
+      const telegramChatId = args.telegramChatId?.trim() ? args.telegramChatId.trim() : existing[0]?.telegramChatId ?? null;
       const phoneHint = args.phone ? `••••${args.phone.replace(/\D/g, "").slice(-4)}` : existing[0]?.phoneHint ?? null;
-      if (existing[0]) await db.update(schema.alertSettings).set({ telegramHint, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() }).where(eq(schema.alertSettings.userId, user.id));
-      else await db.insert(schema.alertSettings).values({ userId: user.id, telegramHint, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() });
+      if (existing[0]) await db.update(schema.alertSettings).set({ telegramHint, telegramChatId, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() }).where(eq(schema.alertSettings.userId, user.id));
+      else await db.insert(schema.alertSettings).values({ userId: user.id, telegramHint, telegramChatId, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() });
       ctx.invalidateQueries();
       return { ok: true };
     },

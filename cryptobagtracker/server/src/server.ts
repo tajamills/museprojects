@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { Actions, type Ctx } from "./actions.js";
+import { checkPriceAlerts } from "./alerts.js";
 import { stripeWebhookHandler } from "./billing.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
@@ -114,6 +115,23 @@ async function main(): Promise<void> {
   app.listen(port, () => {
     console.log(`cryptobagtracker listening on :${port}`);
   });
+
+  // Price-alert scheduler: poll CoinGecko for active alerts, deliver via
+  // Telegram / outbound webhook, and record every trigger in alert_history.
+  // Single-replica safe for Railway's default deployment; failures are logged
+  // and never crash the server.
+  const priceCheckMs = Number(process.env.PRICE_CHECK_INTERVAL_MS);
+  const priceCheckInterval = Number.isFinite(priceCheckMs) && priceCheckMs > 0 ? priceCheckMs : 5 * 60 * 1000;
+  const runAlertCheck = async () => {
+    try {
+      const { checked, triggered } = await checkPriceAlerts(db);
+      if (triggered > 0) console.log(`price alerts: ${triggered} triggered (${checked} active checked)`);
+    } catch (err) {
+      console.error("price alert check failed:", err instanceof Error ? err.message : err);
+    }
+  };
+  setTimeout(runAlertCheck, 30_000);
+  setInterval(runAlertCheck, priceCheckInterval);
 }
 
 main().catch((err) => {

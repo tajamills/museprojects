@@ -137,11 +137,14 @@ Stripe's test card `4242 4242 4242 4242` before going live.
    `getTaxForms` action backed by the canonical Tax Engine v2
    (`server/src/taxEngine.ts`, ported from the rebuild's `tax-engine.js`),
    so 8949/Schedule D are now also available as server-generated JSON.
-6. **Alert delivery (Telegram / SMS / push)** — not dropped, but never
-   existed: the source only *stored* alert settings (as `••••last4` hints)
-   and alert rules; nothing ever sent a notification, evaluated prices, or
-   wrote `alert_history`. Ported as-is. Actually sending alerts needs a price
-   poller + delivery worker — see below.
+6. **Alert delivery (Telegram / outbound webhook)** — the source only *stored*
+   alert settings and rules; nothing ever sent a notification, evaluated
+   prices, or wrote `alert_history`. Now implemented: `server/src/alerts.ts`
+   polls CoinGecko on a scheduler, delivers via Telegram (app-level
+   `TELEGRAM_BOT_TOKEN` + each user's chat ID), fires an optional generic
+   webhook (`ALERT_WEBHOOK_URL`, e.g. Zapier Catch Hook), and records every
+   trigger in `alert_history`. See "Telegram alerts + Zapier webhook setup"
+   above. SMS/push remain TODO.
 7. **Exchange API import** — the source stored only a key hint and discarded
    the secret; no import/sync logic existed. Ported as-is.
 8. **Billing ($8.88/mo from day 8)** — was UI/marketing copy only in the
@@ -150,13 +153,37 @@ Stripe's test card `4242 4242 4242 4242` before going live.
    `/webhooks/stripe` endpoint. See "Stripe setup" above. PayPal affiliate
    payouts remain TODO.
 
+## Telegram alerts + Zapier webhook setup
+
+Price alerts are code-complete: an in-process scheduler checks active alerts
+every `PRICE_CHECK_INTERVAL_MS` (default 5 minutes) against the CoinGecko
+free API (no key needed), delivers via Telegram, fires an optional outbound
+webhook, and logs every trigger in the app's Alert history.
+
+1. **Create the bot:** open Telegram → message **@BotFather** → send
+   `/newbot` → follow the prompts (name + username) → copy the **bot token**
+   → set as `TELEGRAM_BOT_TOKEN` in Railway variables.
+2. **Each user connects their Telegram:** in the app → Alerts → Delivery
+   settings → paste their **Telegram chat ID**. To find it: message
+   **@userinfobot** on Telegram — it replies with the chat ID.
+3. **(Optional) Zapier routing:** in Zapier → create a Zap → trigger
+   "Webhooks by Zapier" → **Catch Hook** → copy the hook URL → set as
+   `ALERT_WEBHOOK_URL` in Railway. On every trigger the app POSTs
+   `{userId, alertId, asset, direction, targetPrice, currentPrice, triggeredAt}`
+   there — route it onward to SMS, email, Slack, etc. Fire-and-forget: it
+   never blocks Telegram delivery or the scheduler.
+4. Redeploy (or just wait — variable changes trigger a redeploy).
+
+Without `TELEGRAM_BOT_TOKEN` the app still runs; triggered alerts are
+recorded in Alert history as undelivered and logged server-side. Repeat
+fires of the same alert are throttled by `ALERT_COOLDOWN_MS` (default 24h)
+so a price sitting past the target doesn't spam.
+
 ## Not yet wired up (TODO, needs keys + code)
 
 None of these are referenced by the current server code — they are listed here
 so the gaps are explicit, not as required env vars:
 
-- `TELEGRAM_BOT_TOKEN` — TODO: required if/when Telegram alert delivery is
-  implemented (settings are stored, nothing sends today).
 - `SMS_PROVIDER_API_KEY` (e.g. Twilio) — TODO: required if/when SMS alert
   delivery is implemented.
 - Push delivery provider credentials — TODO: the app stores a
