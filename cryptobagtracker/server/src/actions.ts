@@ -154,6 +154,8 @@ const okResponse = z.object({ ok: z.literal(true) });
 const signupRequest = z.object({ email: z.string().email(), password: z.string().min(8), referralCode: z.string().max(40).optional() });
 const loginRequest = z.object({ email: z.string().email(), password: z.string().min(1) });
 const tokenRequest = z.object({ token: z.string() });
+const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
+const changePasswordResponse = z.object({ ok: z.literal(true), token: z.string() });
 const addWalletRequest = z.object({ token: z.string(), name: z.string().min(1).max(60), chain: z.string().min(2).max(10), address: z.string().min(3).max(200), owned: z.boolean() });
 const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.string().min(2).max(40), label: z.string().min(1).max(60), apiKey: z.string().min(4), apiSecret: z.string().min(4) });
 const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY", "SELL", "TRADE", "SEND", "RECEIVE", "STAKING", "AIRDROP"]), asset: z.string().min(2).max(12), amount: z.number().positive(), priceUsd: z.number().nonnegative(), feeUsd: z.number().nonnegative(), receivedAsset: z.string().max(12).optional(), receivedAmount: z.number().positive().optional(), receivedPriceUsd: z.number().nonnegative().optional(), fromWalletId: z.number().int().positive().optional(), toWalletId: z.number().int().positive().optional(), note: z.string().max(200).optional(), occurredAt: z.string() });
@@ -485,6 +487,31 @@ export const Actions = {
         trialEndsAt: status === "trialing" ? periodEnd : null,
         currentPeriodEnd: periodEnd,
       };
+    },
+  },
+  /**
+   * Change the account password. Verifies the current password first, then
+   * replaces the hash and invalidates EVERY session for the user — including
+   * the current one — so a compromised password can't keep other devices
+   * signed in. A fresh token is returned so this device stays signed in
+   * seamlessly; the client should swap it into storage.
+   */
+  changePassword: {
+    request: changePasswordRequest,
+    response: changePasswordResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof changePasswordRequest>): Promise<z.infer<typeof changePasswordResponse>> => {
+      const db = ctx.db;
+      const user = await requireUser(ctx, args.token);
+      if (!(await passwordVerify(args.currentPassword, user.passwordHash))) {
+        throw new Error("Current password is incorrect.");
+      }
+      const passwordHashValue = await passwordHash(args.newPassword);
+      await db.update(schema.users).set({ passwordHash: passwordHashValue }).where(eq(schema.users.id, user.id));
+      await db.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+      const token = crypto.randomUUID();
+      await db.insert(schema.sessions).values({ token, userId: user.id, createdAt: new Date() });
+      ctx.invalidateQueries();
+      return { ok: true, token };
     },
   },
 };
