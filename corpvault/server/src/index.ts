@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { createDb, runMigrations, type Db } from "./db.js";
 import { actionDefs, type ActionName, type Ctx } from "./actions.js";
 import { createLocalBlobStore, resolveBlobPath } from "./storage.js";
+import { stripeWebhookHandler } from "./billing.js";
 import * as schema from "./schema.js";
 
 export const DATA_DIR =
@@ -30,6 +31,22 @@ function zodMessage(err: unknown): string {
 
 export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
   const app = express();
+
+  // Stripe webhook: Stripe's signature covers the raw request bytes, so this
+  // route MUST use express.raw() and MUST be registered before express.json().
+  app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
+    const result = await stripeWebhookHandler(
+      db,
+      req.body as Buffer,
+      req.headers["stripe-signature"] as string | undefined,
+    );
+    if (!result.ok) {
+      res.status(400).json({ error: result.error ?? "Webhook error" });
+      return;
+    }
+    res.json({ received: true });
+  });
+
   // Document uploads travel as base64 inside the JSON body (10 MB files →
   // ~13.4 MB base64), so the body limit must exceed the 14 MB zod cap.
   app.use(express.json({ limit: "20mb" }));
@@ -55,7 +72,7 @@ export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
       parsed && typeof parsed === "object" && "token" in parsed && typeof parsed.token === "string"
         ? parsed.token
         : null;
-    const ctx: Ctx = { db, token, blobs: createLocalBlobStore(dataDir, token) };
+    const ctx: Ctx = { db, token, blobs: createLocalBlobStore(dataDir, token), origin: req.get("origin") ?? null };
 
     try {
       const result = await def.handler(ctx, parsed as never);

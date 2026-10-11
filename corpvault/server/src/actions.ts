@@ -15,12 +15,15 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
+import { baseUrl, getStripe } from "./billing.js";
 
 export interface Ctx {
   db: Db;
   /** Session token of the current request (null for signUp/signIn). */
   token: string | null;
   blobs: BlobStore;
+  /** Request origin (for Stripe redirect URLs); null when unknown. */
+  origin: string | null;
 }
 
 const sessionResponse = z.object({ token: z.string(), email: z.string() });
@@ -55,6 +58,15 @@ async function accountFor(db: Db, token: string): Promise<number> {
     if (!row || row.expiresAt.getTime() < Date.now())
         throw new Error("Your session has expired. Please sign in again.");
     return row.accountId;
+}
+/** Full account row for the session token (for billing actions). */
+async function accountRecord(db: Db, token: string) {
+    const accountId = await accountFor(db, token);
+    const rows = await db.select().from(schema.accounts).where(eq(schema.accounts.id, accountId)).limit(1);
+    const account = rows[0];
+    if (!account)
+        throw new Error("Your session has expired. Please sign in again.");
+    return account;
 }
 function nextAnnual(month: number, day: number): string {
     const today = new Date();
@@ -297,6 +309,78 @@ export const actionDefs = {
             if (!row)
                 throw new Error("Could not save the minutes.");
             return { id: row.id };
+        },
+    },
+    /**
+     * Start a Stripe Checkout subscription for the $199/year kovala plan.
+     * The plan charges IMMEDIATELY at checkout — no trial period.
+     * Creates and stores a Stripe customer on first use.
+     */
+    createCheckoutSession: {
+        request: z.object({ token: z.string() }),
+        response: z.object({ url: z.string() }),
+        async handler(ctx: Ctx, args: { token: string }): Promise<{ url: string }> {
+            const account = await accountRecord(ctx.db, args.token);
+            const stripe = getStripe();
+            const priceId = process.env.STRIPE_PRICE_ID;
+            if (!priceId)
+                throw new Error("Billing is not configured yet.");
+            if (["trialing", "active", "past_due"].includes(account.subscriptionStatus) && account.stripeCustomerId) {
+                throw new Error("You already have a subscription — use Manage billing to update it.");
+            }
+            let customerId = account.stripeCustomerId;
+            if (!customerId) {
+                const customer = await stripe.customers.create({
+                    email: account.email,
+                    metadata: { accountId: String(account.id) },
+                });
+                customerId = customer.id;
+                await ctx.db.update(schema.accounts).set({ stripeCustomerId: customerId }).where(eq(schema.accounts.id, account.id));
+            }
+            const url = baseUrl(ctx.origin);
+            const session = await stripe.checkout.sessions.create({
+                mode: "subscription",
+                customer: customerId,
+                client_reference_id: String(account.id),
+                line_items: [{ price: priceId, quantity: 1 }],
+                success_url: `${url}/?billing=success`,
+                cancel_url: `${url}/?billing=cancelled`,
+            });
+            if (!session.url)
+                throw new Error("Could not start checkout. Try again.");
+            return { url: session.url };
+        },
+    },
+    /**
+     * Stripe Customer Portal session so subscribers can update their card or
+     * cancel without us handling payment details.
+     */
+    createPortalSession: {
+        request: z.object({ token: z.string() }),
+        response: z.object({ url: z.string() }),
+        async handler(ctx: Ctx, args: { token: string }): Promise<{ url: string }> {
+            const account = await accountRecord(ctx.db, args.token);
+            const stripe = getStripe();
+            if (!account.stripeCustomerId)
+                throw new Error("No billing account yet — subscribe first.");
+            const session = await stripe.billingPortal.sessions.create({
+                customer: account.stripeCustomerId,
+                return_url: baseUrl(ctx.origin),
+            });
+            return { url: session.url };
+        },
+    },
+    /** Current subscription state for the signed-in account. */
+    getBillingStatus: {
+        request: z.object({ token: z.string() }),
+        response: z.object({ status: z.string(), currentPeriodEnd: z.string().nullable() }),
+        async handler(ctx: Ctx, args: { token: string }): Promise<{ status: string; currentPeriodEnd: string | null }> {
+            const account = await accountRecord(ctx.db, args.token);
+            const status = account.subscriptionStatus || "none";
+            return {
+                status,
+                currentPeriodEnd: account.currentPeriodEnd ? account.currentPeriodEnd.toISOString() : null,
+            };
         },
     },
 };

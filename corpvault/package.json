@@ -7,9 +7,10 @@
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "recharts": "2.15.3",
+    "stripe": "^23.0.0",
     "zod": "4.4.3"
   },
-  "description": "kovala \u2014 business entity manager, document vault, compliance reminders, meeting minutes. Railway-deployable port of the Hatch TS-space.",
+  "description": "kovala — business entity manager, document vault, compliance reminders, meeting minutes. Railway-deployable port of the Hatch TS-space.",
   "devDependencies": {
     "@tailwindcss/cli": "4.1.13",
     "@types/express": "4.17.21",
