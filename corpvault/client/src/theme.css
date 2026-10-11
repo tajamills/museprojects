@@ -38,3 +38,4 @@
 .brand-logo{display:block;width:min(240px,60vw);height:auto;border-radius:14px}
 .brand-mark{width:26px;height:26px;border-radius:7px;object-fit:cover;align-self:center}
 .rail-brand{display:flex;align-items:center;gap:10px}
+.billing-note{margin:12px 0 0}

@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash").notNull(),
   passwordSalt: text("password_salt").notNull(),
+  role: text("role").notNull().default("user"),
   demoMode: boolean("demo_mode").notNull().default(true),
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
   stripeCustomerId: text("stripe_customer_id"),

@@ -92,6 +92,14 @@ async function createSession(ctx: AppCtx, userId: number): Promise<string> {
   return token;
 }
 
+/** Emails (lowercased) listed in ADMIN_EMAILS get the 'admin' role on signup/login. */
+function adminEmails(): Set<string> {
+  return new Set((process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+}
+function isAdminEmail(email: string): boolean {
+  return adminEmails().has(email.toLowerCase());
+}
+
 async function requireUser(ctx: AppCtx, token: string) {
   const rows = await ctx.db
     .select({
@@ -99,6 +107,7 @@ async function requireUser(ctx: AppCtx, token: string) {
       email: schema.users.email,
       displayName: schema.users.displayName,
       demoMode: schema.users.demoMode,
+      role: schema.users.role,
       expiresAt: schema.sessions.expiresAt,
     })
     .from(schema.sessions)
@@ -127,7 +136,7 @@ const authResponse = z.object({
   ok: z.boolean(),
   message: z.string(),
   sessionToken: z.string().nullable(),
-  user: z.object({ id: z.number(), email: z.string(), displayName: z.string(), demoMode: z.boolean() }).nullable(),
+  user: z.object({ id: z.number(), email: z.string(), displayName: z.string(), demoMode: z.boolean(), role: z.string() }).nullable(),
 });
 
 const accountResponse = z.object({
@@ -163,7 +172,7 @@ export const actions: Record<string, ActionDef> = {
         ok: true,
         message: "Demo workspace ready.",
         sessionToken,
-        user: { id: row.id, email, displayName: "Demo creator", demoMode: true },
+        user: { id: row.id, email, displayName: "Demo creator", demoMode: true, role: "user" },
       };
     },
   },
@@ -179,11 +188,13 @@ export const actions: Record<string, ActionDef> = {
       const existing = await ctx.db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
       if (existing[0]) return { ok: false, message: "An account already uses that email. Sign in instead.", sessionToken: null, user: null };
       const salt = crypto.randomUUID();
+      const role = isAdminEmail(email) ? "admin" : "user";
       const inserted = await ctx.db.insert(schema.users).values({
         email,
         displayName: args.displayName.trim(),
         passwordHash: await digestPassword(args.password, salt),
         passwordSalt: salt,
+        role,
         demoMode: true,
         createdAt: new Date(),
       }).returning({ id: schema.users.id });
@@ -191,7 +202,7 @@ export const actions: Record<string, ActionDef> = {
       if (!row) return { ok: false, message: "Your account could not be created. Try again.", sessionToken: null, user: null };
       await initializeConfigs(ctx, row.id);
       const sessionToken = await createSession(ctx, row.id);
-      return { ok: true, message: "Account created.", sessionToken, user: { id: row.id, email, displayName: args.displayName.trim(), demoMode: true } };
+      return { ok: true, message: "Account created.", sessionToken, user: { id: row.id, email, displayName: args.displayName.trim(), demoMode: true, role } };
     },
   },
 
@@ -204,8 +215,13 @@ export const actions: Record<string, ActionDef> = {
       if (!user || user.passwordHash !== await digestPassword(args.password, user.passwordSalt)) {
         return { ok: false, message: "That email and password do not match. Check both and try again.", sessionToken: null, user: null };
       }
+      let role = user.role ?? "user";
+      if (isAdminEmail(user.email) && role !== "admin") {
+        await ctx.db.update(schema.users).set({ role: "admin" }).where(eq(schema.users.id, user.id));
+        role = "admin";
+      }
       const sessionToken = await createSession(ctx, user.id);
-      return { ok: true, message: "Signed in.", sessionToken, user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode } };
+      return { ok: true, message: "Signed in.", sessionToken, user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode, role } };
     },
   },
 
@@ -251,7 +267,7 @@ export const actions: Record<string, ActionDef> = {
       })));
       return {
         authenticated: true,
-        user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode },
+        user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode, role: user.role ?? "user" },
         accounts: accounts.map((account) => ({
           id: account.id,
           platform: account.platform,

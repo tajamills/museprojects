@@ -26,8 +26,15 @@ export interface Ctx {
   origin: string | null;
 }
 
-const sessionResponse = z.object({ token: z.string(), email: z.string() });
+const sessionResponse = z.object({ token: z.string(), email: z.string(), role: z.string() });
 const okResponse = z.object({ ok: z.literal(true) });
+/** Emails (lowercased) listed in ADMIN_EMAILS get the 'admin' role on signup/login. */
+function adminEmails(): Set<string> {
+    return new Set((process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+}
+function isAdminEmail(email: string): boolean {
+    return adminEmails().has(email.toLowerCase());
+}
 const entityTypes = ["LLC", "Corporation", "DBA"] as const;
 const categories = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses"] as const;
 const meetingTypes = ["Annual", "Special", "Organizational", "Member Decision"] as const;
@@ -156,17 +163,17 @@ const meetingShape = z.object({
 export const actionDefs = {
     authStatus: {
         request: z.object({ token: z.string().optional() }),
-        response: z.object({ authenticated: z.boolean(), email: z.string().nullable() }),
+        response: z.object({ authenticated: z.boolean(), email: z.string().nullable(), role: z.string().nullable() }),
         async handler(ctx: Ctx, args: { token?: string }) {
             if (!args.token)
-                return { authenticated: false, email: null };
+                return { authenticated: false, email: null, role: null };
             try {
                 const accountId = await accountFor(ctx.db, args.token);
-                const rows = await ctx.db.select({ email: schema.accounts.email }).from(schema.accounts).where(eq(schema.accounts.id, accountId)).limit(1);
-                return { authenticated: true, email: rows[0]?.email ?? null };
+                const rows = await ctx.db.select({ email: schema.accounts.email, role: schema.accounts.role }).from(schema.accounts).where(eq(schema.accounts.id, accountId)).limit(1);
+                return { authenticated: true, email: rows[0]?.email ?? null, role: rows[0]?.role ?? "user" };
             }
             catch {
-                return { authenticated: false, email: null };
+                return { authenticated: false, email: null, role: null };
             }
         },
     },
@@ -179,13 +186,14 @@ export const actionDefs = {
             if (existing.length)
                 throw new Error("An account with that email already exists.");
             const passwordHash = await hashPassword(args.password);
-            const inserted = await ctx.db.insert(schema.accounts).values({ email, passwordHash }).returning({ id: schema.accounts.id });
+            const role = isAdminEmail(email) ? "admin" : "user";
+            const inserted = await ctx.db.insert(schema.accounts).values({ email, passwordHash, role }).returning({ id: schema.accounts.id });
             const account = inserted[0];
             if (!account)
                 throw new Error("Could not create the account.");
             const token = crypto.randomUUID();
             await ctx.db.insert(schema.sessions).values({ token, accountId: account.id, expiresAt: new Date(Date.now() + 30 * 86400000) });
-            return { token, email };
+            return { token, email, role };
         },
     },
     signIn: {
@@ -197,9 +205,14 @@ export const actionDefs = {
             const account = rows[0];
             if (!account || !(await verifyPassword(args.password, account.passwordHash)))
                 throw new Error("Email or password is incorrect.");
+            let role = account.role ?? "user";
+            if (isAdminEmail(email) && role !== "admin") {
+                await ctx.db.update(schema.accounts).set({ role: "admin" }).where(eq(schema.accounts.id, account.id));
+                role = "admin";
+            }
             const token = crypto.randomUUID();
             await ctx.db.insert(schema.sessions).values({ token, accountId: account.id, expiresAt: new Date(Date.now() + 30 * 86400000) });
-            return { token, email };
+            return { token, email, role };
         },
     },
     getWorkspace: {

@@ -9,6 +9,7 @@ export const accounts = pgTable("accounts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("user"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),
