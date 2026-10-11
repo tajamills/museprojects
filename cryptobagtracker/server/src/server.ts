@@ -12,10 +12,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { Actions, type Ctx } from "./actions.js";
+import { stripeWebhookHandler } from "./billing.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
-
-const ctx: Ctx = { db, invalidateQueries: () => {} };
 
 type ActionDef = {
   request: z.ZodTypeAny;
@@ -52,6 +51,22 @@ async function main(): Promise<void> {
   await runMigrations();
 
   const app = express();
+
+  // Stripe webhook: Stripe's signature covers the raw request bytes, so this
+  // route MUST use express.raw() and MUST be registered before express.json().
+  app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
+    const result = await stripeWebhookHandler(
+      db,
+      req.body as Buffer,
+      req.headers["stripe-signature"] as string | undefined,
+    );
+    if (!result.ok) {
+      res.status(400).json({ error: result.error ?? "Webhook error" });
+      return;
+    }
+    res.json({ received: true });
+  });
+
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_req, res) => {
@@ -75,7 +90,8 @@ async function main(): Promise<void> {
       return;
     }
     try {
-      const result = await def.handler(ctx, parsed as never);
+      const reqCtx: Ctx = { db, invalidateQueries: () => {}, origin: req.get("origin") ?? null };
+      const result = await def.handler(reqCtx, parsed as never);
       res.json(result ?? null);
     } catch (err) {
       res.status(400).json({ error: actionErrorMessage(err) });

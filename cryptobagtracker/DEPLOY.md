@@ -12,11 +12,14 @@ Express process that exposes `POST /actions`.
 | `PORT`         | No       | `3000`  | Railway injects this automatically.                          |
 | `CLIENT_DIR`   | No       | `./client/dist` | Override where the server finds the built client bundle. |
 | `MIGRATIONS_DIR` | No     | `./drizzle`     | Override where the server finds the SQL migrations.  |
+| `STRIPE_SECRET_KEY` | For billing | — | Stripe API secret key. Without it the app runs; billing actions return "Billing is not configured yet." |
+| `STRIPE_WEBHOOK_SECRET` | For billing | — | Signing secret for `POST /webhooks/stripe`. |
+| `STRIPE_PRICE_ID` | For billing | — | Price ID of the $8.88/month Premium plan. |
+| `APP_BASE_URL` | For billing | request origin → `http://localhost:3000` | Public base URL, used for Stripe checkout + portal redirects. Set to your Railway service domain. |
 
-The server code references **no other** environment variables. A full
-`grep` of `server/src` shows zero `process.env` reads besides the four above.
-In particular the app needs **no** chain-data, Stripe, PayPal, SMS, or
-Telegram API keys to run — see "Not yet wired up" below.
+Billing is optional for booting: with no Stripe keys the app runs normally
+and the Billing page shows a friendly "coming soon" state instead of
+erroring.
 
 ## Railway setup
 
@@ -73,6 +76,42 @@ Useful scripts:
   `api.<name>(args)` surface. `ApiRequest`/`ApiResponse` helper types are
   preserved (the app itself only imports `api`).
 
+## Stripe setup (Layla's dashboard steps)
+
+Billing is code-complete; it only needs keys. In the
+[Stripe dashboard](https://dashboard.stripe.com):
+
+1. **Create the product:** Product catalog → Add product → name it
+   "CryptoBagTracker Premium" → add a recurring price of **$8.88/month**
+   (USD). Copy the **price ID** (`price_...`) → set as `STRIPE_PRICE_ID`.
+2. **API key:** Developers → API keys → copy the **Secret key**
+   (`sk_live_...`; use a test key first while trying things out) →
+   set as `STRIPE_SECRET_KEY`.
+3. **Webhook:** Developers → Webhooks → Add endpoint →
+   URL `https://<your-railway-domain>/webhooks/stripe` →
+   select these events:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.payment_failed`
+   
+   Copy the endpoint's **signing secret** (`whsec_...`) →
+   set as `STRIPE_WEBHOOK_SECRET`.
+4. **Base URL:** set `APP_BASE_URL` to your Railway service domain
+   (service → Settings → Networking → domain), e.g.
+   `https://cryptobagtracker.up.railway.app`.
+5. Redeploy (or just wait — variable changes trigger a redeploy).
+
+How it works: the in-app Billing page calls `createCheckoutSession`,
+which creates/reuses a Stripe customer and opens Checkout with
+`trial_period_days: 7` — the card is collected but nothing is charged for
+7 days (billing begins day 8, matching the product copy). Webhooks keep the
+`users` row in sync (`subscription_status`: none → trialing → active →
+past_due → canceled). `createPortalSession` opens Stripe's Customer Portal
+for card updates/cancellation. Test mode first: use `sk_test_...` keys and
+Stripe's test card `4242 4242 4242 4242` before going live.
+
 ## Could not port (dropped or changed with reason)
 
 1. **`@hatch/space-sdk` RPC transport** — proprietary `file:` dependency;
@@ -105,8 +144,11 @@ Useful scripts:
    poller + delivery worker — see below.
 7. **Exchange API import** — the source stored only a key hint and discarded
    the secret; no import/sync logic existed. Ported as-is.
-8. **Billing ($8.88/mo from day 8) and PayPal affiliate payouts** — UI/marketing
-   copy only in the source; no Stripe or PayPal code existed. Not implemented.
+8. **Billing ($8.88/mo from day 8)** — was UI/marketing copy only in the
+   source; now implemented with real Stripe billing: `createCheckoutSession`
+   (7-day trial), `createPortalSession`, `getBillingStatus`, and a
+   `/webhooks/stripe` endpoint. See "Stripe setup" above. PayPal affiliate
+   payouts remain TODO.
 
 ## Not yet wired up (TODO, needs keys + code)
 
@@ -121,8 +163,6 @@ so the gaps are explicit, not as required env vars:
   `pushEnabled` flag only.
 - Price-feed API key (e.g. CoinGecko) + a scheduled worker — TODO: required
   to actually evaluate price alerts and write `alert_history`.
-- `STRIPE_SECRET_KEY` (+ webhook secret) — TODO: required to bill the
-  $8.88/mo Premium plan after the 7-day trial.
 - PayPal credentials — TODO: required to automate the quarterly $4.44
   affiliate payouts.
 - Exchange API import jobs — TODO: the app stores connection hints only;

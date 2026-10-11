@@ -13,6 +13,7 @@ import { z } from "zod";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
+import { baseUrl, getStripe } from "./billing.js";
 import {
   build8949,
   buildScheduleD,
@@ -25,6 +26,8 @@ export interface Ctx {
   db: NodePgDatabase<typeof schema>;
   /** No-op outside the Hatch runtime. */
   invalidateQueries: () => void;
+  /** Request origin, for building absolute URLs (e.g. Stripe redirects). */
+  origin: string | null;
 }
 
 type Method = "FIFO" | "LIFO" | "HIFO";
@@ -159,6 +162,8 @@ const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum([
 const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), phone: z.string().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
+const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable() });
+const redirectResponse = z.object({ url: z.string() });
 
 export const Actions = {
   signup: {
@@ -249,7 +254,7 @@ export const Actions = {
         if (tx.type.toUpperCase() === "TRADE" && tx.receivedAsset && tx.receivedAmount && tx.receivedPriceUsd != null) assetMap.set(tx.receivedAsset.toUpperCase(), { amount: tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0), value: (tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0)) * tx.receivedPriceUsd });
       }
       return {
-        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method },
+        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus },
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
         exchanges: exchanges.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
@@ -404,6 +409,80 @@ export const Actions = {
         transfers: result.transfers,
         form8949,
         scheduleD: buildScheduleD(form8949),
+      };
+    },
+  },
+  /**
+   * Start a Stripe Checkout subscription with a 7-day trial (no charge until
+   * day 8, matching the "no card required to start the trial" product copy —
+   * the card is collected here, the first charge lands after the trial).
+   * Creates and stores a Stripe customer on first use.
+   */
+  createCheckoutSession: {
+    request: tokenRequest,
+    response: redirectResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>): Promise<z.infer<typeof redirectResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      const stripe = getStripe();
+      const priceId = process.env.STRIPE_PRICE_ID;
+      if (!priceId) throw new Error("Billing is not configured yet.");
+      if (["trialing", "active", "past_due"].includes(user.subscriptionStatus) && user.stripeCustomerId) {
+        throw new Error("You already have a subscription — use Manage billing to update it.");
+      }
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: String(user.id) },
+        });
+        customerId = customer.id;
+        await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
+      }
+      const url = baseUrl(ctx.origin);
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer: customerId,
+        client_reference_id: String(user.id),
+        line_items: [{ price: priceId, quantity: 1 }],
+        subscription_data: { trial_period_days: 7 },
+        success_url: `${url}/?billing=success`,
+        cancel_url: `${url}/?billing=cancelled`,
+      });
+      if (!session.url) throw new Error("Could not start checkout. Try again.");
+      return { url: session.url };
+    },
+  },
+  /**
+   * Stripe Customer Portal session so subscribers can update their card or
+   * cancel without us handling payment details.
+   */
+  createPortalSession: {
+    request: tokenRequest,
+    response: redirectResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>): Promise<z.infer<typeof redirectResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      const stripe = getStripe();
+      if (!user.stripeCustomerId) throw new Error("No billing account yet — subscribe first.");
+      const session = await stripe.billingPortal.sessions.create({
+        customer: user.stripeCustomerId,
+        return_url: baseUrl(ctx.origin),
+      });
+      return { url: session.url };
+    },
+  },
+  /** Current subscription state for the signed-in user. */
+  getBillingStatus: {
+    request: tokenRequest,
+    response: billingStatusResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>): Promise<z.infer<typeof billingStatusResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      const status = user.subscriptionStatus || "none";
+      const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
+      return {
+        status,
+        // During a trial, Stripe sets current_period_end to the trial's end.
+        trialEndsAt: status === "trialing" ? periodEnd : null,
+        currentPeriodEnd: periodEnd,
       };
     },
   },

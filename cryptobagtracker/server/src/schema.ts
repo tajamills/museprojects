@@ -22,6 +22,10 @@ export const users = pgTable("users", {
   affiliateReferralCount: integer("affiliate_referral_count").notNull().default(0),
   affiliateEarnings: doublePrecision("affiliate_earnings").notNull().default(0),
   costBasisMethod: text("cost_basis_method", { enum: ["FIFO", "LIFO", "HIFO"] }).notNull().default("FIFO"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status").notNull().default("none"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "date" }),
   trialStartedAt: timestamp("trial_started_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
