@@ -339,3 +339,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+.auth-brand{display:flex;align-items:center;gap:12px}
+.brand-mark-lg{width:52px;height:52px;object-fit:contain}
+.auth-brand strong{font-size:30px;letter-spacing:-.01em}

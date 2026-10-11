@@ -77,7 +77,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <SafeAreaTopScrim backgroundColor="var(--bg)" />
       <main className="auth-layout">
         <section className="auth-intro">
-          <div className="auth-brand" aria-label="zepostia"><img src="/logo.png" alt="zepostia" className="brand-logo" /></div>
+          <div className="auth-brand" aria-label="zepostia"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark-lg" /><strong>zepostia</strong></div>
           <div className="signal-line"><span>5 channels</span><span>1 queue</span><span>0 password sharing</span></div>
           <h1>One post.<br /><em>Every signal.</em></h1>
           <p>Connect your channels through official OAuth, prepare each platform from one composer, and keep every publish state visible.</p>
