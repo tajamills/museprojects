@@ -47,4 +47,6 @@ await run(path.join(repoRoot, "node_modules", ".bin", "tailwindcss"), [
 ]);
 
 await cp(path.join(root, "index.html"), path.join(outdir, "index.html"));
+await cp(path.join(root, "logo.png"), path.join(outdir, "logo.png"));
+await cp(path.join(root, "logo-mark.png"), path.join(outdir, "logo-mark.png"));
 console.log("[build:client] dist/client ready");

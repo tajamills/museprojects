@@ -86,6 +86,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .auth-shell { min-height: 100vh; padding: calc(env(safe-area-inset-top) + 24px) 18px calc(env(safe-area-inset-bottom) + 28px); display: grid; place-items: center; }
 .auth-layout { width: min(1050px, 100%); display: grid; gap: 30px; }
 .auth-brand { display: flex; align-items: baseline; gap: 8px; width: fit-content; margin-bottom: 24px; font-family: Bahnschrift, "DIN Alternate", system-ui, sans-serif; font-size: clamp(29px, 8vw, 42px); font-weight: 900; letter-spacing: -.04em; line-height: 1; }
+.brand-logo { display: block; width: min(240px, 60vw); height: auto; border-radius: 14px; }
+.brand-mark { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; align-self: center; }
 .auth-brand span { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .55em; letter-spacing: -.08em; }
 .auth-intro h1 { margin: 19px 0 13px; max-width: 680px; font-family: Bahnschrift, "DIN Alternate", system-ui, sans-serif; font-size: clamp(44px, 12vw, 82px); line-height: .9; letter-spacing: -.05em; }
 .auth-intro h1 em { color: var(--accent-strong); font-style: normal; }

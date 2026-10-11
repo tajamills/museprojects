@@ -1,4 +1,4 @@
-# Marketing App — Railway deploy guide
+# zepostia — Railway deploy guide
 
 Port of the Hatch TS-space social marketing automation app (write once, post
 everywhere: Facebook / Instagram / TikTok / YouTube / X, with scheduling and
@@ -10,7 +10,7 @@ everywhere: Facebook / Instagram / TikTok / YouTube / X, with scheduling and
 |---|---|---|---|
 | `DATABASE_URL` | yes | — | Postgres connection string. On Railway, add the **Postgres plugin** to the service and this is injected automatically. |
 | `PORT` | no | `3000` | Railway injects this automatically. |
-| `APP_BASE_URL` | no | `http://localhost:3000` | Public URL of the deployment. Used in OAuth callback URLs once live OAuth handlers exist (e.g. `https://marketing-app.up.railway.app/oauth/facebook/callback`). |
+| `APP_BASE_URL` | no | `http://localhost:3000` | Public URL of the deployment. Used in OAuth callback URLs once live OAuth handlers exist (e.g. `https://zepostia.up.railway.app/oauth/facebook/callback`). |
 | `MEDIA_DIR` | no | `./media` | Where uploaded images/videos are stored; served at `/media`. |
 | `SCHEDULER_INTERVAL_MS` | no | `30000` | How often the in-process scheduler checks for due posts/bump comments. |
 | `FACEBOOK_CLIENT_SECRET` … `X_CLIENT_SECRET` | no | — | Optional overrides for the `vault://…` secret references stored in `platform_configs`. Only used by future live OAuth handlers; the app currently runs in demo mode. Never commit real values. |
@@ -79,4 +79,4 @@ See `.env.example` for the full list with comments.
   migration 0001 (then dropped in 0002) purely to keep migration history
   faithful; it is unused by the app.
 - **"Blastly" branding:** shelved per instructions (trademark conflict).
-  Everything is neutrally named "Marketing App" (`marketing-app`).
+  Rebranded to **zepostia** (2026-10-11).

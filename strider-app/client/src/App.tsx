@@ -77,7 +77,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <SafeAreaTopScrim backgroundColor="var(--bg)" />
       <main className="auth-layout">
         <section className="auth-intro">
-          <div className="auth-brand" aria-label="Marketing App">Marketing App<span aria-hidden="true">///</span></div>
+          <div className="auth-brand" aria-label="zepostia"><img src="/logo.png" alt="zepostia" className="brand-logo" /></div>
           <div className="signal-line"><span>5 channels</span><span>1 queue</span><span>0 password sharing</span></div>
           <h1>One post.<br /><em>Every signal.</em></h1>
           <p>Connect your channels through official OAuth, prepare each platform from one composer, and keep every publish state visible.</p>
@@ -86,7 +86,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           </div>
         </section>
 
-        <section className="auth-panel" aria-label="Marketing App account access">
+        <section className="auth-panel" aria-label="zepostia account access">
           <div className="demo-ribbon">DEMO / TEST MODE</div>
           <div className="auth-tabs" role="tablist" aria-label="Account access mode">
             <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} role="tab" aria-selected={mode === "signup"}>Create account</button>
@@ -392,11 +392,11 @@ export function App() {
   return <div className="app-shell">
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
-      <strong className="mobile-brand">Marketing App<span aria-hidden="true">///</span></strong>
+      <strong className="mobile-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
       <div className="mobile-status"><span className="live-dot" /><span>Demo</span><button aria-label="Open settings" onClick={() => setPage("settings")}>⌁</button></div>
     </header>
     <aside className="side-rail">
-      <div className="rail-brand">Marketing App<span aria-hidden="true">///</span></div>
+      <div className="rail-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
       <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>
       <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span>{item.label}</button>)}</nav>
       <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small></div>
