@@ -399,6 +399,9 @@ export const actions: Record<string, ActionDef> = {
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      if (!isDemoMode()) {
+        return { ok: false, message: "Real connections for this platform aren't built yet. Facebook is ready once you add your App ID." };
+      }
       return demoConnectAccount(ctx, user, args.platform);
     },
   },
@@ -415,6 +418,9 @@ export const actions: Record<string, ActionDef> = {
       if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
       const creds = await facebookAppCredentials(ctx, user.id);
       if (!creds) {
+        if (!isDemoMode()) {
+          return { ok: false, message: "Add your Facebook App ID in Settings \u2192 Facebook first, then connect.", mode: "oauth", authUrl: null };
+        }
         const demo = await demoConnectAccount(ctx, user, "facebook");
         return { ...demo, mode: "demo", authUrl: null };
       }
