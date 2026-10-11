@@ -138,7 +138,7 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
       <div className="section-heading"><div><span className="section-code">TOKEN HEALTH</span><h2>Account lines</h2></div><button className="text-button" onClick={() => go("accounts")}>Manage all</button></div>
       <div className="account-lines">
         {PLATFORM_ORDER.map((platform) => {
-          const account = accounts.find((item) => item.platform === platform);
+          const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
           return <button key={platform} className="account-line" onClick={() => go("accounts")}>
             <PlatformBadge platform={platform} />
             <span className="account-copy"><strong>{PLATFORM_META[platform].label}</strong><small>{account ? account.handle : "Not connected"}</small></span>
@@ -331,7 +331,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     <div className="connect-list">{PLATFORM_ORDER.map((platform) => {
       const meta = PLATFORM_META[platform];
       const setting = settings.find((item) => item.platform === platform);
-      const account = accounts.find((item) => item.platform === platform);
+      const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
       const needsReconnect = account && account.status !== "connected";
       const isFacebook = platform === "facebook";
       const connectBusy = busyPlatform === platform;
