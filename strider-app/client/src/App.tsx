@@ -382,6 +382,7 @@ function PlatformSettingsCard({ setting, token, onMessage }: { setting: Platform
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
     <div className="settings-body">
+      {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
       <div className="go-live-list"><p><b>1</b><span>Create:</span> {setting.developerApp}</p><p><b>2</b><span>Collect:</span> {setting.credentialFields}</p><p><b>3</b><span>Callback:</span> Deploy the app on your host, then add the exact OAuth callback URL for that deployment (see DEPLOY.md).</p><p><b>4</b><span>Permissions:</span> Request only sign-in, profile/account discovery, and content publishing scopes.</p></div>
       <label>Client ID<input value={clientId} onChange={(event) => setClientId(event.target.value)} /></label>
       <label>Secret vault reference<input value={secretReference} onChange={(event) => setSecretReference(event.target.value)} /></label>
