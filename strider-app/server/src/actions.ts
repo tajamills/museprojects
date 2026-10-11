@@ -379,7 +379,7 @@ export const actions: Record<string, ActionDef> = {
   },
 
   savePlatformConfig: {
-    request: z.object({ sessionToken: z.string().min(1), platform: platformSchema, clientId: z.string().trim().min(1).max(300), secretReference: z.string().trim().min(1).max(500) }),
+    request: z.object({ sessionToken: z.string().min(1), platform: platformSchema, clientId: z.string().trim().min(1).max(300), secretReference: z.string().trim().max(500).optional().default("") }),
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
