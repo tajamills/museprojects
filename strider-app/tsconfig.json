@@ -1,0 +1,1 @@
+{"compilerOptions":{"allowImportingTsExtensions":false,"esModuleInterop":true,"lib":["ES2022"],"module":"NodeNext","moduleResolution":"NodeNext","outDir":"./dist","resolveJsonModule":true,"rootDir":"./server","skipLibCheck":true,"strict":true,"target":"ES2022","types":["node"]},"include":["server/src/**/*"]}

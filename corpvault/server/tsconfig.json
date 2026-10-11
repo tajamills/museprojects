@@ -1,0 +1,1 @@
+{"compilerOptions":{"declaration":false,"module":"NodeNext","moduleResolution":"NodeNext","outDir":"../dist/server","rootDir":"./src","sourceMap":false,"types":["node"]},"extends":"../tsconfig.base.json","include":["src"]}

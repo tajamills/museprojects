@@ -1,0 +1,1 @@
+{"compilerOptions":{"jsx":"react-jsx","lib":["ES2022","DOM","DOM.Iterable"],"module":"ESNext","moduleResolution":"Bundler","noEmit":true,"types":[]},"extends":"../tsconfig.base.json","include":["src","../server/src/actions.ts","../server/src/schema.ts"]}
