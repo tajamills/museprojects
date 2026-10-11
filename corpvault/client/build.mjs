@@ -14,7 +14,7 @@
 
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path, { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -76,7 +76,7 @@ const html = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="./logo-mark.png" />
     <title>kovala</title>
     <link rel="stylesheet" href="./assets/theme.css" />
     <script type="module" src="./assets/${jsFile}"></script>
@@ -87,5 +87,7 @@ const html = `<!doctype html>
 </html>
 `;
 await writeFile(path.join(outDir, "index.html"), html);
+await cp(path.join(here, "logo.png"), path.join(outDir, "logo.png"));
+await cp(path.join(here, "logo-mark.png"), path.join(outDir, "logo-mark.png"));
 
 console.log(`Client bundle written to ${outDir}`);
