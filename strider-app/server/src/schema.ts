@@ -12,6 +12,10 @@ export const users = pgTable("users", {
   passwordSalt: text("password_salt").notNull(),
   demoMode: boolean("demo_mode").notNull().default(true),
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status").notNull().default("none"),
+  currentPeriodEnd: timestamp("current_period_end", { mode: "date", withTimezone: true }),
 });
 
 export const sessions = pgTable(

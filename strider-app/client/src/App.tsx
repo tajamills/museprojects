@@ -343,11 +343,49 @@ function PlatformSettingsCard({ setting, token, onMessage }: { setting: Platform
   </details>;
 }
 
+function BillingSection({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+  const statusQuery = useQuery({
+    queryKey: ["billing", token],
+    queryFn: () => api.getBillingStatus({ sessionToken: token }),
+    retry: false,
+  });
+  const friendly = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : "Could not continue.";
+    return /not configured/i.test(msg) ? "Billing isn't connected yet. Check back soon." : msg.replace(/^action \w+ error: /, "");
+  };
+  const checkout = useMutation({
+    mutationFn: () => api.createCheckoutSession({ sessionToken: token }),
+    onSuccess: (result) => { window.location.href = result.url; },
+    onError: (e) => onMessage(friendly(e)),
+  });
+  const portal = useMutation({
+    mutationFn: () => api.createPortalSession({ sessionToken: token }),
+    onSuccess: (result) => { window.location.href = result.url; },
+    onError: (e) => onMessage(friendly(e)),
+  });
+  const status = statusQuery.data?.status ?? "none";
+  const subscribed = ["trialing", "active", "past_due"].includes(status);
+  const label = status === "trialing" ? "Free trial" : status === "active" ? "Active" : status === "past_due" ? "Past due" : status === "canceled" ? "Canceled" : "No subscription";
+  const trialEnd = statusQuery.data?.trialEndsAt ? new Date(statusQuery.data.trialEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+  const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+  return <section className="profile-block" aria-label="Billing">
+    <div><span className="section-code">BILLING</span><h2>zepostia plan</h2><p>$19.88/month, billed monthly. Cancel anytime.</p></div>
+    {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
+      <p><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
+      {subscribed
+        ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
+        : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
+      {!subscribed && <p className="secret-note">14-day free trial — your card is collected at checkout and charged $19.88 on day 15. Checkout is secured by Stripe.</p>}
+    </>}
+  </section>;
+}
+
 function Settings({ settings, token, user, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string }; onMessage: (message: string) => void; onSignOut: () => void }) {
   return <div className="page-stack">
     <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
     <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
     <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} />)}</section>
+    <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
 }

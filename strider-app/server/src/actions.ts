@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { AppCtx } from "./ctx.js";
 import * as schema from "./schema.js";
+import { TRIAL_DAYS, baseUrl, getStripe } from "./billing.js";
 
 const platformSchema = z.enum(["facebook", "instagram", "tiktok", "youtube", "x"]);
 type Platform = z.infer<typeof platformSchema>;
@@ -107,6 +108,19 @@ async function requireUser(ctx: AppCtx, token: string) {
   const user = rows[0];
   if (!user || user.expiresAt.getTime() <= Date.now()) return null;
   return user;
+}
+
+/** Full user row (including billing fields) for a valid session token. */
+async function billingUser(ctx: AppCtx, token: string) {
+  const rows = await ctx.db
+    .select()
+    .from(schema.sessions)
+    .innerJoin(schema.users, eq(schema.sessions.userId, schema.users.id))
+    .where(eq(schema.sessions.token, token))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.sessions.expiresAt.getTime() <= Date.now()) return null;
+  return row.users;
 }
 
 const authResponse = z.object({
@@ -467,6 +481,82 @@ export const actions: Record<string, ActionDef> = {
       });
       ctx.invalidateQueries();
       return { ok: true, message: "Scheduled post cancelled." };
+    },
+  },
+
+  /**
+   * Start a Stripe Checkout subscription for the $19.88/month zepostia plan.
+   * 14-day free trial: the card is collected at checkout, the first charge
+   * lands on day 15. Creates and stores a Stripe customer on first use.
+   */
+  createCheckoutSession: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ url: string }> {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const stripe = getStripe();
+      const priceId = process.env.STRIPE_PRICE_ID;
+      if (!priceId) throw new Error("Billing is not configured yet.");
+      if (["trialing", "active", "past_due"].includes(user.subscriptionStatus) && user.stripeCustomerId) {
+        throw new Error("You already have a subscription — use Manage billing to update it.");
+      }
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: String(user.id) },
+        });
+        customerId = customer.id;
+        await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
+      }
+      const url = baseUrl(ctx.origin);
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer: customerId,
+        client_reference_id: String(user.id),
+        line_items: [{ price: priceId, quantity: 1 }],
+        subscription_data: { trial_period_days: TRIAL_DAYS },
+        success_url: `${url}/?billing=success`,
+        cancel_url: `${url}/?billing=cancelled`,
+      });
+      if (!session.url) throw new Error("Could not start checkout. Try again.");
+      return { url: session.url };
+    },
+  },
+
+  /**
+   * Stripe Customer Portal session so subscribers can update their card or
+   * cancel without us handling payment details.
+   */
+  createPortalSession: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ url: string }> {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const stripe = getStripe();
+      if (!user.stripeCustomerId) throw new Error("No billing account yet — subscribe first.");
+      const session = await stripe.billingPortal.sessions.create({
+        customer: user.stripeCustomerId,
+        return_url: baseUrl(ctx.origin),
+      });
+      return { url: session.url };
+    },
+  },
+
+  /** Current subscription state for the signed-in user. */
+  getBillingStatus: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null }> {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const status = user.subscriptionStatus || "none";
+      const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
+      return {
+        status,
+        // During a trial, Stripe sets current_period_end to the trial's end.
+        trialEndsAt: status === "trialing" ? periodEnd : null,
+        currentPeriodEnd: periodEnd,
+      };
     },
   },
 };

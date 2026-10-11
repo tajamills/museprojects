@@ -44,6 +44,13 @@ type CreatePostRequest = {
   media?: { name: string; mimeType: string; dataBase64: string };
 };
 
+type BillingStatusResult = {
+  status: string;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+};
+type RedirectResult = { url: string };
+
 type ClientApi = {
   createDemoSession(args: Record<string, never>): Promise<AuthResult>;
   signup(args: { email: string; displayName: string; password: string }): Promise<AuthResult>;
@@ -57,6 +64,9 @@ type ClientApi = {
   advanceBumpDemo(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   cancelBumpPlan(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   cancelPost(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
+  createCheckoutSession(args: { sessionToken: string }): Promise<RedirectResult>;
+  createPortalSession(args: { sessionToken: string }): Promise<RedirectResult>;
+  getBillingStatus(args: { sessionToken: string }): Promise<BillingStatusResult>;
 };
 
 /** Request args type for a ClientApi method (replaces the SDK's ApiRequest). */

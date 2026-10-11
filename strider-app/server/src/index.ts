@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
 import { actions } from "./actions.js";
+import { stripeWebhookHandler } from "./billing.js";
 import { createCtx, resolveMediaDir } from "./ctx.js";
 import { createDb, createPool, migrate } from "./db.js";
 import { startScheduler } from "./scheduler.js";
@@ -22,6 +23,22 @@ async function main() {
 
   const app = express();
   app.disable("x-powered-by");
+
+  // Stripe webhook: Stripe's signature covers the raw request bytes, so this
+  // route MUST use express.raw() and MUST be registered before express.json().
+  app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
+    const result = await stripeWebhookHandler(
+      db,
+      req.body as Buffer,
+      req.headers["stripe-signature"] as string | undefined,
+    );
+    if (!result.ok) {
+      res.status(400).json({ error: result.error ?? "Webhook error" });
+      return;
+    }
+    res.json({ received: true });
+  });
+
   // Media uploads travel as base64 inside action JSON (max 12 MB files).
   app.use(express.json({ limit: "20mb" }));
 
@@ -36,6 +53,7 @@ async function main() {
       res.status(404).json({ error: `Unknown action: ${String(action)}` });
       return;
     }
+    ctx.origin = req.get("origin") ?? null;
     try {
       const parsedArgs = def.request.parse(args ?? {});
       const data = await def.handler(ctx, parsedArgs);

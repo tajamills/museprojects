@@ -23,10 +23,13 @@ export interface AppCtx {
     getUrl(key: string): Promise<string>;
   };
   invalidateQueries(): void;
+  /** Request origin (for Stripe redirect URLs); null when unknown. */
+  origin: string | null;
 }
 
 export function createCtx(db: Db, mediaDir: string): AppCtx {
   return {
+    origin: null,
     db,
     blobs: {
       async put(key, bytes, _opts) {
