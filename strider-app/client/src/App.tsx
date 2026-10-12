@@ -582,7 +582,7 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
 
-      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
       {isAdmin && <p className="secret-note">Owner Meta app: {metaConfigured ? "configured" : "not configured — set FACEBOOK_APP_ID and FACEBOOK_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && setting.platform === "facebook" && <button className="secondary-button" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? "Testing…" : "Test Meta connection"}</button>}
       {!isAdmin && <p className="secret-note">Connect with {setting.label} on the Accounts page — no setup needed.</p>}
@@ -599,7 +599,7 @@ function TikTokPlatformCard({ isAdmin, tiktokConfigured }: { isAdmin: boolean; t
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform="tiktok" /><strong>TikTok</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
-      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
       <p className="secret-note">TikTok posts video only. New TikTok apps post privately until the app passes TikTok's audit.</p>
       {isAdmin && <p className="secret-note">Owner TikTok app: {tiktokConfigured ? "configured" : "not configured — set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET on the server"}.</p>}
       {!isAdmin && <p className="secret-note">Connect with TikTok on the Accounts page — no setup needed.</p>}
@@ -616,7 +616,7 @@ function XPlatformCard({ isAdmin, xConfigured, xPostsUsed, xPostsCap }: { isAdmi
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform="x" /><strong>X</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
-      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
       <p className="secret-note">X posts text only (280 characters max).</p>
       {isAdmin && <p className="secret-note">Owner X app: {xConfigured ? "configured" : "not configured — set X_CLIENT_ID and X_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && <p className="secret-note">Heads up: X charges per tweet on new developer accounts (pay-per-use, roughly $0.015 per post, more for posts with links). Every customer tweet bills your X account — fund credits in the X Developer Console before real posting.</p>}
@@ -635,7 +635,7 @@ function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean;
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform="youtube" /><strong>YouTube</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
-      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
       <p className="secret-note">YouTube posts video only — every upload needs a video file and a title. Uploads use ~1,600 API quota units each (10,000/day free).</p>
       {isAdmin && <p className="secret-note">Owner YouTube app: {youtubeConfigured ? "configured" : "not configured — set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on the server"}.</p>}
       {!isAdmin && <p className="secret-note">Connect with YouTube on the Accounts page — no setup needed.</p>}
