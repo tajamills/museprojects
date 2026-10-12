@@ -64,4 +64,5 @@ await new Promise((resolve, reject) => {
 });
 
 cpSync(path.join(root, "index.html"), path.join(outdir, "index.html"));
+cpSync(path.join(root, "favicon.svg"), path.join(outdir, "favicon.svg"));
 console.log("client build complete ->", outdir);
