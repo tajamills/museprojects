@@ -121,20 +121,100 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <SafeAreaTopScrim backgroundColor="var(--bg)" />
       <header className="landing-header">
         <div className="landing-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
+        <nav className="landing-nav" aria-label="Primary">
+          <a href="#how-it-works">Product</a>
+          <a href="#pricing">Pricing</a>
+        </nav>
         <div className="landing-actions">
           <button className="quiet-button" onClick={() => openAuth("login")}>Log in</button>
           <button className="primary-button" onClick={() => openAuth("signup")}>Get Started</button>
         </div>
       </header>
-      <main className="landing-hero">
-        <h1>One post.<br /><em>Every channel.</em></h1>
-        <p>Write once and publish to Facebook, Instagram, TikTok, YouTube, and X — on your schedule.</p>
-        <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
-        <ul className="trust-strip">
-          <li><span className="trust-check"><IconCheck /></span>No credit card required</li>
-          <li><span className="trust-check"><IconCheck /></span>Set up in minutes</li>
-          <li><span className="trust-check"><IconCheck /></span>14-day free trial</li>
-        </ul>
+      <main className="landing-main">
+        <section className="hero-grid">
+          <div className="hero-copy">
+            <span className="hero-badge">Social media, simplified</span>
+            <h1>One post.<br /><em>Every channel.</em></h1>
+            <p>Write once, post everywhere. Connect your Facebook, Instagram, TikTok, YouTube, and X accounts, then compose and schedule from one place.</p>
+            <div className="hero-ctas">
+              <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
+              <a className="secondary-button hero-cta" href="#how-it-works">See how it works</a>
+            </div>
+            <ul className="trust-strip">
+              <li><span className="trust-check"><IconCheck /></span>No credit card required</li>
+              <li><span className="trust-check"><IconCheck /></span>Set up in minutes</li>
+              <li><span className="trust-check"><IconCheck /></span>14-day free trial</li>
+            </ul>
+          </div>
+          <div className="mockup" aria-hidden="true">
+            <div className="mockup-bar"><span /><span /><span /></div>
+            <div className="mockup-body">
+              <div className="mockup-head"><BrandMark className="brand-mark" /><strong>zepostia</strong><span className="mockup-live">Live</span></div>
+              <div className="mockup-composer">
+                <p>What do you want to publish?</p>
+                <div className="mockup-chips">
+                  {PLATFORM_ORDER.map((platform) => <PlatformBadge key={platform} platform={platform} small />)}
+                </div>
+              </div>
+              <div className="mockup-actions">
+                <span className="mockup-btn-primary">Post now</span>
+                <span className="mockup-btn">Schedule</span>
+              </div>
+              <div className="mockup-queue">
+                <div className="mockup-row">
+                  <div className="mockup-dots">
+                    <PlatformBadge platform="facebook" small />
+                    <PlatformBadge platform="instagram" small />
+                  </div>
+                  <div><p>Morning update is ready to go&hellip;</p><span>Tue 9:00 AM &middot; Scheduled</span></div>
+                </div>
+                <div className="mockup-row">
+                  <div className="mockup-dots">
+                    <PlatformBadge platform="tiktok" small />
+                  </div>
+                  <div><p>New video is live&hellip;</p><span>Published 2h ago</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className="platforms-strip" aria-label="Supported platforms">
+          <span>Posts to</span>
+          {PLATFORM_ORDER.map((platform) => (
+            <span key={platform} className="platform-item">
+              <PlatformBadge platform={platform} small />{PLATFORM_META[platform].label}
+            </span>
+          ))}
+        </section>
+        <section className="how-section" id="how-it-works">
+          <h2>How it works</h2>
+          <p>Three steps. No developer setup, no juggling logins.</p>
+          <div className="steps-grid">
+            <div className="step-card">
+              <span className="step-num">1</span>
+              <h3>Connect your accounts</h3>
+              <p>Link each social account once with its official login. Zepostia never sees your passwords.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">2</span>
+              <h3>Write once</h3>
+              <p>Compose a single post. Zepostia adapts it to each platform&apos;s rules before it goes out.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">3</span>
+              <h3>Schedule &amp; post</h3>
+              <p>Publish right away or queue it for later. Your posts go out on time, every time.</p>
+            </div>
+          </div>
+        </section>
+        <section className="pricing-section" id="pricing">
+          <h2>One plan, everything included</h2>
+          <div className="pricing-card">
+            <div className="price">$19.88<small> / month</small></div>
+            <p>All five channels. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
+            <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
+          </div>
+        </section>
       </main>
       <footer className="landing-footer">
         <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
