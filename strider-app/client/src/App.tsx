@@ -513,8 +513,8 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
   });
   return <div className="page-stack">
-    <div className="page-heading"><span className="section-code">OFFICIAL OAUTH ONLY</span><h1>Connect channels without sharing passwords.</h1><p>{demoMode ? "Every connection is isolated per platform. In demo mode, the authorization step is simulated and no external service is contacted." : "Every connection is isolated per platform. Add your credentials in Settings to enable live connections."}</p></div>
-    <div className="oauth-rule"><strong>What this app never does</strong><span>No browser automation · no credential stuffing · no platform password forms</span></div>
+    <div className="page-heading"><h1>Accounts</h1><p>Connect your social accounts. You log in with each platform directly — zepostia never sees your passwords.</p></div>
+    <div className="oauth-rule"><strong>Your passwords stay with the platforms</strong><span>Zepostia connects through official OAuth. You log in on Facebook, Google, or X directly — we never see or store passwords.</span></div>
     <div className="connect-list">{PLATFORM_ORDER.map((platform) => {
       const meta = PLATFORM_META[platform];
       const setting = settings.find((item) => item.platform === platform);
@@ -556,8 +556,8 @@ function Queue({ posts, token, onMessage, embedded }: { posts: Post[]; token: st
   });
   const filtered = filter === "all" ? posts : posts.filter((post) => post.status === filter);
   return <div className={embedded ? "queue-embedded" : "page-stack"}>
-    {!embedded && <div className="page-heading"><span className="section-code">DELIVERY QUEUE</span><h1>Every post has a visible state.</h1><p>Pending items can be cancelled. Failures stay attached to the affected platform instead of disappearing into a generic error.</p></div>}
-    {embedded && <div className="section-heading"><div><span className="section-code">SCHEDULE</span><h2>Queued and past posts</h2></div></div>}
+    {!embedded && <div className="page-heading"><h1>Queue</h1><p>Scheduled posts waiting to go out. Cancel anything before it publishes.</p></div>}
+    {embedded && <div className="section-heading"><div><h2>Queued and past posts</h2></div></div>}
     <div className="filter-row" role="group" aria-label="Filter posts">{(["all", "pending", "published", "failed"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
     {filtered.length === 0 ? <EmptyState title={filter === "all" ? "Queue is empty" : `No ${filter} posts`} body="Posts you publish or schedule will land here with per-platform status." /> : <PostList posts={filtered} onCancel={(id) => cancel.mutate(id)} onCancelBump={(id) => cancelBump.mutate(id)} onAdvanceBump={(id) => advanceBump.mutate(id)} cancelling={cancel.isPending || cancelBump.isPending || advanceBump.isPending} />}
   </div>;
@@ -702,7 +702,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   const trialEnd = statusQuery.data?.trialEndsAt ? new Date(statusQuery.data.trialEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   return <section className="profile-block" aria-label="Billing">
-    <div><span className="section-code">BILLING</span><h2>zepostia plan</h2><p>$19.88/month, billed monthly. Cancel anytime.</p></div>
+    <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime.</p></div>
     {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
       <p><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
       {subscribed
@@ -716,11 +716,11 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
 function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
-    <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
-    <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
+    <div className="page-heading"><h1>Settings</h1><p>Platform connections, billing, and your account.</p></div>
+    <section className="security-manifest"><h2>How credentials work</h2><p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p></section>
     <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
-    <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
+    <section className="profile-block"><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
 }
 
