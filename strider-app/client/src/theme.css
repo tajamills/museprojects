@@ -255,6 +255,9 @@ input[type="password"]::placeholder {
 .page-heading { padding-top: 5px; }
 .page-heading h1 { font-size: clamp(28px, 6vw, 40px); font-weight: 800; line-height: 1.08; letter-spacing: -.02em; margin: 10px 0 10px; max-width: 790px; color: var(--text); }
 .page-heading p { color: var(--dim); margin: 0; max-width: 690px; line-height: 1.6; font-size: 15px; }
+.dash-hero { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 28px; display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+.dash-hero h1 { font-size: clamp(24px, 4vw, 32px); font-weight: 800; letter-spacing: -.02em; margin: 0 0 8px; }
+.dash-hero p { color: var(--dim); margin: 0; font-size: 15px; }
 .command-hero { min-height: 285px; background: #111417; color: #F2F4F5; padding: 28px 24px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; border-radius: 12px; position: relative; overflow: hidden; box-shadow: var(--shadow); }
 .command-hero::after { content: ""; position: absolute; right: 40px; top: -40px; width: 220px; height: 220px; background: radial-gradient(circle, rgba(247,201,72,.22) 0%, transparent 70%); }
 .command-hero > * { position: relative; z-index: 1; }

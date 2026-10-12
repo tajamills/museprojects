@@ -252,8 +252,8 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
   const pending = posts.filter((post) => post.status === "pending").length;
   const needsAttention = accounts.filter((account) => account.status !== "connected");
   return <div className="page-stack">
-    <section className="command-hero">
-      <div><span className="section-code">CONTROL ROOM</span><h1>{connected === 0 ? "Connect your first channel" : `${connected} channels standing by`}</h1><p>{connected === 0 ? (demoMode ? "Official OAuth only. Demo connections let you test the flow without contacting a platform." : "Official OAuth only. Connect your channels to start publishing.") : "Compose once, review each format, then send now or place it in the queue."}</p></div>
+    <section className="dash-hero">
+      <div><h1>{connected === 0 ? "Connect your first channel" : connected === 1 ? "1 channel connected" : `${connected} channels connected`}</h1><p>{connected === 0 ? "Connect your social accounts to start publishing." : "Write once, publish everywhere."}</p></div>
       <button className="primary-button" onClick={() => go(connected === 0 ? "accounts" : "post")}>{connected === 0 ? "Connect channels" : "Create post"}</button>
     </section>
 
@@ -266,7 +266,7 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
     </section>
 
     <section className="content-section">
-      <div className="section-heading"><div><span className="section-code">LATEST RUNS</span><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("post")}>Open posts</button></div>
+      <div className="section-heading"><div><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("post")}>Open posts</button></div>
       {posts.length === 0 ? <EmptyState title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("post")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
     </section>
   </div>;
@@ -345,7 +345,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
 
   const toggle = (id: number) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   return <div className="page-stack composer-page">
-    <div className="page-heading"><span className="section-code">MASTER COMPOSER</span><h1>Build once. Check every cut.</h1><p>One source post, with platform rules enforced before it enters the queue.</p></div>
+    <div className="page-heading"><h1>New post</h1><p>Write once, preview each platform, then post now or schedule it.</p></div>
     {connected.length === 0 ? <EmptyState title="No channels connected" body={demoMode ? "Run a demo OAuth connection first. No platform passwords are ever requested." : "Connect a channel first. No platform passwords are ever requested."} action={<button className="primary-button" onClick={goAccounts}>Connect a channel</button>} /> : <>
       <section className="composer-grid">
         <div className="composer-card">
