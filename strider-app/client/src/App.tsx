@@ -117,7 +117,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
 
 function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]; go: (page: Page) => void }) {
   const demoMode = useServerDemoMode();
-  const connected = accounts.filter((account) => account.status === "connected").length;
+  const connected = accounts.filter((account) => account.status === "connected" && (demoMode || account.authMode === "oauth")).length;
   const pending = posts.filter((post) => post.status === "pending").length;
   const needsAttention = accounts.filter((account) => account.status !== "connected");
   return <div className="page-stack">
