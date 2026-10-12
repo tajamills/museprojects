@@ -146,7 +146,7 @@ export function TermsPage() {
       </section>
       <section>
         <h2>12. Contact</h2>
-        <p>Questions about these terms? Email us at our support page.</p>
+        <p>Questions about these terms? Email us at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
       </section>
     </LegalShell>
   );
@@ -220,7 +220,7 @@ export function PrivacyPage() {
           <li>Disconnect any social account, which removes its stored tokens.</li>
           <li>Cancel your subscription and request deletion of your account and data by emailing us.</li>
         </ul>
-        <p>To exercise any of these rights, email our support page.</p>
+        <p>To exercise any of these rights, email <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
       </section>
       <section>
         <h2>7. Security</h2>
@@ -243,7 +243,7 @@ export function PrivacyPage() {
       </section>
       <section>
         <h2>10. Contact</h2>
-        <p>Questions about your privacy? Email us at our support page.</p>
+        <p>Questions about your privacy? Email us at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
       </section>
     </LegalShell>
   );
