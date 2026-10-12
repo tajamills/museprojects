@@ -216,6 +216,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
     <div className="page-heading"><span className="section-code">MASTER COMPOSER</span><h1>Build once. Check every cut.</h1><p>One source post, with platform rules enforced before it enters the queue.</p></div>
     {connected.length === 0 ? <EmptyState title="No channels connected" body={demoMode ? "Run a demo OAuth connection first. No platform passwords are ever requested." : "Connect a channel first. No platform passwords are ever requested."} action={<button className="primary-button" onClick={goAccounts}>Connect a channel</button>} /> : <>
       <section className="composer-grid">
+        <div className="composer-card">
         <div className="compose-form">
           <label className="field-label">Post text <span className={body.length > 280 && selectedPlatforms.includes("x") ? "limit-bad" : ""}>{body.length}{selectedPlatforms.includes("x") ? "/280 for X" : " characters"}</span>
             <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} placeholder="What do you want to publish?" />
@@ -248,6 +249,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
           {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary-button wide" disabled={publish.isPending || selected.length === 0 || requirements.length > 0} onClick={() => publish.mutate()}>{publish.isPending ? "Preparing…" : mode === "now" ? `Publish to ${selected.length || 0}` : `Add ${selected.length || 0} to queue`}</button>
           {demoMode ? <p className="demo-action-note">Demo mode simulates the final official API response and never contacts an external account.</p> : <p className="demo-action-note">Publishing activates once your platform credentials are connected in Settings.</p>}
+        </div>
         </div>
 
         <aside className="preview-panel">
