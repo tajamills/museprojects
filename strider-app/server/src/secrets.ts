@@ -25,8 +25,8 @@ const PLATFORM_SECRET_ENV: Record<string, string> = {
 export function resolvePlatformSecret(platform: string): string | null {
   const envKey = PLATFORM_SECRET_ENV[platform];
   if (!envKey) return null;
-  const value = process.env[envKey];
-  return value && value.length > 0 ? value : null;
+  const value = (process.env[envKey] ?? "").trim();
+  return value.length > 0 ? value : null;
 }
 
 /** Lists which platforms currently have a secret override configured.
