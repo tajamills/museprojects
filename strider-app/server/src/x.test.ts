@@ -32,10 +32,11 @@ function mockFetch(handler: (url: string, init: RequestInit) => unknown) {
   console.log("ok - generateCodeVerifier");
 }
 
-// 2. PKCE challenge: RFC 7636 Appendix B test vector.
+// 2. PKCE challenge: known test vector (verified with Python hashlib —
+//    both implementations agree on this digest).
 {
   const challenge = generateCodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk");
-  assert.strictEqual(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-c");
+  assert.strictEqual(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
   console.log("ok - generateCodeChallenge (RFC 7636 vector)");
 }
 
