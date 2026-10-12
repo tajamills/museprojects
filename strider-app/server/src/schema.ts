@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 // Ported from the original SQLite schema. Epoch-millisecond integer
 // timestamps became timestamptz columns (mode: "date"), so the action
@@ -120,6 +120,12 @@ export const instagramConnections = pgTable("instagram_connections", {
  * to refresh before posting. Both tokens are AES-256-GCM encrypted
  * (see TOKEN_ENCRYPTION_KEY); never plaintext.
  */
+export const xMonthlyUsage = pgTable("x_monthly_usage", {
+  userId: integer("user_id").notNull(),
+  yearMonth: text("year_month").notNull(),
+  postCount: integer("post_count").notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.userId, t.yearMonth] })]);
+
 export const xConnections = pgTable("x_connections", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),

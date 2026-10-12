@@ -371,6 +371,10 @@ export const actions: Record<string, ActionDef> = {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { authenticated: false, user: null, accounts: [], posts: [] };
       const accounts = await ctx.db.select().from(schema.connectedAccounts).where(eq(schema.connectedAccounts.userId, user.id)).orderBy(schema.connectedAccounts.id);
+      const now = new Date();
+      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const xUsageRows = await ctx.db.select().from(schema.xMonthlyUsage)
+        .where(and(eq(schema.xMonthlyUsage.userId, user.id), eq(schema.xMonthlyUsage.yearMonth, ym))).limit(1);
       const postRows = await ctx.db.select().from(schema.posts).where(eq(schema.posts.userId, user.id)).orderBy(desc(schema.posts.createdAt)).limit(40);
       const postIds = postRows.map((post) => post.id);
       const targets = postIds.length > 0
@@ -408,6 +412,8 @@ export const actions: Record<string, ActionDef> = {
       return {
         authenticated: true,
         user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode, role: user.role ?? "user" },
+        xPostsUsed: xUsageRows[0]?.postCount ?? 0,
+        xPostsCap: Number(process.env.X_MONTHLY_POST_CAP ?? "60") || 60,
         accounts: accounts.map((account) => ({
           id: account.id,
           platform: account.platform,
@@ -428,8 +434,13 @@ export const actions: Record<string, ActionDef> = {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, platforms: [] };
       const configs = await ctx.db.select().from(schema.platformConfigs).where(eq(schema.platformConfigs.userId, user.id));
+      const nowYm = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+      const xUsage = await ctx.db.select().from(schema.xMonthlyUsage)
+        .where(and(eq(schema.xMonthlyUsage.userId, user.id), eq(schema.xMonthlyUsage.yearMonth, nowYm))).limit(1);
       return {
         ok: true,
+        xPostsUsed: xUsage[0]?.postCount ?? 0,
+        xPostsCap: Number(process.env.X_MONTHLY_POST_CAP ?? "60") || 60,
         metaConfigured: isMetaAppConfigured(),
         tiktokConfigured: isTikTokAppConfigured(),
         youtubeConfigured: isYoutubeConfigured(),

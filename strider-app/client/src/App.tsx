@@ -1,6 +1,6 @@
 import { SafeAreaTopScrim, fileToBase64 } from "./client-helpers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { api, type ApiResponse } from "./api";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
@@ -9,20 +9,49 @@ type Account = ApiResponse<typeof api, "getWorkspace">["accounts"][number];
 type Post = ApiResponse<typeof api, "getWorkspace">["posts"][number];
 type PlatformSetting = ApiResponse<typeof api, "listPlatformSettings">["platforms"][number];
 
+/* ---------- Icon library: inline SVGs only, never emoji ---------- */
+function BrandIcon({ path }: { path: string }) {
+  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d={path} /></svg>;
+}
+function StrokeIcon({ children }: { children: ReactNode }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>;
+}
+const IconFacebook = () => <BrandIcon path="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />;
+const IconInstagram = () => <BrandIcon path="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />;
+const IconTikTok = () => <BrandIcon path="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />;
+const IconYoutube = () => <BrandIcon path="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />;
+const IconX = () => <BrandIcon path="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />;
+const IconHome = () => <StrokeIcon><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></StrokeIcon>;
+const IconCompose = () => <StrokeIcon><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></StrokeIcon>;
+const IconUsers = () => <StrokeIcon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></StrokeIcon>;
+const IconGear = () => <StrokeIcon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></StrokeIcon>;
+const IconHeart = () => <StrokeIcon><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></StrokeIcon>;
+const IconComment = () => <StrokeIcon><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></StrokeIcon>;
+const IconShare = () => <StrokeIcon><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></StrokeIcon>;
+const IconImage = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></StrokeIcon>;
+const IconCheck = () => <StrokeIcon><polyline points="20 6 9 17 4 12" /></StrokeIcon>;
+
+/** Logo mark with a styled "Z" fallback if the image fails to load. */
+function BrandMark({ className }: { className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className={`brand-mark-fallback ${className ?? ""}`} aria-hidden="true">Z</span>;
+  return <img src="/logo-mark.png" alt="" aria-hidden="true" className={className} onError={() => setFailed(true)} />;
+}
+
 const PLATFORM_ORDER: Platform[] = ["facebook", "instagram", "tiktok", "youtube", "x"];
-const PLATFORM_META: Record<Platform, { label: string; mark: string; className: string }> = {
-  facebook: { label: "Facebook", mark: "f", className: "platform-facebook" },
-  instagram: { label: "Instagram", mark: "◎", className: "platform-instagram" },
-  tiktok: { label: "TikTok", mark: "♪", className: "platform-tiktok" },
-  youtube: { label: "YouTube", mark: "▶", className: "platform-youtube" },
-  x: { label: "X", mark: "X", className: "platform-x" },
+const PLATFORM_META: Record<Platform, { label: string; Icon: ComponentType; className: string }> = {
+  facebook: { label: "Facebook", Icon: IconFacebook, className: "platform-facebook" },
+  instagram: { label: "Instagram", Icon: IconInstagram, className: "platform-instagram" },
+  tiktok: { label: "TikTok", Icon: IconTikTok, className: "platform-tiktok" },
+  youtube: { label: "YouTube", Icon: IconYoutube, className: "platform-youtube" },
+  x: { label: "X", Icon: IconX, className: "platform-x" },
 };
 
-const NAV: Array<{ id: Page; label: string; glyph: string }> = [
-  { id: "dashboard", label: "Overview", glyph: "▦" },
-  { id: "post", label: "Post", glyph: "+" },
-  { id: "accounts", label: "Accounts", glyph: "◉" },
-  { id: "settings", label: "Settings", glyph: "⌁" },
+const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
+  { id: "dashboard", label: "Overview", Icon: IconHome },
+  { id: "post", label: "Post", Icon: IconCompose },
+  { id: "accounts", label: "Accounts", Icon: IconUsers },
+  { id: "settings", label: "Settings", Icon: IconGear },
 ];
 
 /** Server-wide demo mode (DEMO_MODE env). Default false: demo UI chrome is hidden. */
@@ -38,7 +67,8 @@ function formatDate(value: string | null) {
 
 function PlatformBadge({ platform, small = false }: { platform: Platform; small?: boolean }) {
   const meta = PLATFORM_META[platform];
-  return <span className={`platform-badge ${meta.className} ${small ? "is-small" : ""}`} aria-label={meta.label}>{meta.mark}</span>;
+  const Icon = meta.Icon;
+  return <span className={`platform-badge ${meta.className} ${small ? "is-small" : ""}`} role="img" aria-label={meta.label}><Icon /></span>;
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -78,21 +108,43 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
   };
 
   const busy = demo.isPending || signup.isPending || login.isPending;
+  const [authOpen, setAuthOpen] = useState<null | "login" | "signup">(null);
+  const openAuth = (next: "login" | "signup") => { setMode(next); setMessage(""); setAuthOpen(next); };
+  useEffect(() => {
+    if (!authOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAuthOpen(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [authOpen]);
   return (
-    <div className="auth-shell">
+    <div className="landing-shell">
       <SafeAreaTopScrim backgroundColor="var(--bg)" />
-      <main className="auth-layout">
-        <section className="auth-intro">
-          <div className="auth-brand" aria-label="zepostia"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark-lg" /><strong>zepostia</strong></div>
-          <div className="signal-line"><span>5 channels</span><span>1 queue</span><span>0 password sharing</span></div>
-          <h1>One post.<br /><em>Every signal.</em></h1>
-          <p>Connect your channels through official OAuth, prepare each platform from one composer, and keep every publish state visible.</p>
-          <div className="network-row" aria-label="Supported platforms">
-            {PLATFORM_ORDER.map((platform) => <PlatformBadge key={platform} platform={platform} />)}
-          </div>
-        </section>
-
-        <section className="auth-panel" aria-label="zepostia account access">
+      <header className="landing-header">
+        <div className="landing-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
+        <div className="landing-actions">
+          <button className="quiet-button" onClick={() => openAuth("login")}>Log in</button>
+          <button className="primary-button" onClick={() => openAuth("signup")}>Get Started</button>
+        </div>
+      </header>
+      <main className="landing-hero">
+        <h1>One post.<br /><em>Every channel.</em></h1>
+        <p>Write once and publish to Facebook, Instagram, TikTok, YouTube, and X — on your schedule.</p>
+        <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
+        <ul className="trust-strip">
+          <li><span className="trust-check"><IconCheck /></span>No credit card required</li>
+          <li><span className="trust-check"><IconCheck /></span>Set up in minutes</li>
+          <li><span className="trust-check"><IconCheck /></span>14-day free trial</li>
+        </ul>
+      </main>
+      <footer className="landing-footer">
+        <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
+        <p>&copy; 2026 zepostia. All rights reserved.</p>
+        <nav aria-label="Footer"><a href="#terms">Terms</a><a href="#privacy">Privacy</a></nav>
+      </footer>
+      {authOpen && <div className="auth-modal" role="dialog" aria-modal="true" aria-label="zepostia account access">
+        <div className="auth-modal-backdrop" onClick={() => setAuthOpen(null)} />
+        <section className="auth-panel auth-modal-card">
+          <button className="modal-close" onClick={() => setAuthOpen(null)} aria-label="Close">&times;</button>
           {demoMode && <div className="demo-ribbon">DEMO / TEST MODE</div>}
           <div className="auth-tabs" role="tablist" aria-label="Account access mode">
             <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} role="tab" aria-selected={mode === "signup"}>Create account</button>
@@ -100,16 +152,16 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           </div>
           <form onSubmit={submit}>
             {mode === "signup" && <label>Display name<input name="displayName" autoComplete="name" required minLength={2} placeholder="Your name" /></label>}
-            <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@proton.me" /></label>
+            <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
             <label>Password<input name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 8 : 1} placeholder="At least 8 characters" /></label>
             <button className="primary-button wide" type="submit" disabled={busy}>{busy ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}</button>
           </form>
           {message && <p className="form-message" role="status">{message}</p>}
           {demoMode && <><div className="or-rule"><span>or</span></div>
           <button className="secondary-button wide" disabled={busy} onClick={async () => finish(await demo.mutateAsync())}>Enter a fresh demo workspace</button></>}
-          <p className="auth-note">App sign-in uses email and password from any provider. Google is only involved if you later connect YouTube.</p>
+          <p className="auth-note">Sign in with your zepostia account.</p>
         </section>
-      </main>
+      </div>}
     </div>
   );
 }
@@ -146,7 +198,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
     <div className="post-topline"><StatusPill status={post.status} /><time>{post.publishMode === "scheduled" ? formatDate(post.scheduledAt) : formatDate(post.createdAt)}</time></div>
     {post.youtubeTitle && <h3>{post.youtubeTitle}</h3>}
     <p>{post.body || <span className="dim-text">Media-only post</span>}</p>
-    {post.mediaName && <div className="media-chip">▧ {post.mediaName}</div>}
+    {post.mediaName && <div className="media-chip"><IconImage />{post.mediaName}</div>}
     <div className="target-row">{post.targets.map((target, index) => <span key={`${post.id}-${target.platform}-${index}`} title={`${PLATFORM_META[target.platform].label}: ${target.status}`}><PlatformBadge platform={target.platform} small /><i className={`target-dot target-${target.status}`} /></span>)}</div>
     {post.bumpComments.length > 0 && <details className="bump-plan">
       <summary><span><i className={post.bumpEnabled ? "pulse-dot" : ""} />24-hour bump plan</span><strong>{post.bumpComments.filter((comment) => comment.status === "published").length}/{post.bumpComments.length} sent</strong></summary>
@@ -259,7 +311,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
             {preview === "youtube" && <h3>{title || "Your video title"}</h3>}
             {file && objectUrl ? file.type.startsWith("video/") ? <video src={objectUrl} controls preload="metadata" /> : <img src={objectUrl} alt="Selected upload preview" /> : <div className="preview-media-empty">{preview === "instagram" || preview === "tiktok" || preview === "youtube" ? "Media required" : "Media preview"}</div>}
             <p>{preview === "x" ? body.slice(0, 280) : body || "Your post will appear here."}</p>
-            <div className="preview-chrome"><span>♡</span><span>○</span><span>↗</span></div>
+            <div className="preview-chrome"><span><IconHeart /></span><span><IconComment /></span><span><IconShare /></span></div>
           </div>
         </aside>
       </section>
@@ -475,7 +527,7 @@ function TikTokPlatformCard({ isAdmin, tiktokConfigured }: { isAdmin: boolean; t
   </details>;
 }
 
-function XPlatformCard({ isAdmin, xConfigured }: { isAdmin: boolean; xConfigured: boolean }) {
+function XPlatformCard({ isAdmin, xConfigured, xPostsUsed, xPostsCap }: { isAdmin: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number }) {
   const steps = [
     "Create an X app in the X Developer Portal with OAuth 2.0 enabled.",
     "Add https://zepostia.com/oauth/x/callback as the Callback URI / Redirect URL in the app's OAuth 2.0 settings.",
@@ -489,6 +541,7 @@ function XPlatformCard({ isAdmin, xConfigured }: { isAdmin: boolean; xConfigured
       {isAdmin && <p className="secret-note">Owner X app: {xConfigured ? "configured" : "not configured — set X_CLIENT_ID and X_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && <p className="secret-note">Heads up: X charges per tweet on new developer accounts (pay-per-use, roughly $0.015 per post, more for posts with links). Every customer tweet bills your X account — fund credits in the X Developer Console before real posting.</p>}
       {!isAdmin && <p className="secret-note">Connect with X on the Accounts page — no setup needed.</p>}
+      <p className="secret-note">X posts this month: {xPostsUsed} of {xPostsCap}. Resets on the 1st.</p>
     </div>
   </details>;
 }
@@ -510,7 +563,7 @@ function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean;
   </details>;
 }
 
-function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean }) {
+function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
   const [clientSecret, setClientSecret] = useState("");
@@ -529,7 +582,7 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
     return <YoutubePlatformCard isAdmin={isAdmin} youtubeConfigured={youtubeConfigured} />;
   }
   if (setting.platform === "x") {
-    return <XPlatformCard isAdmin={isAdmin} xConfigured={xConfigured} />;
+    return <XPlatformCard isAdmin={isAdmin} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} />;
   }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
@@ -580,12 +633,12 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
-function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
     <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
-    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} />)}</section>
+    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
@@ -649,22 +702,22 @@ export function App() {
   return <div className="app-shell">
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
-      <strong className="mobile-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
-      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Open settings" onClick={() => setPage("settings")}>⌁</button></div>
+      <strong className="mobile-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
+      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Open settings" onClick={() => setPage("settings")}><IconGear /></button></div>
     </header>
     <aside className="side-rail">
-      <div className="rail-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
+      <div className="rail-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
       {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
-      <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span>{item.label}</button>)}</nav>
+      <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
       <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small></div>
     </aside>
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} onMessage={setToast} onSignOut={signOut} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} onMessage={setToast} onSignOut={signOut} />}
     </main>
-    <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span><small>{item.label}</small></button>)}</nav>
+    <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}
   </div>;
 }

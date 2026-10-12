@@ -237,6 +237,38 @@ async function realTikTokPublishId(
  * limit server-side (the composer enforces it client-side too). Refreshes
  * the access token when expired, persisting the new one.
  */
+/** Max X posts per user per calendar month. Worst case ($0.20/link tweet) keeps
+ *  owner cost well under the $19.88 subscription. Override with X_MONTHLY_POST_CAP. */
+export const X_MONTHLY_POST_CAP = Number(process.env.X_MONTHLY_POST_CAP ?? "60") || 60;
+
+function currentYearMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function checkXMonthlyCap(db: AppCtx["db"], userId: number): Promise<void> {
+  const ym = currentYearMonth();
+  const rows = await db.select().from(schema.xMonthlyUsage)
+    .where(and(eq(schema.xMonthlyUsage.userId, userId), eq(schema.xMonthlyUsage.yearMonth, ym))).limit(1);
+  const used = rows[0]?.postCount ?? 0;
+  if (used >= X_MONTHLY_POST_CAP) {
+    throw new Error(`You've used your ${X_MONTHLY_POST_CAP} X posts for this month. Your limit resets on the 1st.`);
+  }
+}
+
+async function incrementXMonthlyUsage(db: AppCtx["db"], userId: number): Promise<void> {
+  const ym = currentYearMonth();
+  const rows = await db.select().from(schema.xMonthlyUsage)
+    .where(and(eq(schema.xMonthlyUsage.userId, userId), eq(schema.xMonthlyUsage.yearMonth, ym))).limit(1);
+  if (rows[0]) {
+    await db.update(schema.xMonthlyUsage)
+      .set({ postCount: rows[0].postCount + 1 })
+      .where(and(eq(schema.xMonthlyUsage.userId, userId), eq(schema.xMonthlyUsage.yearMonth, ym)));
+  } else {
+    await db.insert(schema.xMonthlyUsage).values({ userId, yearMonth: ym, postCount: 1 });
+  }
+}
+
 async function realXTweetId(
   ctx: AppCtx,
   userId: number,
@@ -249,12 +281,14 @@ async function realXTweetId(
   }
   const creds = ownerXCredentials();
   if (!creds.ok) throw new Error("X isn't set up on the server. Reconnect the channel.");
+  await checkXMonthlyCap(ctx.db, userId);
   const accessToken = await getValidXAccessToken(ctx.db, userId, {
     clientId: creds.clientId,
     clientSecret: creds.clientSecret,
   });
   try {
     const { tweetId } = await postTweet({ accessToken, text });
+    await incrementXMonthlyUsage(ctx.db, userId);
     return tweetId;
   } catch (err) {
     if (err instanceof XApiError && /unauthorized|forbidden/i.test(err.message)) {

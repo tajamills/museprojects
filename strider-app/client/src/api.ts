@@ -35,6 +35,8 @@ type SettingsResult = {
   tiktokConfigured: boolean;
   youtubeConfigured: boolean;
   xConfigured: boolean;
+  xPostsUsed: number;
+  xPostsCap: number;
   platforms: Array<{ platform: Platform; label: string; clientId: string; secretReference: string; developerApp: string; credentialFields: string; warning: string; failureHint: string }>;
 };
 type CreatePostRequest = {
