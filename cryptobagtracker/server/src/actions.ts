@@ -10,9 +10,14 @@
 // POST /actions dispatches `{action, args}` to `Actions[action].handler`
 // after validating `args` against the action's zod `request` schema.
 import { z } from "zod";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
+import { decryptSecret, encryptSecret } from "./crypto.js";
+import { fetchTransactions as fetchCoinbaseTransactions } from "./exchanges/coinbase.js";
+import { fetchTransactions as fetchKrakenTransactions } from "./exchanges/kraken.js";
+import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold.js";
+import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
 import { baseUrl, getStripe } from "./billing.js";
 import {
   build8949,
@@ -138,14 +143,31 @@ function computeTax(rows: TxRow[], method: Method) {
 function runSelfTest() {
   const start = new Date("2025-01-15T12:00:00Z");
   const synthetic = [
-    { id: 1, userId: 0, type: "BUY", classification: "ACQUISITION", asset: "ETH", amount: 1, priceUsd: 3000, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: null, toWalletId: 1, note: null, occurredAt: start, createdAt: start },
-    { id: 2, userId: 0, type: "TRANSFER", classification: "TRANSFER", asset: "ETH", amount: 1, priceUsd: 3200, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: 1, toWalletId: 2, note: null, occurredAt: new Date(start.getTime() + 86400000), createdAt: start },
-    { id: 3, userId: 0, type: "TRANSFER", classification: "TRANSFER", asset: "ETH", amount: 1, priceUsd: 3400, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: 2, toWalletId: 3, note: null, occurredAt: new Date(start.getTime() + 172800000), createdAt: start },
+    { id: 1, userId: 0, type: "BUY", classification: "ACQUISITION", asset: "ETH", amount: 1, priceUsd: 3000, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: null, toWalletId: 1, externalId: null, note: null, occurredAt: start, createdAt: start },
+    { id: 2, userId: 0, type: "TRANSFER", classification: "TRANSFER", asset: "ETH", amount: 1, priceUsd: 3200, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: 1, toWalletId: 2, externalId: null, note: null, occurredAt: new Date(start.getTime() + 86400000), createdAt: start },
+    { id: 3, userId: 0, type: "TRANSFER", classification: "TRANSFER", asset: "ETH", amount: 1, priceUsd: 3400, feeUsd: 0, receivedAsset: null, receivedAmount: null, receivedPriceUsd: null, fromWalletId: 2, toWalletId: 3, externalId: null, note: null, occurredAt: new Date(start.getTime() + 172800000), createdAt: start },
   ] satisfies TxRow[];
   const result = computeTax(synthetic, "FIFO");
   const lot = result.lots[0];
   const passed = result.lots.length === 1 && lot?.asset === "ETH" && lot.amount === 1 && lot.basis === 3000 && lot.walletId === 3 && lot.acquiredAt.startsWith("2025-01-15") && result.gains.length === 0 && result.summary.total === 0;
   return { passed, detail: passed ? "1 ETH · $3,000 basis · original date preserved · 0 disposals" : "Transfer regression failed" };
+}
+
+const EXCHANGE_FETCHERS: Record<string, ExchangeFetcher> = {
+  Coinbase: fetchCoinbaseTransactions,
+  Kraken: fetchKrakenTransactions,
+  Uphold: fetchUpholdTransactions,
+};
+
+/**
+ * Classification for imported exchange activity — mirrors addTransaction so
+ * computeTax treats imports exactly like manual entries: BUY/RECEIVE open
+ * lots (ACQUISITION), SELL/SEND dispose (DISPOSAL), TRADE does both.
+ */
+function importedClassification(type: NormalizedTx["type"]): string {
+  if (type === "BUY" || type === "RECEIVE") return "ACQUISITION";
+  if (type === "TRADE") return "TRADE";
+  return "DISPOSAL";
 }
 
 const authResponse = z.object({ token: z.string(), user: z.object({ email: z.string(), referralCode: z.string(), trialStartedAt: z.string() }) });
@@ -157,7 +179,9 @@ const tokenRequest = z.object({ token: z.string() });
 const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
 const changePasswordResponse = z.object({ ok: z.literal(true), token: z.string() });
 const addWalletRequest = z.object({ token: z.string(), name: z.string().min(1).max(60), chain: z.string().min(2).max(10), address: z.string().min(3).max(200), owned: z.boolean() });
-const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.string().min(2).max(40), label: z.string().min(1).max(60), apiKey: z.string().min(4), apiSecret: z.string().min(4) });
+const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.enum(["Coinbase", "Kraken", "Uphold"]), label: z.string().min(1).max(60), apiKey: z.string().min(4).max(500), apiSecret: z.string().max(20000) });
+const exchangeConnectionIdRequest = z.object({ token: z.string(), connectionId: z.number().int().positive() });
+const syncExchangeResponse = z.object({ ok: z.literal(true), imported: z.number(), skipped: z.number() });
 const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY", "SELL", "TRADE", "SEND", "RECEIVE", "STAKING", "AIRDROP"]), asset: z.string().min(2).max(12), amount: z.number().positive(), priceUsd: z.number().nonnegative(), feeUsd: z.number().nonnegative(), receivedAsset: z.string().max(12).optional(), receivedAmount: z.number().positive().optional(), receivedPriceUsd: z.number().nonnegative().optional(), fromWalletId: z.number().int().positive().optional(), toWalletId: z.number().int().positive().optional(), note: z.string().max(200).optional(), occurredAt: z.string() });
 const addTransactionResponse = z.object({ ok: z.literal(true), classification: z.string() });
 const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum(["FIFO", "LIFO", "HIFO"]) });
@@ -260,7 +284,7 @@ export const Actions = {
         user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, payoutMethod: user.payoutMethod, payoutZelleInfo: user.payoutZelleInfo, payoutTaxName: user.payoutTaxName, payoutTaxAddress: user.payoutTaxAddress },
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
-        exchanges: exchanges.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
+        exchanges: exchanges.map((e) => ({ id: e.id, provider: e.provider, label: e.label, keyHint: e.keyHint, status: e.status, lastSyncedAt: e.lastSyncedAt ? e.lastSyncedAt.toISOString() : null, syncError: e.syncError, createdAt: e.createdAt.toISOString() })),
         alerts: alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), channels: a.channels.split(",").filter(Boolean) })),
         alertHistory: history.map((h) => ({ ...h, deliveredAt: h.deliveredAt.toISOString() })),
         alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false },
@@ -285,7 +309,88 @@ export const Actions = {
     handler: async (ctx: Ctx, args: z.infer<typeof addExchangeConnectionRequest>): Promise<z.infer<typeof okResponse>> => {
       const user = await requireUser(ctx, args.token);
       const hint = `••••${args.apiKey.slice(-4)}`;
-      await ctx.db.insert(schema.exchangeConnections).values({ userId: user.id, provider: args.provider.trim(), label: args.label.trim(), keyHint: hint, status: "configured" });
+      // Credentials are encrypted at rest (AES-256-GCM, EXCHANGE_ENC_KEY);
+      // only the masked hint is ever shown in the UI.
+      const apiKeyEnc = encryptSecret(args.apiKey);
+      const apiSecretEnc = encryptSecret(args.apiSecret);
+      await ctx.db.insert(schema.exchangeConnections).values({ userId: user.id, provider: args.provider, label: args.label.trim(), keyHint: hint, apiKeyEnc, apiSecretEnc, status: "configured" });
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
+  syncExchangeConnection: {
+    request: exchangeConnectionIdRequest,
+    response: syncExchangeResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof exchangeConnectionIdRequest>): Promise<z.infer<typeof syncExchangeResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      const db = ctx.db;
+      const rows = await db.select().from(schema.exchangeConnections)
+        .where(and(eq(schema.exchangeConnections.id, args.connectionId), eq(schema.exchangeConnections.userId, user.id)))
+        .limit(1);
+      const connection = rows[0];
+      if (!connection) throw new Error("Exchange connection not found.");
+      const fetcher = EXCHANGE_FETCHERS[connection.provider];
+      const fail = async (message: string): Promise<never> => {
+        await db.update(schema.exchangeConnections)
+          .set({ status: "error", syncError: message.slice(0, 300) })
+          .where(eq(schema.exchangeConnections.id, connection.id));
+        ctx.invalidateQueries();
+        throw new Error(message);
+      };
+      if (!fetcher) return fail(`Sync isn't available for ${connection.provider}.`);
+      if (!connection.apiKeyEnc || !connection.apiSecretEnc) {
+        return fail("This connection has no stored credentials. Delete it and add it again so the keys can be encrypted and saved.");
+      }
+      let imported = 0;
+      let skipped = 0;
+      try {
+        const apiKey = decryptSecret(connection.apiKeyEnc);
+        const apiSecret = decryptSecret(connection.apiSecretEnc);
+        const fetched = await fetcher(apiKey, apiSecret);
+        const existing = await db.select({ externalId: schema.transactions.externalId })
+          .from(schema.transactions)
+          .where(eq(schema.transactions.userId, user.id));
+        const seen = new Set(existing.map((r) => r.externalId).filter((v): v is string => Boolean(v)));
+        for (const tx of fetched) {
+          // Namespace per provider so identical ids from two exchanges
+          // never collide.
+          const externalId = `${connection.provider.toLowerCase()}:${tx.externalId}`;
+          if (seen.has(externalId)) { skipped++; continue; }
+          seen.add(externalId);
+          await db.insert(schema.transactions).values({
+            userId: user.id,
+            type: tx.type,
+            classification: importedClassification(tx.type),
+            asset: tx.asset.toUpperCase(),
+            amount: tx.amount,
+            priceUsd: tx.priceUsd,
+            feeUsd: tx.feeUsd,
+            receivedAsset: tx.receivedAsset?.toUpperCase() ?? null,
+            receivedAmount: tx.receivedAmount ?? null,
+            receivedPriceUsd: tx.receivedPriceUsd ?? null,
+            externalId,
+            note: `Imported from ${connection.provider}`,
+            occurredAt: tx.occurredAt,
+          });
+          imported++;
+        }
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : "Exchange sync failed.");
+      }
+      await db.update(schema.exchangeConnections)
+        .set({ lastSyncedAt: new Date(), status: "synced", syncError: null })
+        .where(eq(schema.exchangeConnections.id, connection.id));
+      ctx.invalidateQueries();
+      return { ok: true as const, imported, skipped };
+    },
+  },
+  deleteExchangeConnection: {
+    request: exchangeConnectionIdRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof exchangeConnectionIdRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      await ctx.db.delete(schema.exchangeConnections)
+        .where(and(eq(schema.exchangeConnections.id, args.connectionId), eq(schema.exchangeConnections.userId, user.id)));
       ctx.invalidateQueries();
       return { ok: true };
     },

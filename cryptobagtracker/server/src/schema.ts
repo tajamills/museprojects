@@ -58,6 +58,10 @@ export const exchangeConnections = pgTable("exchange_connections", {
   provider: text("provider").notNull(),
   label: text("label").notNull(),
   keyHint: text("key_hint").notNull(),
+  apiKeyEnc: text("api_key_enc"),
+  apiSecretEnc: text("api_secret_enc"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "date" }),
+  syncError: text("sync_error"),
   status: text("status").notNull().default("configured"),
   createdAt: createdAt(),
 });
@@ -76,6 +80,7 @@ export const transactions = pgTable("transactions", {
   receivedPriceUsd: doublePrecision("received_price_usd"),
   fromWalletId: integer("from_wallet_id"),
   toWalletId: integer("to_wallet_id"),
+  externalId: text("external_id"),
   note: text("note"),
   occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "date" }).notNull(),
   createdAt: createdAt(),
