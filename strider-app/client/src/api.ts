@@ -31,6 +31,7 @@ type WorkspaceResult = {
 };
 type SettingsResult = {
   ok: boolean;
+  metaConfigured: boolean;
   platforms: Array<{ platform: Platform; label: string; clientId: string; secretReference: string; developerApp: string; credentialFields: string; warning: string; failureHint: string }>;
 };
 type CreatePostRequest = {

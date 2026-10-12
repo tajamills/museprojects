@@ -404,7 +404,22 @@ function Queue({ posts, token, onMessage }: { posts: Post[]; token: string; onMe
   </div>;
 }
 
-function PlatformSettingsCard({ setting, token, onMessage }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void }) {
+function MetaPlatformCard({ setting, isAdmin, metaConfigured }: { setting: PlatformSetting; isAdmin: boolean; metaConfigured: boolean }) {
+  const steps = setting.platform === "facebook"
+    ? ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Choose the Pages you want zepostia to post to."]
+    : ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Pick your professional Instagram account (it must be linked to a Facebook Page)."];
+  return <details className="settings-card" open>
+    <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>No setup needed</span></summary>
+    <div className="settings-body">
+      {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
+      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      {isAdmin && <p className="secret-note">Owner Meta app: {metaConfigured ? "configured" : "not configured — set FACEBOOK_APP_ID and FACEBOOK_CLIENT_SECRET on the server"}.</p>}
+      {!isAdmin && <p className="secret-note">Connect with {setting.label} on the Accounts page — no setup needed.</p>}
+    </div>
+  </details>;
+}
+
+function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
   const [clientSecret, setClientSecret] = useState("");
@@ -413,13 +428,15 @@ function PlatformSettingsCard({ setting, token, onMessage }: { setting: Platform
     mutationFn: () => api.savePlatformConfig({ sessionToken: token, platform: setting.platform, clientId, secretReference: "", clientSecret }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["settings", token] }); },
   });
+  if (setting.platform === "facebook" || setting.platform === "instagram") {
+    return <MetaPlatformCard setting={setting} isAdmin={isAdmin} metaConfigured={metaConfigured} />;
+  }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
     <div className="settings-body">
-      {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
       <div className="go-live-list"><p><b>1</b><span>Create:</span> {setting.developerApp}</p><p><b>2</b><span>Collect:</span> {setting.credentialFields}</p><p><b>3</b><span>Callback:</span> Deploy the app on your host, then add the exact OAuth callback URL for that deployment (see DEPLOY.md).</p><p><b>4</b><span>Permissions:</span> Request only sign-in, profile/account discovery, and content publishing scopes.</p></div>
-      <label>App ID (Client ID)<input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="Paste your Facebook App ID" /></label>
-      <label>App Secret<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder="Paste your Facebook App Secret" /></label>
+      <label>App ID (Client ID)<input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="Paste your App ID" /></label>
+      <label>App Secret<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder="Paste your App Secret" /></label>
       <p className="secret-note">Your secret is encrypted before it is stored and never shown again.</p>
       <button className="secondary-button" disabled={save.isPending || !clientId.trim()} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save configuration"}</button>
     </div>
@@ -463,11 +480,12 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
-function Settings({ settings, token, user, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string }; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
+  const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
     <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
-    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} />)}</section>
+    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
@@ -539,7 +557,7 @@ export function App() {
       {page === "compose" && <Composer accounts={data.accounts} token={sessionToken} onDone={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "queue" && <Queue posts={data.posts} token={sessionToken} onMessage={setToast} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} onMessage={setToast} onSignOut={signOut} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} onMessage={setToast} onSignOut={signOut} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}

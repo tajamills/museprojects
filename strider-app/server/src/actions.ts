@@ -37,15 +37,15 @@ const PLATFORM_INFO: Record<Platform, {
 }> = {
   facebook: {
     label: "Facebook",
-    developerApp: "Meta for Developers app with Facebook Login and Pages API",
-    credentialFields: "App ID + App Secret (kept in a server-side secret vault)",
+    developerApp: "No setup needed — zepostia handles the Meta app for you",
+    credentialFields: "None — just hit Connect",
     failureHint: "If the session expired, choose Reconnect and complete Facebook OAuth again.",
     warning: "Facebook sessions can expire without warning. The app checks token health on load and before publishing.",
   },
   instagram: {
     label: "Instagram",
-    developerApp: "Same Meta app as Facebook, plus the \"Manage messaging & content on Instagram\" use case; connect a professional Instagram account to a Facebook Page",
-    credentialFields: "Same Meta App ID as Facebook (set it in the Facebook card) + App Secret in Railway",
+    developerApp: "No setup needed — zepostia handles the Meta app for you",
+    credentialFields: "None — just hit Connect",
     failureHint: "Confirm the Instagram account is Professional and linked to a Facebook Page, then reconnect.",
     warning: "Instagram publishing requires an image or video and an eligible professional account.",
   },
@@ -204,51 +204,35 @@ async function demoConnectAccount(
   return { ok: true, message: `${PLATFORM_INFO[platform].label} demo OAuth completed. No external account was contacted.` };
 }
 
-/** Real Facebook app credentials for a user, or null when the simulated
- *  fallback should be used. App ID comes from Settings; the secret from
- *  FACEBOOK_CLIENT_SECRET (never from the database). */
 /** Meta app credentials: ok + values, or ok:false with which piece is missing. */
 type MetaAppCreds = { ok: true; clientId: string; clientSecret: string } | { ok: false; missing: string };
 
-/** Client secret: encrypted DB value first, FACEBOOK_CLIENT_SECRET env fallback. */
-function resolveMetaClientSecret(encValue: string | null): string | null {
-  if (encValue) {
-    try {
-      const dec = decryptToken(encValue);
-      if (dec) return dec;
-    } catch {
-      // fall through to env
-    }
-  }
-  return resolvePlatformSecret("facebook");
-}
-
-async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<MetaAppCreds> {
-  const rows = await ctx.db
-    .select()
-    .from(schema.platformConfigs)
-    .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
-    .limit(1);
-  const clientId = (rows[0]?.clientId ?? "").trim();
-  const clientSecret = resolveMetaClientSecret(rows[0]?.clientSecretEnc ?? null);
+/**
+ * Owner-level Meta app credentials. ONE Meta app for the whole site, owned by
+ * Layla: App ID from FACEBOOK_APP_ID, secret from FACEBOOK_CLIENT_SECRET.
+ * Customers never configure these — they just click Connect and OAuth in.
+ * Per-user platform_configs rows are ignored for facebook/instagram.
+ */
+export function ownerMetaAppCredentials(): MetaAppCreds {
+  const clientId = (process.env.FACEBOOK_APP_ID ?? "").trim();
+  const clientSecret = resolvePlatformSecret("facebook");
   if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
   if (!clientSecret) return { ok: false, missing: "app-secret" };
   return { ok: true, clientId, clientSecret: clientSecret as string };
 }
 
-/** Instagram shares the Meta app with Facebook: the App ID is read from the
- *  Facebook platform config row, the secret from FACEBOOK_CLIENT_SECRET. */
-async function instagramAppCredentials(ctx: AppCtx, userId: number): Promise<MetaAppCreds> {
-  const rows = await ctx.db
-    .select()
-    .from(schema.platformConfigs)
-    .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
-    .limit(1);
-  const clientId = (rows[0]?.clientId ?? "").trim();
-  const clientSecret = resolveMetaClientSecret(rows[0]?.clientSecretEnc ?? null);
-  if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
-  if (!clientSecret) return { ok: false, missing: "app-secret" };
-  return { ok: true, clientId, clientSecret: clientSecret as string };
+async function facebookAppCredentials(_ctx: AppCtx, _userId: number): Promise<MetaAppCreds> {
+  return ownerMetaAppCredentials();
+}
+
+/** Instagram shares the owner's Meta app with Facebook (same App ID + secret). */
+async function instagramAppCredentials(_ctx: AppCtx, _userId: number): Promise<MetaAppCreds> {
+  return ownerMetaAppCredentials();
+}
+
+/** Boolean only — never leaks values. Used for the admin status line. */
+export function isMetaAppConfigured(): boolean {
+  return ownerMetaAppCredentials().ok;
 }
 
 export const actions: Record<string, ActionDef> = {
@@ -398,6 +382,7 @@ export const actions: Record<string, ActionDef> = {
       const configs = await ctx.db.select().from(schema.platformConfigs).where(eq(schema.platformConfigs.userId, user.id));
       return {
         ok: true,
+        metaConfigured: isMetaAppConfigured(),
         platforms: (Object.keys(PLATFORM_INFO) as Platform[]).map((platform) => {
           const config = configs.find((item) => item.platform === platform);
           const info = PLATFORM_INFO[platform];
@@ -421,6 +406,9 @@ export const actions: Record<string, ActionDef> = {
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      if ((args.platform === "facebook" || args.platform === "instagram") && args.clientSecret.trim()) {
+        return { ok: false, message: "The Meta app is configured by the site owner. Nothing for you to enter here." };
+      }
       let secretEnc: string | null = null;
       if (args.clientSecret.trim()) {
         try {
@@ -466,8 +454,8 @@ export const actions: Record<string, ActionDef> = {
       if (!creds.ok) {
         if (!isDemoMode()) {
           const what = creds.missing === "app-id"
-            ? "Add your Facebook App ID in Settings \u2192 Facebook first, then connect."
-            : "Add your App Secret in Settings \u2192 Facebook first, then connect.";
+            ? "Facebook isn't set up yet — the site owner needs to add the Meta App ID (FACEBOOK_APP_ID)."
+            : "Facebook isn't set up yet — the site owner needs to add the Meta App Secret (FACEBOOK_CLIENT_SECRET).";
           return { ok: false, message: what, mode: "oauth", authUrl: null };
         }
         const demo = await demoConnectAccount(ctx, user, "facebook");
@@ -509,8 +497,8 @@ export const actions: Record<string, ActionDef> = {
       if (!creds.ok) {
         if (!isDemoMode()) {
           const what = creds.missing === "app-id"
-            ? "Add your Meta App ID in Settings \u2192 Facebook first (Instagram uses the same Meta app), then connect."
-            : "Set FACEBOOK_CLIENT_SECRET in Railway (and redeploy), then connect.";
+            ? "Instagram isn't set up yet — the site owner needs to add the Meta App ID (FACEBOOK_APP_ID)."
+            : "Instagram isn't set up yet — the site owner needs to add the Meta App Secret (FACEBOOK_CLIENT_SECRET).";
           return { ok: false, message: what, mode: "oauth", authUrl: null };
         }
         const demo = await demoConnectAccount(ctx, user, "instagram");
@@ -916,16 +904,12 @@ export async function handleFacebookOAuthCallback(
   // Opportunistic cleanup of other expired states.
   await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
 
-  const cfgRows = await db
-    .select()
-    .from(schema.platformConfigs)
-    .where(and(eq(schema.platformConfigs.userId, stateRow.userId), eq(schema.platformConfigs.platform, "facebook")))
-    .limit(1);
-  const clientId = (cfgRows[0]?.clientId ?? "").trim();
-  const clientSecret = resolvePlatformSecret("facebook");
-  if (!isRealFacebookConfig(clientId, Boolean(clientSecret))) {
+  const ownerCreds = ownerMetaAppCredentials();
+  if (!ownerCreds.ok || !isRealFacebookConfig(ownerCreds.clientId, true)) {
     return { ok: false, error: "Facebook credentials changed during login. Reconnect." };
   }
+  const clientId = ownerCreds.clientId;
+  const clientSecret = ownerCreds.clientSecret;
 
   let fbUserId: string;
   let userTokenEncrypted: string;
@@ -1033,16 +1017,12 @@ export async function handleInstagramOAuthCallback(
   // Opportunistic cleanup of other expired states.
   await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
 
-  const cfgRows = await db
-    .select()
-    .from(schema.platformConfigs)
-    .where(and(eq(schema.platformConfigs.userId, stateRow.userId), eq(schema.platformConfigs.platform, "facebook")))
-    .limit(1);
-  const clientId = (cfgRows[0]?.clientId ?? "").trim();
-  const clientSecret = resolvePlatformSecret("facebook");
-  if (!isRealInstagramConfig(clientId, Boolean(clientSecret))) {
+  const ownerCreds = ownerMetaAppCredentials();
+  if (!ownerCreds.ok || !isRealInstagramConfig(ownerCreds.clientId, true)) {
     return { ok: false, error: "Meta credentials changed during login. Reconnect." };
   }
+  const clientId = ownerCreds.clientId;
+  const clientSecret = ownerCreds.clientSecret;
 
   let userTokenEncrypted: string;
   let account: { igUserId: string; username: string; pageId: string; pageName: string };
