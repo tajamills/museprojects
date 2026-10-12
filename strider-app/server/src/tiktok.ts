@@ -378,10 +378,10 @@ export type TikTokAppCreds = { ok: true; clientId: string; clientSecret: string 
 export function ownerTikTokCredentials(): TikTokAppCreds {
   const sandbox = process.env.TIKTOK_SANDBOX === "true";
   const clientId = (sandbox
-    ? (process.env.tiktok_sand_client ?? process.env.TIKTOK_SANDBOX_CLIENT_KEY ?? "")
+    ? (process.env.TIK_SAND_CLIENT ?? process.env.tiktok_sand_client ?? process.env.TIKTOK_SANDBOX_CLIENT_KEY ?? "")
     : (process.env.TIKTOK_CLIENT_KEY ?? "")).trim();
   const clientSecret = sandbox
-    ? (process.env.tiktok_sand_secret ?? process.env.TIKTOK_SANDBOX_CLIENT_SECRET ?? "").trim()
+    ? (process.env.TIKTOK_SAND_SECRET ?? process.env.tiktok_sand_secret ?? process.env.TIKTOK_SANDBOX_CLIENT_SECRET ?? "").trim()
     : resolvePlatformSecret("tiktok");
   if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
   if (!clientSecret) return { ok: false, missing: "app-secret" };
