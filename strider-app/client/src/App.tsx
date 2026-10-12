@@ -581,7 +581,7 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
-      {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
+
       <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
       {isAdmin && <p className="secret-note">Owner Meta app: {metaConfigured ? "configured" : "not configured — set FACEBOOK_APP_ID and FACEBOOK_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && setting.platform === "facebook" && <button className="secondary-button" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? "Testing…" : "Test Meta connection"}</button>}
