@@ -178,7 +178,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
 function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]; token: string; onDone: (message: string) => void; goAccounts: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
-  const connected = accounts.filter((account) => account.status === "connected");
+  const connected = accounts.filter((account) => account.status === "connected" && (demoMode || account.authMode === "oauth"));
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
