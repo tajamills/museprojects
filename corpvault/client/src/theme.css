@@ -39,3 +39,29 @@
 .brand-mark{width:26px;height:26px;border-radius:7px;object-fit:cover;align-self:center}
 .rail-brand{display:flex;align-items:center;gap:10px}
 .billing-note{margin:12px 0 0}
+/* 3D depth treatment (Layla's request, 2026-10-12) — same recipe as CryptoBagTracker:
+   gradient faces, inset top highlight, drop shadows, hover lift, pressed-in active states. */
+.primary{background:linear-gradient(180deg,color-mix(in srgb,var(--text) 76%,#ffffff 24%) 0%,var(--text) 55%,color-mix(in srgb,var(--text) 84%,#000000 16%) 100%);border:1px solid color-mix(in srgb,var(--text) 68%,#000000 32%);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.16),0 3px 8px rgba(23,35,61,.25);text-shadow:0 1px 1px rgba(0,0,0,.12);transition:transform .12s ease,box-shadow .12s ease}
+.primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.16),0 5px 12px rgba(23,35,61,.30)}
+.primary:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(0,0,0,.22),0 1px 2px rgba(23,35,61,.15)}
+.round-add{background:linear-gradient(180deg,color-mix(in srgb,var(--text) 76%,#ffffff 24%) 0%,var(--text) 55%,color-mix(in srgb,var(--text) 84%,#000000 16%) 100%);border:1px solid color-mix(in srgb,var(--text) 68%,#000000 32%);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.16),0 3px 8px rgba(23,35,61,.25);transition:transform .12s ease,box-shadow .12s ease}
+.round-add:hover{transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.16),0 5px 12px rgba(23,35,61,.30)}
+.round-add:active{transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(0,0,0,.22),0 1px 2px rgba(23,35,61,.15)}
+.secondary{background:linear-gradient(180deg,var(--surface) 0%,var(--navy-soft) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 5px rgba(23,35,61,.12);transition:transform .12s ease,box-shadow .12s ease}
+.secondary:hover:not(:disabled){transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 4px 9px rgba(23,35,61,.16)}
+.secondary:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(23,35,61,.15),0 1px 2px rgba(23,35,61,.10)}
+.icon-button{background:linear-gradient(180deg,color-mix(in srgb,var(--navy-soft) 55%,#ffffff 45%),var(--navy-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 5px rgba(23,35,61,.14);transition:transform .12s ease,box-shadow .12s ease}
+.icon-button:active{transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(23,35,61,.16)}
+.check-button{background:linear-gradient(180deg,var(--surface),var(--navy-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 1px 3px rgba(23,35,61,.15)}
+.segmented{box-shadow:inset 0 1px 3px rgba(23,35,61,.14)}
+.segmented button{transition:transform .12s ease,box-shadow .12s ease}
+.segmented button.active{background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 82%,var(--navy-soft)));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 2px 6px rgba(23,35,61,.16)}
+.entity-card,.minutes-card,.deadline{border:1px solid var(--border);box-shadow:0 1px 2px rgba(23,35,61,.05),0 8px 20px rgba(23,35,61,.06)}
+.entity-card,.minutes-card{transition:transform .12s ease,box-shadow .12s ease}
+.entity-card:hover,.minutes-card:hover{transform:translateY(-1px);box-shadow:0 2px 3px rgba(23,35,61,.06),0 12px 26px rgba(23,35,61,.09)}
+.focus-deadline{background:linear-gradient(160deg,color-mix(in srgb,var(--text) 80%,#ffffff 20%) 0%,var(--text) 58%,color-mix(in srgb,var(--text) 82%,#000000 18%) 100%);box-shadow:0 12px 26px rgba(23,35,61,.25)}
+.focus-clear{box-shadow:0 1px 2px rgba(23,35,61,.05),0 8px 20px rgba(23,35,61,.06)}
+.file-stamp,.entity-monogram{background:linear-gradient(180deg,color-mix(in srgb,var(--navy-soft) 55%,#ffffff 45%),var(--navy-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 3px rgba(23,35,61,.10)}
+.desktop-rail button.active{background:linear-gradient(180deg,color-mix(in srgb,var(--navy-soft) 68%,#ffffff 32%),var(--navy-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 6px rgba(23,35,61,.14)}
+.bottom-nav button.active{background:linear-gradient(180deg,color-mix(in srgb,var(--navy-soft) 68%,#ffffff 32%),var(--navy-soft));border-radius:8px;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 6px rgba(23,35,61,.14)}
+.field input,.field select,.field textarea,.repeat-row input,.action-row input,.action-row select,.search input{box-shadow:inset 0 1px 3px rgba(23,35,61,.06)}
