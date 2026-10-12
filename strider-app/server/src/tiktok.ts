@@ -54,7 +54,9 @@ export class TikTokApiError extends Error {
 
 type FetchFn = typeof fetch;
 
-const TIKTOK_API_BASE = "https://open.tiktokapis.com/v2";
+const TIKTOK_API_BASE = process.env.TIKTOK_SANDBOX === "true"
+  ? "https://open-sandbox.tiktokapis.com/v2"
+  : "https://open.tiktokapis.com/v2";
 
 function tiktokUrl(path: string): string {
   return `${TIKTOK_API_BASE}${path}`;
