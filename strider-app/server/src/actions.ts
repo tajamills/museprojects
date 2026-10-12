@@ -437,10 +437,14 @@ export const actions: Record<string, ActionDef> = {
       const nowYm = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
       const xUsage = await ctx.db.select().from(schema.xMonthlyUsage)
         .where(and(eq(schema.xMonthlyUsage.userId, user.id), eq(schema.xMonthlyUsage.yearMonth, nowYm))).limit(1);
+      const tiktokUsage = await ctx.db.select().from(schema.tiktokMonthlyUsage)
+        .where(and(eq(schema.tiktokMonthlyUsage.userId, user.id), eq(schema.tiktokMonthlyUsage.yearMonth, nowYm))).limit(1);
       return {
         ok: true,
         xPostsUsed: xUsage[0]?.postCount ?? 0,
         xPostsCap: Number(process.env.X_MONTHLY_POST_CAP ?? "60") || 60,
+        tiktokPostsUsed: tiktokUsage[0]?.postCount ?? 0,
+        tiktokPostsCap: Number(process.env.TIKTOK_MONTHLY_POST_CAP ?? "60") || 60,
         metaConfigured: isMetaAppConfigured(),
         tiktokConfigured: isTikTokAppConfigured(),
         youtubeConfigured: isYoutubeConfigured(),

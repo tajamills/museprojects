@@ -138,6 +138,12 @@ export const xConnections = pgTable("x_connections", {
   updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
 });
 
+export const tiktokMonthlyUsage = pgTable("tiktok_monthly_usage", {
+  userId: integer("user_id").notNull(),
+  yearMonth: text("year_month").notNull(),
+  postCount: integer("post_count").notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.userId, t.yearMonth] })]);
+
 export const tiktokConnections = pgTable("tiktok_connections", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),

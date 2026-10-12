@@ -563,7 +563,7 @@ function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean;
   </details>;
 }
 
-function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number }) {
+function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
   const [clientSecret, setClientSecret] = useState("");
@@ -633,12 +633,12 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
-function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
     <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
-    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} />)}</section>
+    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
@@ -715,7 +715,7 @@ export function App() {
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} onMessage={setToast} onSignOut={signOut} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} onMessage={setToast} onSignOut={signOut} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}

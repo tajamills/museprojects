@@ -193,6 +193,33 @@ async function realYoutubeVideoId(
  * createPost; double-checked here). Refreshes the access token when it is
  * expired or about to expire, persisting the new one.
  */
+export const TIKTOK_MONTHLY_POST_CAP = Number(process.env.TIKTOK_MONTHLY_POST_CAP ?? "60") || 60;
+
+async function checkTikTokMonthlyCap(db: AppCtx["db"], userId: number): Promise<void> {
+  const d = new Date();
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const rows = await db.select().from(schema.tiktokMonthlyUsage)
+    .where(and(eq(schema.tiktokMonthlyUsage.userId, userId), eq(schema.tiktokMonthlyUsage.yearMonth, ym))).limit(1);
+  const used = rows[0]?.postCount ?? 0;
+  if (used >= TIKTOK_MONTHLY_POST_CAP) {
+    throw new Error(`You've used your ${TIKTOK_MONTHLY_POST_CAP} TikTok posts for this month. Your limit resets on the 1st.`);
+  }
+}
+
+async function incrementTikTokMonthlyUsage(db: AppCtx["db"], userId: number): Promise<void> {
+  const d = new Date();
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const rows = await db.select().from(schema.tiktokMonthlyUsage)
+    .where(and(eq(schema.tiktokMonthlyUsage.userId, userId), eq(schema.tiktokMonthlyUsage.yearMonth, ym))).limit(1);
+  if (rows[0]) {
+    await db.update(schema.tiktokMonthlyUsage)
+      .set({ postCount: rows[0].postCount + 1 })
+      .where(and(eq(schema.tiktokMonthlyUsage.userId, userId), eq(schema.tiktokMonthlyUsage.yearMonth, ym)));
+  } else {
+    await db.insert(schema.tiktokMonthlyUsage).values({ userId, yearMonth: ym, postCount: 1 });
+  }
+}
+
 async function realTikTokPublishId(
   ctx: AppCtx,
   userId: number,
@@ -204,6 +231,7 @@ async function realTikTokPublishId(
   if (!(post.mediaType ?? "").startsWith("video/")) {
     throw new Error("TikTok requires a video. Add a video or remove the TikTok target.");
   }
+  await checkTikTokMonthlyCap(ctx.db, userId);
   const creds = ownerTikTokCredentials();
   if (!creds.ok) throw new Error("TikTok isn't set up on the server. Reconnect the channel.");
   const accessToken = await getValidTikTokAccessToken(ctx.db, userId, {
@@ -223,6 +251,7 @@ async function realTikTokPublishId(
       caption: post.body ?? "",
       video: videoBytes,
     });
+    await incrementTikTokMonthlyUsage(ctx.db, userId);
     return publishId;
   } catch (err) {
     if (err instanceof TikTokApiError && err.code === "unaudited_client_can_only_post_to_private_accounts") {

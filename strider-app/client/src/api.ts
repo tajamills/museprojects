@@ -37,6 +37,8 @@ type SettingsResult = {
   xConfigured: boolean;
   xPostsUsed: number;
   xPostsCap: number;
+  tiktokPostsUsed: number;
+  tiktokPostsCap: number;
   platforms: Array<{ platform: Platform; label: string; clientId: string; secretReference: string; developerApp: string; credentialFields: string; warning: string; failureHint: string }>;
 };
 type CreatePostRequest = {
