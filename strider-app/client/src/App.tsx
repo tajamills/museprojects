@@ -678,6 +678,7 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }
       {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
       {isAdmin && <p className="secret-note">Owner Meta app: {metaConfigured ? "configured" : "not configured — set FACEBOOK_APP_ID and FACEBOOK_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && setting.platform === "facebook" && <button className="secondary-button" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? "Testing…" : "Test Meta connection"}</button>}
+      {isAdmin && setting.platform === "facebook" && <p className="secret-note"><a href="/facebook-setup-tutorial.mp4" target="_blank" rel="noreferrer">Watch the full setup walkthrough (video)</a> — documents every step and fix from the original Meta app setup.</p>}
       {!isAdmin && <p className="secret-note">Connect with {setting.label} on the Accounts page — no setup needed.</p>}
     </div>
   </details>;
