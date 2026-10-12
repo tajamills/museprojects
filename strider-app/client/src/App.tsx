@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, type ApiResponse } from "./api";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
-type Page = "dashboard" | "compose" | "queue" | "accounts" | "settings";
+type Page = "dashboard" | "post" | "accounts" | "settings";
 type Account = ApiResponse<typeof api, "getWorkspace">["accounts"][number];
 type Post = ApiResponse<typeof api, "getWorkspace">["posts"][number];
 type PlatformSetting = ApiResponse<typeof api, "listPlatformSettings">["platforms"][number];
@@ -20,8 +20,7 @@ const PLATFORM_META: Record<Platform, { label: string; mark: string; className: 
 
 const NAV: Array<{ id: Page; label: string; glyph: string }> = [
   { id: "dashboard", label: "Overview", glyph: "▦" },
-  { id: "compose", label: "Compose", glyph: "+" },
-  { id: "queue", label: "Queue", glyph: "◷" },
+  { id: "post", label: "Post", glyph: "+" },
   { id: "accounts", label: "Accounts", glyph: "◉" },
   { id: "settings", label: "Settings", glyph: "⌁" },
 ];
@@ -123,7 +122,7 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
   return <div className="page-stack">
     <section className="command-hero">
       <div><span className="section-code">CONTROL ROOM</span><h1>{connected === 0 ? "Connect your first channel" : `${connected} channels standing by`}</h1><p>{connected === 0 ? (demoMode ? "Official OAuth only. Demo connections let you test the flow without contacting a platform." : "Official OAuth only. Connect your channels to start publishing.") : "Compose once, review each format, then send now or place it in the queue."}</p></div>
-      <button className="primary-button" onClick={() => go(connected === 0 ? "accounts" : "compose")}>{connected === 0 ? "Connect channels" : "Create post"}</button>
+      <button className="primary-button" onClick={() => go(connected === 0 ? "accounts" : "post")}>{connected === 0 ? "Connect channels" : "Create post"}</button>
     </section>
 
     {needsAttention.length > 0 && <section className="attention-band"><strong>{needsAttention.length} account{needsAttention.length === 1 ? "" : "s"} need attention</strong><span>Reconnect before publishing. The app will not fail silently.</span><button onClick={() => go("accounts")}>Review</button></section>}
@@ -135,8 +134,8 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
     </section>
 
     <section className="content-section">
-      <div className="section-heading"><div><span className="section-code">LATEST RUNS</span><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("queue")}>Open queue</button></div>
-      {posts.length === 0 ? <EmptyState title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("compose")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
+      <div className="section-heading"><div><span className="section-code">LATEST RUNS</span><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("post")}>Open posts</button></div>
+      {posts.length === 0 ? <EmptyState title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("post")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
     </section>
   </div>;
 }
@@ -367,7 +366,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
   </div>;
 }
 
-function Queue({ posts, token, onMessage }: { posts: Post[]; token: string; onMessage: (message: string) => void }) {
+function Queue({ posts, token, onMessage, embedded }: { posts: Post[]; token: string; onMessage: (message: string) => void; embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"all" | "pending" | "published" | "failed">("all");
   const cancel = useMutation({
@@ -383,10 +382,18 @@ function Queue({ posts, token, onMessage }: { posts: Post[]; token: string; onMe
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
   });
   const filtered = filter === "all" ? posts : posts.filter((post) => post.status === filter);
-  return <div className="page-stack">
-    <div className="page-heading"><span className="section-code">DELIVERY QUEUE</span><h1>Every post has a visible state.</h1><p>Pending items can be cancelled. Failures stay attached to the affected platform instead of disappearing into a generic error.</p></div>
+  return <div className={embedded ? "queue-embedded" : "page-stack"}>
+    {!embedded && <div className="page-heading"><span className="section-code">DELIVERY QUEUE</span><h1>Every post has a visible state.</h1><p>Pending items can be cancelled. Failures stay attached to the affected platform instead of disappearing into a generic error.</p></div>}
+    {embedded && <div className="section-heading"><div><span className="section-code">SCHEDULE</span><h2>Queued and past posts</h2></div></div>}
     <div className="filter-row" role="group" aria-label="Filter posts">{(["all", "pending", "published", "failed"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
     {filtered.length === 0 ? <EmptyState title={filter === "all" ? "Queue is empty" : `No ${filter} posts`} body="Posts you publish or schedule will land here with per-platform status." /> : <PostList posts={filtered} onCancel={(id) => cancel.mutate(id)} onCancelBump={(id) => cancelBump.mutate(id)} onAdvanceBump={(id) => advanceBump.mutate(id)} cancelling={cancel.isPending || cancelBump.isPending || advanceBump.isPending} />}
+  </div>;
+}
+
+function PostPage({ accounts, posts, token, onMessage, goAccounts }: { accounts: Account[]; posts: Post[]; token: string; onMessage: (message: string) => void; goAccounts: () => void }) {
+  return <div className="page-stack post-page">
+    <Composer accounts={accounts} token={token} onDone={onMessage} goAccounts={goAccounts} />
+    <Queue posts={posts} token={token} onMessage={onMessage} embedded />
   </div>;
 }
 
@@ -540,8 +547,7 @@ export function App() {
     </aside>
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
-      {page === "compose" && <Composer accounts={data.accounts} token={sessionToken} onDone={setToast} goAccounts={() => setPage("accounts")} />}
-      {page === "queue" && <Queue posts={data.posts} token={sessionToken} onMessage={setToast} />}
+      {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} onMessage={setToast} onSignOut={signOut} />}
     </main>
