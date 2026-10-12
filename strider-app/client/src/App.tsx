@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ComponentType, type FormEvent, type 
 import { api, type ApiResponse } from "./api";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
-type Page = "dashboard" | "post" | "accounts" | "settings";
+type Page = "dashboard" | "post" | "accounts" | "settings" | "help";
 type Account = ApiResponse<typeof api, "getWorkspace">["accounts"][number];
 type Post = ApiResponse<typeof api, "getWorkspace">["posts"][number];
 type PlatformSetting = ApiResponse<typeof api, "listPlatformSettings">["platforms"][number];
@@ -25,6 +25,7 @@ const IconHome = () => <StrokeIcon><rect x="3" y="3" width="7" height="7" rx="1.
 const IconCompose = () => <StrokeIcon><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></StrokeIcon>;
 const IconUsers = () => <StrokeIcon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></StrokeIcon>;
 const IconGear = () => <StrokeIcon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></StrokeIcon>;
+const IconHelp = () => <StrokeIcon><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></StrokeIcon>;
 const IconHeart = () => <StrokeIcon><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></StrokeIcon>;
 const IconComment = () => <StrokeIcon><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></StrokeIcon>;
 const IconShare = () => <StrokeIcon><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></StrokeIcon>;
@@ -52,6 +53,7 @@ const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
   { id: "post", label: "Post", Icon: IconCompose },
   { id: "accounts", label: "Accounts", Icon: IconUsers },
   { id: "settings", label: "Settings", Icon: IconGear },
+  { id: "help", label: "Help", Icon: IconHelp },
 ];
 
 /** Server-wide demo mode (DEMO_MODE env). Default false: demo UI chrome is hidden. */
@@ -724,6 +726,152 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
   </div>;
 }
 
+
+function HelpPage({ go }: { go: (page: Page) => void }) {
+  return <div className="page-stack">
+    <div className="page-heading"><h1>Help</h1><p>Everything you need to connect your accounts and start posting. No technical setup required — you just click Connect and log in with each platform.</p></div>
+
+    <section className="help-section">
+      <h2>Getting started</h2>
+      <div className="help-steps">
+        <div className="help-step"><span>1</span><div><strong>Create your account</strong><p>Sign up for zepostia and pick the $19.88/month plan. Your first 14 days are free.</p></div></div>
+        <div className="help-step"><span>2</span><div><strong>Connect your accounts</strong><p>Go to the <button className="text-button" onClick={() => go("accounts")}>Accounts page</button> and hit <strong>Connect</strong> next to each platform. You&apos;ll be taken to that platform&apos;s own login page — log in and approve zepostia. That&apos;s the whole setup.</p></div></div>
+        <div className="help-step"><span>3</span><div><strong>Write your first post</strong><p>Open the <button className="text-button" onClick={() => go("post")}>Post page</button>, write your message, pick which connected accounts to publish to, and hit <strong>Post now</strong> — or pick a date and time to schedule it.</p></div></div>
+      </div>
+    </section>
+
+    <section className="help-section">
+      <h2>Connecting each platform</h2>
+      <div className="help-cards">
+        <details className="help-card" open>
+          <summary><strong>Facebook</strong><span>Post to your Pages</span></summary>
+          <ol>
+            <li>On the Accounts page, hit <strong>Connect</strong> next to Facebook.</li>
+            <li>Facebook opens its login page — log in and approve zepostia.</li>
+            <li>Choose which of your Facebook <strong>Pages</strong> zepostia can post to.</li>
+          </ol>
+          <p className="help-note">Zepostia posts to Pages you manage, not personal profiles. You&apos;re granting permission to publish posts on your behalf — you can revoke it any time in your Facebook settings.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>Instagram</strong><span>Requires a professional account</span></summary>
+          <p>Instagram only allows third-party posting for <strong>professional accounts</strong> (creator or business). Before connecting:</p>
+          <ol>
+            <li>In the Instagram app, switch your account to professional: Settings → Account type and tools → Switch to professional account.</li>
+            <li>Link it to one of your Facebook Pages: in the Instagram app, go to Settings → Account → Sharing to other apps, or link it from your Facebook Page&apos;s settings.</li>
+            <li>Back on the Accounts page, hit <strong>Connect</strong> next to Instagram and approve zepostia.</li>
+          </ol>
+          <p className="help-note">Personal Instagram accounts can&apos;t be connected — this is Instagram&apos;s rule, not ours.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>TikTok</strong><span>Video posts</span></summary>
+          <ol>
+            <li>On the Accounts page, hit <strong>Connect</strong> next to TikTok.</li>
+            <li>TikTok opens its login page — log in and authorize zepostia to upload videos.</li>
+          </ol>
+          <p className="help-note">TikTok posts are video only. New apps publish privately until TikTok approves them — if your video lands as private, that&apos;s why.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>YouTube</strong><span>Video uploads to your channel</span></summary>
+          <ol>
+            <li>On the Accounts page, hit <strong>Connect</strong> next to YouTube.</li>
+            <li>Google opens its sign-in page — sign in and grant zepostia permission to upload videos.</li>
+            <li>Pick the channel you want zepostia to upload to.</li>
+          </ol>
+          <p className="help-note">Every upload needs a video file and a title. You&apos;re granting the YouTube upload permission only — zepostia can&apos;t read your email or access anything else in your Google account.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>X</strong><span>Text posts, 280 characters</span></summary>
+          <ol>
+            <li>On the Accounts page, hit <strong>Connect</strong> next to X.</li>
+            <li>X opens its authorization page — log in and approve zepostia.</li>
+          </ol>
+          <p className="help-note">Your plan includes up to <strong>60 X posts per month</strong>. The count resets on the 1st — you can see your usage in Settings.</p>
+        </details>
+      </div>
+    </section>
+
+    <section className="help-section">
+      <h2>Posting</h2>
+      <div className="help-article">
+        <p>Write your message once on the <button className="text-button" onClick={() => go("post")}>Post page</button>, then choose which of your connected accounts it goes to. Each platform gets a version that fits its rules.</p>
+        <ul>
+          <li><strong>Post now</strong> publishes immediately to every selected account.</li>
+          <li><strong>Schedule</strong> picks a date and time. Scheduled posts wait in your queue — you can cancel any of them before they go out.</li>
+          <li><strong>Queued and past posts</strong> on the Post page shows everything: what&apos;s waiting, what published, and what failed (with the reason).</li>
+        </ul>
+      </div>
+    </section>
+
+    <section className="help-section">
+      <h2>What each platform supports</h2>
+      <div className="help-table-wrap"><table className="help-table">
+        <thead><tr><th>Platform</th><th>Text limit</th><th>Media</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Facebook</strong></td><td>No practical limit</td><td>Text, link, image</td><td>Posts to Pages you manage</td></tr>
+          <tr><td><strong>Instagram</strong></td><td>2,200 characters</td><td>Image or video</td><td>Professional account required</td></tr>
+          <tr><td><strong>TikTok</strong></td><td>Caption up to 2,200</td><td>Video only</td><td>60 posts/month included</td></tr>
+          <tr><td><strong>YouTube</strong></td><td>Title + description</td><td>Video only</td><td>Uploads to your channel</td></tr>
+          <tr><td><strong>X</strong></td><td>280 characters</td><td>Text (links supported)</td><td>60 posts/month included</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section className="help-section">
+      <h2>Troubleshooting</h2>
+      <div className="help-cards">
+        <details className="help-card">
+          <summary><strong>My connection expired</strong><span>Reconnect in one click</span></summary>
+          <p>Platforms occasionally revoke access (usually after a password change or a long idle period). On the Accounts page, the account will show a warning — hit <strong>Reconnect</strong> and approve zepostia again. Your scheduled posts will resume.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>A post failed</strong><span>Check the reason</span></summary>
+          <p>Open the Post page and look at your queued and past posts — failed posts show the reason. Common causes:</p>
+          <ul>
+            <li>The account&apos;s connection expired — reconnect it on the Accounts page.</li>
+            <li>The media type isn&apos;t supported (e.g. text-only to TikTok, which needs video).</li>
+            <li>The text is too long for the platform (X&apos;s 280-character limit).</li>
+          </ul>
+          <p>Fix the issue and repost.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>Instagram won&apos;t connect</strong><span>Check the requirements</span></summary>
+          <p>Instagram requires a <strong>professional account</strong> linked to a <strong>Facebook Page</strong>. If either is missing, the connection fails. Switch to professional in the Instagram app, link a Page, then try connecting again.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>A scheduled post didn&apos;t go out</strong><span>Check the queue</span></summary>
+          <p>Check the Post page — if the post shows as failed, the reason is listed there. If it&apos;s still pending past its scheduled time, make sure the account is still connected on the Accounts page.</p>
+        </details>
+      </div>
+    </section>
+
+    <section className="help-section">
+      <h2>Frequently asked questions</h2>
+      <div className="help-cards">
+        <details className="help-card">
+          <summary><strong>Do I need a developer account with any platform?</strong></summary>
+          <p>No. You just click Connect and log in with the platform. All the technical setup is handled by zepostia.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>Does zepostia see or store my passwords?</strong></summary>
+          <p>No. You log in on each platform&apos;s own website (facebook.com, google.com, x.com, tiktok.com) — zepostia never sees your password. The platforms give zepostia a limited access token that only allows posting.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>Can I disconnect an account?</strong></summary>
+          <p>Yes, any time. On the Accounts page, hit <strong>Disconnect</strong> next to the account. You can also revoke zepostia&apos;s access directly in each platform&apos;s settings.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>What counts toward my monthly limits?</strong></summary>
+          <p>Only <strong>successful</strong> posts count. Failed posts don&apos;t use your quota. X and TikTok each include 60 posts per month; the count resets on the 1st. You can see your current usage in Settings.</p>
+        </details>
+        <details className="help-card">
+          <summary><strong>Can I post to some platforms but not others?</strong></summary>
+          <p>Yes. Every post lets you choose exactly which connected accounts it goes to. Connect everything once, then pick per post.</p>
+        </details>
+      </div>
+    </section>
+  </div>;
+}
+
 export function App() {
   const demoMode = useServerDemoMode();
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem("marketing-app-session") ?? "");
@@ -795,6 +943,7 @@ export function App() {
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
+      {page === "help" && <HelpPage go={setPage} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} onMessage={setToast} onSignOut={signOut} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>

@@ -469,3 +469,31 @@ input[type="password"]::placeholder {
 .page-picker { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
 .page-picker select { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--text); font-size: 13px; }
 
+
+/* Help center */
+.help-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+.help-section h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 20px; color: var(--text); }
+.help-steps { display: grid; gap: 16px; }
+.help-step { display: flex; gap: 16px; align-items: flex-start; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.help-step > span { flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%; background: var(--text); color: var(--surface); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.help-step strong { font-size: 15px; }
+.help-step p { margin: 6px 0 0; color: var(--dim); font-size: 14px; line-height: 1.6; }
+.help-cards { display: grid; gap: 12px; }
+.help-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.help-card summary { list-style: none; cursor: pointer; padding: 18px 20px; display: flex; align-items: baseline; gap: 12px; }
+.help-card summary::-webkit-details-marker { display: none; }
+.help-card summary strong { font-size: 15px; }
+.help-card summary > span { color: var(--dim); font-size: 13px; }
+.help-card > *:not(summary) { padding: 0 20px; }
+.help-card > p:last-child, .help-card > ol:last-child, .help-card > ul:last-child { padding-bottom: 20px; }
+.help-card ol, .help-card ul { margin: 12px 0; padding-left: 22px; color: var(--text); font-size: 14px; line-height: 1.7; }
+.help-card p { margin: 12px 0; font-size: 14px; line-height: 1.65; color: var(--text); }
+.help-note { color: var(--dim); font-size: 13px; border-top: 1px solid var(--border); padding-top: 14px; }
+.help-article p { margin: 0 0 14px; font-size: 14px; line-height: 1.7; }
+.help-article ul { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.8; }
+.help-table-wrap { overflow-x: auto; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.help-table th { text-align: left; font-weight: 600; color: var(--dim); font-size: 13px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.help-table td { padding: 12px; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.help-table tr:last-child td { border-bottom: 0; }
+.text-button { background: none; border: none; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
