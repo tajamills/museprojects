@@ -73,6 +73,7 @@ type ClientApi = {
   requestPasswordReset(args: { email: string }): Promise<BasicResult>;
   resetPassword(args: { token: string; password: string }): Promise<BasicResult>;
   generatePasswordResetLink(args: { sessionToken: string; email: string }): Promise<{ ok: boolean; message: string; resetUrl: string | null }>;
+  changePassword(args: { sessionToken: string; currentPassword: string; newPassword: string }): Promise<BasicResult>;
   getWorkspace(args: { sessionToken: string }): Promise<WorkspaceResult>;
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;

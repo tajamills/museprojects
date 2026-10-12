@@ -409,6 +409,8 @@ input[type="password"]::placeholder {
 .settings-card summary > span:first-child { display: flex; align-items: center; gap: 14px; font-weight: 600; font-size: 15px; }
 .settings-card summary > span:last-child { color: var(--dim); font-size: 13px; font-weight: 500; }
 .settings-body { display: grid; gap: 16px; padding: 8px 24px 24px; border-top: 1px solid var(--border); }
+.settings-body.flush { border-top: 0; padding-top: 20px; }
+.change-password-form { display: grid; gap: 14px; }
 .go-live-list { padding-top: 12px; display: grid; gap: 12px; }
 .go-live-list p { margin: 0; color: var(--dim); font-size: 14px; line-height: 1.6; }
 .go-live-list b { display: none; }

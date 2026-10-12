@@ -421,6 +421,33 @@ export const actions: Record<string, ActionDef> = {
     },
   },
 
+  /** Logged-in users only: change password by verifying the current one. No email/reset link involved. */
+  changePassword: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+      currentPassword: z.string().min(1).max(200),
+      newPassword: z.string().min(8).max(200),
+    }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "You're not signed in." };
+      const rows = await ctx.db
+        .select({ passwordHash: schema.users.passwordHash, passwordSalt: schema.users.passwordSalt })
+        .from(schema.users)
+        .where(eq(schema.users.id, user.id))
+        .limit(1);
+      const row = rows[0];
+      if (!row || row.passwordHash !== await digestPassword(args.currentPassword, row.passwordSalt)) {
+        return { ok: false, message: "Your current password is incorrect." };
+      }
+      const salt = crypto.randomUUID();
+      await ctx.db.update(schema.users)
+        .set({ passwordHash: await digestPassword(args.newPassword, salt), passwordSalt: salt })
+        .where(eq(schema.users.id, user.id));
+      return { ok: true, message: "Password updated. Use your new password the next time you sign in." };
+    },
+  },
+
   /** Admin-only: mint a reset link for any account (used when email delivery isn't available). */
   generatePasswordResetLink: {
     request: z.object({ sessionToken: z.string().min(1), email: z.string().email().max(200) }),

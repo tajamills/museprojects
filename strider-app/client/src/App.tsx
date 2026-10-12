@@ -806,6 +806,39 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
+function ChangePasswordForm({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [message, setMessage] = useState("");
+  const change = useMutation({ mutationFn: (payload: { sessionToken: string; currentPassword: string; newPassword: string }) => api.changePassword(payload) });
+  const run = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    if (next.length < 8) { setMessage("New password must be at least 8 characters."); return; }
+    if (next !== confirm) { setMessage("New passwords don't match."); return; }
+    try {
+      const result = await change.mutateAsync({ sessionToken: token, currentPassword: current, newPassword: next });
+      setMessage(result.message);
+      if (result.ok) { setCurrent(""); setNext(""); setConfirm(""); onMessage(result.message); }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not continue.");
+    }
+  };
+  return <section className="settings-card">
+    <div className="settings-body flush">
+    <h2>Change password</h2>
+    <form onSubmit={run} className="change-password-form">
+      <label>Current password<input type="password" value={current} onChange={(event) => setCurrent(event.target.value)} autoComplete="current-password" required /></label>
+      <label>New password<input type="password" value={next} onChange={(event) => setNext(event.target.value)} autoComplete="new-password" minLength={8} required /></label>
+      <label>Confirm new password<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" required /></label>
+      {message && <p className="form-message" role="status">{message}</p>}
+      <button className="secondary-button" type="submit" disabled={change.isPending}>{change.isPending ? "Updating…" : "Update password"}</button>
+    </form>
+    </div>
+  </section>;
+}
+
 function AdminResetTool({ token }: { token: string }) {
   const [email, setEmail] = useState("");
   const [link, setLink] = useState("");
@@ -837,6 +870,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
     <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
+    <ChangePasswordForm token={token} onMessage={onMessage} />
     {isAdmin && <AdminResetTool token={token} />}
   </div>;
 }
