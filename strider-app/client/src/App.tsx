@@ -406,7 +406,7 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }
   });
   const steps = setting.platform === "facebook"
     ? ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Choose the Pages you want zepostia to post to."]
-    : ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Pick your professional Instagram account (it must be linked to a Facebook Page)."];
+    : ["Switch your Instagram to a professional account (creator or business) in the Instagram app.", "Link that Instagram account to one of your Facebook Pages (Page settings → Linked accounts).", "Then hit Connect on the Accounts page and approve zepostia."];
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>No setup needed</span></summary>
     <div className="settings-body">
