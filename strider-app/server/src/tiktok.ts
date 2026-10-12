@@ -48,6 +48,7 @@ export class TikTokApiError extends Error {
   constructor(message: string, code?: string) {
     super(message);
     this.name = "TikTokApiError";
+    this.code = code;
   }
 }
 
