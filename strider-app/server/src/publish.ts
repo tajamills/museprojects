@@ -13,8 +13,26 @@
 import { and, eq } from "drizzle-orm";
 import type { AppCtx } from "./ctx.js";
 import * as schema from "./schema.js";
-import { decryptToken, publishPageComment, publishPagePost } from "./facebook.js";
+import { decryptToken, encryptToken, publishPageComment, publishPagePost } from "./facebook.js";
 import { publishInstagramMedia } from "./instagram.js";
+import {
+  getValidTikTokAccessToken,
+  ownerTikTokCredentials,
+  publishTikTokVideo,
+  TikTokApiError,
+} from "./tiktok.js";
+import { refreshAccessToken, uploadYoutubeVideo, YoutubeApiError } from "./youtube.js";
+import {
+  getValidXAccessToken,
+  ownerXCredentials,
+  postTweet,
+  XApiError,
+  X_MAX_TWEET_LENGTH,
+} from "./x.js";
+import { resolvePlatformSecret } from "./secrets.js";
+import { resolveMediaDir } from "./ctx.js";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 export interface PublishSummary {
   published: number;
@@ -81,6 +99,171 @@ async function realInstagramMediaId(
   return mediaId;
 }
 
+/**
+ * Uploads a post's video to the connected YouTube channel via the resumable
+ * upload flow. Requires a video file and a title (enforced by the composer
+ * and createPost; double-checked here). Refreshes the access token when it
+ * is expired or about to expire, persisting the new one.
+ */
+async function realYoutubeVideoId(
+  ctx: AppCtx,
+  userId: number,
+  post: { body: string; youtubeTitle: string | null; mediaBlobKey: string | null; mediaType: string | null; mediaName: string | null },
+): Promise<string> {
+  if (!post.mediaBlobKey) {
+    throw new Error("YouTube requires a video and a title. Add both or remove the YouTube target.");
+  }
+  if (!(post.mediaType ?? "").startsWith("video/")) {
+    throw new Error("YouTube requires a video and a title. Add both or remove the YouTube target.");
+  }
+  const title = (post.youtubeTitle ?? "").trim() || (post.body ?? "").trim().slice(0, 100);
+  if (!title) {
+    throw new Error("YouTube requires a video and a title. Add both or remove the YouTube target.");
+  }
+  const rows = await ctx.db
+    .select()
+    .from(schema.youtubeConnections)
+    .where(eq(schema.youtubeConnections.userId, userId))
+    .limit(1);
+  const conn = rows[0];
+  if (!conn) throw new Error("YouTube is not connected with real OAuth. Reconnect the channel.");
+  let accessToken: string;
+  let refreshToken: string;
+  try {
+    accessToken = decryptToken(conn.accessTokenEncrypted);
+    refreshToken = decryptToken(conn.refreshTokenEncrypted);
+  } catch {
+    throw new Error("The stored YouTube token could not be decrypted. Reconnect the channel.");
+  }
+  // Refresh when expired or within 60s of expiry.
+  if (conn.expiresAt.getTime() - Date.now() < 60 * 1000) {
+    const clientId = (process.env.YOUTUBE_CLIENT_ID ?? "").trim();
+    const clientSecret = resolvePlatformSecret("youtube");
+    if (!clientId || clientId.startsWith("DEMO_") || !clientSecret) {
+      throw new Error("YouTube isn't set up on the server. Reconnect the channel.");
+    }
+    try {
+      const tokens = await refreshAccessToken({ clientId, clientSecret, refreshToken });
+      accessToken = tokens.accessToken;
+      if (tokens.refreshToken) refreshToken = tokens.refreshToken;
+      await ctx.db
+        .update(schema.youtubeConnections)
+        .set({
+          accessTokenEncrypted: encryptToken(accessToken),
+          refreshTokenEncrypted: encryptToken(refreshToken),
+          expiresAt: new Date(Date.now() + tokens.expiresIn * 1000),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.youtubeConnections.id, conn.id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/invalid_grant|revoked/i.test(msg)) {
+        throw new Error("YouTube access was revoked. Reconnect the channel.");
+      }
+      throw new Error(`YouTube token refresh failed: ${msg}`);
+    }
+  }
+  let videoBytes: Buffer;
+  try {
+    const mediaPath = path.join(resolveMediaDir(), post.mediaBlobKey);
+    videoBytes = await readFile(mediaPath);
+  } catch {
+    throw new Error("The video file for this post is missing. Re-upload it and try again.");
+  }
+  try {
+    const { videoId } = await uploadYoutubeVideo({
+      accessToken,
+      videoBytes: new Uint8Array(videoBytes),
+      mimeType: post.mediaType as string,
+      title,
+      description: post.body ?? "",
+    });
+    return videoId;
+  } catch (err) {
+    if (err instanceof YoutubeApiError && err.status === 401) {
+      throw new Error("YouTube rejected the upload (unauthorized). Reconnect the channel.");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Publishes a post's video to the connected TikTok account via direct post
+ * (FILE_UPLOAD). Requires a video file (enforced by the composer and
+ * createPost; double-checked here). Refreshes the access token when it is
+ * expired or about to expire, persisting the new one.
+ */
+async function realTikTokPublishId(
+  ctx: AppCtx,
+  userId: number,
+  post: { body: string; mediaBlobKey: string | null; mediaType: string | null },
+): Promise<string> {
+  if (!post.mediaBlobKey) {
+    throw new Error("TikTok requires a video. Add a video or remove the TikTok target.");
+  }
+  if (!(post.mediaType ?? "").startsWith("video/")) {
+    throw new Error("TikTok requires a video. Add a video or remove the TikTok target.");
+  }
+  const creds = ownerTikTokCredentials();
+  if (!creds.ok) throw new Error("TikTok isn't set up on the server. Reconnect the channel.");
+  const accessToken = await getValidTikTokAccessToken(ctx.db, userId, {
+    clientId: creds.clientId,
+    clientSecret: creds.clientSecret,
+  });
+  let videoBytes: Buffer;
+  try {
+    const mediaPath = path.join(resolveMediaDir(), post.mediaBlobKey);
+    videoBytes = await readFile(mediaPath);
+  } catch {
+    throw new Error("The video file for this post is missing. Re-upload it and try again.");
+  }
+  try {
+    const { publishId } = await publishTikTokVideo({
+      accessToken,
+      caption: post.body ?? "",
+      video: videoBytes,
+    });
+    return publishId;
+  } catch (err) {
+    if (err instanceof TikTokApiError && err.code === "unaudited_client_can_only_post_to_private_accounts") {
+      throw new Error("TikTok only allows private posts until the app passes audit. The video was not published.");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Posts a tweet to the connected X account. Enforces the 280-character
+ * limit server-side (the composer enforces it client-side too). Refreshes
+ * the access token when expired, persisting the new one.
+ */
+async function realXTweetId(
+  ctx: AppCtx,
+  userId: number,
+  body: string,
+): Promise<string> {
+  const text = (body ?? "").trim();
+  if (!text) throw new Error("Add text before posting to X.");
+  if (text.length > X_MAX_TWEET_LENGTH) {
+    throw new Error(`This post is ${text.length} characters; X allows ${X_MAX_TWEET_LENGTH}.`);
+  }
+  const creds = ownerXCredentials();
+  if (!creds.ok) throw new Error("X isn't set up on the server. Reconnect the channel.");
+  const accessToken = await getValidXAccessToken(ctx.db, userId, {
+    clientId: creds.clientId,
+    clientSecret: creds.clientSecret,
+  });
+  try {
+    const { tweetId } = await postTweet({ accessToken, text });
+    return tweetId;
+  } catch (err) {
+    if (err instanceof XApiError && /unauthorized|forbidden/i.test(err.message)) {
+      throw new Error("X rejected the tweet (unauthorized). Reconnect the channel.");
+    }
+    throw err;
+  }
+}
+
 /** Publishes every pending target of a post; updates target + post rows. */
 export async function publishPendingTargets(ctx: AppCtx, postId: number): Promise<PublishSummary> {
   const postRows = await ctx.db.select().from(schema.posts).where(eq(schema.posts.id, postId)).limit(1);
@@ -96,12 +279,18 @@ export async function publishPendingTargets(ctx: AppCtx, postId: number): Promis
 
   const now = new Date();
   for (const { target, account } of targets) {
-    const isReal = account.authMode === "oauth" && (account.platform === "facebook" || account.platform === "instagram");
+    const isReal = account.authMode === "oauth" && (account.platform === "facebook" || account.platform === "instagram" || account.platform === "youtube" || account.platform === "tiktok" || account.platform === "x");
     if (isReal) {
       try {
         const remoteId = account.platform === "facebook"
           ? await realFacebookPostId(ctx, post.userId, post.body)
-          : await realInstagramMediaId(ctx, post.userId, post);
+          : account.platform === "instagram"
+            ? await realInstagramMediaId(ctx, post.userId, post)
+            : account.platform === "tiktok"
+              ? await realTikTokPublishId(ctx, post.userId, post)
+              : account.platform === "x"
+                ? await realXTweetId(ctx, post.userId, post.body)
+                : await realYoutubeVideoId(ctx, post.userId, post);
         await ctx.db
           .update(schema.postTargets)
           .set({ status: "published", remoteId, publishedAt: now, errorMessage: null })

@@ -22,6 +22,36 @@ import {
   isRealInstagramConfig,
   listInstagramBusinessAccounts,
 } from "./instagram.js";
+import {
+  buildTikTokAuthUrl,
+  exchangeTikTokCode,
+  getTikTokUserInfo,
+  isRealTikTokConfig,
+  isTikTokAppConfigured,
+  ownerTikTokCredentials,
+  tiktokRedirectUri,
+} from "./tiktok.js";
+export { isTikTokAppConfigured, ownerTikTokCredentials };
+import {
+  buildYoutubeAuthUrl,
+  exchangeCodeForTokens,
+  getChannelInfo,
+  isRealYoutubeConfig,
+  youtubeRedirectUri,
+} from "./youtube.js";
+import {
+  buildXAuthUrl,
+  exchangeXCodeForToken,
+  generateCodeChallenge,
+  generateCodeVerifier,
+  getXUserInfo,
+  isRealXConfig,
+  isXAppConfigured,
+  ownerXCredentials,
+  refreshXToken,
+  xRedirectUri,
+} from "./x.js";
+export { isXAppConfigured, ownerXCredentials };
 import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
 import { resolvePlatformSecret } from "./secrets.js";
 
@@ -51,10 +81,10 @@ const PLATFORM_INFO: Record<Platform, {
   },
   tiktok: {
     label: "TikTok",
-    developerApp: "TikTok for Developers app with Login Kit and Content Posting API",
-    credentialFields: "Client key + Client secret (kept in a server-side secret vault)",
-    failureHint: "If TikTok says the maximum number of attempts was reached, stop retrying and wait until the shown retry time.",
-    warning: "TikTok rate-limits repeated login attempts. The app backs off instead of hammering the endpoint.",
+    developerApp: "No setup needed — zepostia handles the TikTok app for you",
+    credentialFields: "None — connect with TikTok on the Accounts page",
+    failureHint: "TikTok only posts video (no text-only posts). If TikTok says the maximum number of attempts was reached, stop retrying and wait until the shown retry time.",
+    warning: "TikTok posts video only. New TikTok apps post privately until the app passes TikTok's audit.",
   },
   youtube: {
     label: "YouTube",
@@ -235,6 +265,24 @@ export function isMetaAppConfigured(): boolean {
   return ownerMetaAppCredentials().ok;
 }
 
+/**
+ * Owner-level YouTube OAuth credentials. ONE Google Cloud OAuth client for
+ * the whole site: client ID from YOUTUBE_CLIENT_ID, secret from
+ * YOUTUBE_CLIENT_SECRET. Customers never configure these.
+ */
+export function ownerYoutubeCredentials(): MetaAppCreds {
+  const clientId = (process.env.YOUTUBE_CLIENT_ID ?? "").trim();
+  const clientSecret = resolvePlatformSecret("youtube");
+  if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
+  if (!clientSecret) return { ok: false, missing: "app-secret" };
+  return { ok: true, clientId, clientSecret: clientSecret as string };
+}
+
+/** Boolean only — never leaks values. Used for the admin status line. */
+export function isYoutubeConfigured(): boolean {
+  return ownerYoutubeCredentials().ok;
+}
+
 export const actions: Record<string, ActionDef> = {
   getPublicConfig: {
     request: z.object({}),
@@ -383,6 +431,9 @@ export const actions: Record<string, ActionDef> = {
       return {
         ok: true,
         metaConfigured: isMetaAppConfigured(),
+        tiktokConfigured: isTikTokAppConfigured(),
+        youtubeConfigured: isYoutubeConfigured(),
+        xConfigured: isXAppConfigured(),
         platforms: (Object.keys(PLATFORM_INFO) as Platform[]).map((platform) => {
           const config = configs.find((item) => item.platform === platform);
           const info = PLATFORM_INFO[platform];
@@ -426,8 +477,14 @@ export const actions: Record<string, ActionDef> = {
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
-      if ((args.platform === "facebook" || args.platform === "instagram") && args.clientSecret.trim()) {
-        return { ok: false, message: "The Meta app is configured by the site owner. Nothing for you to enter here." };
+      if ((args.platform === "facebook" || args.platform === "instagram" || args.platform === "tiktok") && args.clientSecret.trim()) {
+        return { ok: false, message: "This app is configured by the site owner. Nothing for you to enter here." };
+      }
+      if (args.platform === "youtube" && args.clientSecret.trim()) {
+        return { ok: false, message: "The YouTube app is configured by the site owner. Nothing for you to enter here." };
+      }
+      if (args.platform === "x" && args.clientSecret.trim()) {
+        return { ok: false, message: "The X app is configured by the site owner. Nothing for you to enter here." };
       }
       let secretEnc: string | null = null;
       if (args.clientSecret.trim()) {
@@ -542,6 +599,126 @@ export const actions: Record<string, ActionDef> = {
       });
       const authUrl = buildInstagramAuthUrl({ clientId: creds.clientId, redirectUri, state });
       return { ok: true, message: "Opening Instagram…", mode: "oauth", authUrl };
+    },
+  },
+
+  connectYoutube: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; mode: "oauth" | "demo"; authUrl: string | null }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
+      const creds = ownerYoutubeCredentials();
+      if (!creds.ok) {
+        if (!isDemoMode()) {
+          const what = creds.missing === "app-id"
+            ? "YouTube isn't set up yet — the site owner needs to add the Google OAuth client ID (YOUTUBE_CLIENT_ID)."
+            : "YouTube isn't set up yet — the site owner needs to add the Google OAuth client secret (YOUTUBE_CLIENT_SECRET).";
+          return { ok: false, message: what, mode: "oauth", authUrl: null };
+        }
+        const demo = await demoConnectAccount(ctx, user, "youtube");
+        return { ...demo, mode: "demo", authUrl: null };
+      }
+      try {
+        requireTokenEncryption();
+      } catch {
+        return { ok: false, message: "Set TOKEN_ENCRYPTION_KEY on the server before connecting YouTube.", mode: "oauth", authUrl: null };
+      }
+      const redirectUri = youtubeRedirectUri(ctx.origin);
+      const state = crypto.randomUUID();
+      const now = new Date();
+      await ctx.db.insert(schema.oauthStates).values({
+        state,
+        userId: user.id,
+        platform: "youtube",
+        redirectUri,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+      });
+      const authUrl = buildYoutubeAuthUrl({ clientId: creds.clientId, redirectUri, state });
+      return { ok: true, message: "Opening YouTube…", mode: "oauth", authUrl };
+    },
+  },
+
+  connectTikTok: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; mode: "oauth" | "demo"; authUrl: string | null }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
+      const creds = ownerTikTokCredentials();
+      if (!creds.ok) {
+        if (!isDemoMode()) {
+          const what = creds.missing === "app-id"
+            ? "TikTok isn't set up yet — the site owner needs to add the TikTok Client Key (TIKTOK_CLIENT_KEY)."
+            : "TikTok isn't set up yet — the site owner needs to add the TikTok Client Secret (TIKTOK_CLIENT_SECRET).";
+          return { ok: false, message: what, mode: "oauth", authUrl: null };
+        }
+        const demo = await demoConnectAccount(ctx, user, "tiktok");
+        return { ...demo, mode: "demo", authUrl: null };
+      }
+      try {
+        requireTokenEncryption();
+      } catch {
+        return { ok: false, message: "Set TOKEN_ENCRYPTION_KEY on the server before connecting TikTok.", mode: "oauth", authUrl: null };
+      }
+      const redirectUri = tiktokRedirectUri(ctx.origin);
+      const state = crypto.randomUUID();
+      const now = new Date();
+      await ctx.db.insert(schema.oauthStates).values({
+        state,
+        userId: user.id,
+        platform: "tiktok",
+        redirectUri,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+      });
+      const authUrl = buildTikTokAuthUrl({ clientKey: creds.clientId, redirectUri, state });
+      return { ok: true, message: "Opening TikTok…", mode: "oauth", authUrl };
+    },
+  },
+
+  /**
+   * X connect entry point. Uses real OAuth 2.0 with PKCE when the owner's
+   * X app is configured (X_CLIENT_ID + X_CLIENT_SECRET); otherwise refuses
+   * in production (never a silent demo), mirroring the other platforms.
+   * The PKCE code_verifier is stored with the single-use CSRF state.
+   */
+  connectX: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; mode: "oauth" | "demo"; authUrl: string | null }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
+      const creds = ownerXCredentials();
+      if (!creds.ok) {
+        if (!isDemoMode()) {
+          const what = creds.missing === "app-id"
+            ? "X isn't set up yet — the site owner needs to add the X Client ID (X_CLIENT_ID)."
+            : "X isn't set up yet — the site owner needs to add the X Client Secret (X_CLIENT_SECRET).";
+          return { ok: false, message: what, mode: "oauth", authUrl: null };
+        }
+        const demo = await demoConnectAccount(ctx, user, "x");
+        return { ...demo, mode: "demo", authUrl: null };
+      }
+      try {
+        requireTokenEncryption();
+      } catch {
+        return { ok: false, message: "Set TOKEN_ENCRYPTION_KEY on the server before connecting X.", mode: "oauth", authUrl: null };
+      }
+      const redirectUri = xRedirectUri(ctx.origin);
+      const state = crypto.randomUUID();
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(codeVerifier);
+      const now = new Date();
+      await ctx.db.insert(schema.oauthStates).values({
+        state,
+        userId: user.id,
+        platform: "x",
+        redirectUri,
+        codeVerifier,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+      });
+      const authUrl = buildXAuthUrl({ clientId: creds.clientId, redirectUri, state, codeChallenge });
+      return { ok: true, message: "Opening X…", mode: "oauth", authUrl };
     },
   },
 
@@ -1114,6 +1291,325 @@ export async function handleInstagramOAuthCallback(
         status: "connected",
         authMode: "oauth",
         tokenHint: `ig:${account.igUserId}`,
+        retryAfter: null,
+        connectedAt: now,
+      },
+    });
+  return { ok: true };
+}
+
+/**
+ * Handles GET /oauth/youtube/callback. Verifies the single-use state,
+ * exchanges the code for access + refresh tokens (access_type=offline),
+ * reads the channel via channels?mine=true, and stores everything
+ * AES-256-GCM encrypted.
+ */
+export async function handleYoutubeOAuthCallback(
+  db: Db,
+  query: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (typeof query.error === "string" && query.error) {
+    return { ok: false, error: String(query.error_description ?? query.error) };
+  }
+  const state = typeof query.state === "string" ? query.state : "";
+  const code = typeof query.code === "string" ? query.code : "";
+  if (!state || !code) return { ok: false, error: "Missing code or state." };
+
+  const stateRows = await db.select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
+  const stateRow = stateRows[0];
+  // Single-use: consume whatever we found.
+  if (stateRow) await db.delete(schema.oauthStates).where(eq(schema.oauthStates.id, stateRow.id));
+  if (!stateRow || stateRow.platform !== "youtube") {
+    return { ok: false, error: "Invalid login request. Try connecting again." };
+  }
+  if (stateRow.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, error: "Login request expired. Try connecting again." };
+  }
+  // Opportunistic cleanup of other expired states.
+  await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
+
+  const ownerCreds = ownerYoutubeCredentials();
+  if (!ownerCreds.ok || !isRealYoutubeConfig(ownerCreds.clientId, true)) {
+    return { ok: false, error: "YouTube credentials changed during login. Reconnect." };
+  }
+  const clientId = ownerCreds.clientId;
+  const clientSecret = ownerCreds.clientSecret;
+
+  let channel: { channelId: string; title: string };
+  let accessTokenEncrypted: string;
+  let refreshTokenEncrypted: string;
+  let expiresAt: Date;
+  try {
+    const tokens = await exchangeCodeForTokens({
+      clientId,
+      clientSecret: clientSecret as string,
+      redirectUri: stateRow.redirectUri,
+      code,
+    });
+    if (!tokens.refreshToken) {
+      return {
+        ok: false,
+        error: "Google did not return a refresh token. Disconnect YouTube in your Google account settings and connect again.",
+      };
+    }
+    channel = await getChannelInfo(tokens.accessToken);
+    accessTokenEncrypted = encryptToken(tokens.accessToken);
+    refreshTokenEncrypted = encryptToken(tokens.refreshToken);
+    expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "YouTube login failed." };
+  }
+  const now = new Date();
+  await db
+    .insert(schema.youtubeConnections)
+    .values({
+      userId: stateRow.userId,
+      channelId: channel.channelId,
+      channelTitle: channel.title,
+      accessTokenEncrypted,
+      refreshTokenEncrypted,
+      expiresAt,
+      connectedAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.youtubeConnections.userId],
+      set: {
+        channelId: channel.channelId,
+        channelTitle: channel.title,
+        accessTokenEncrypted,
+        refreshTokenEncrypted,
+        expiresAt,
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(schema.connectedAccounts)
+    .values({
+      userId: stateRow.userId,
+      platform: "youtube",
+      handle: channel.title,
+      status: "connected",
+      authMode: "oauth",
+      tokenHint: `yt:${channel.channelId}`,
+      retryAfter: null,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+      set: {
+        handle: channel.title,
+        status: "connected",
+        authMode: "oauth",
+        tokenHint: `yt:${channel.channelId}`,
+        retryAfter: null,
+        connectedAt: now,
+      },
+    });
+  return { ok: true };
+}
+
+/**
+ * Handles GET /oauth/tiktok/callback. Verifies the single-use state,
+ * exchanges the code for tokens, fetches the TikTok user info, and stores
+ * the encrypted connection. The TikTok channel is marked connected with
+ * the display name as its handle.
+ */
+export async function handleTikTokOAuthCallback(
+  db: Db,
+  query: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (typeof query.error === "string" && query.error) {
+    return { ok: false, error: String(query.error_description ?? query.error) };
+  }
+  const state = typeof query.state === "string" ? query.state : "";
+  const code = typeof query.code === "string" ? query.code : "";
+  if (!state || !code) return { ok: false, error: "Missing code or state." };
+
+  const stateRows = await db.select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
+  const stateRow = stateRows[0];
+  // Single-use: consume whatever we found.
+  if (stateRow) await db.delete(schema.oauthStates).where(eq(schema.oauthStates.id, stateRow.id));
+  if (!stateRow || stateRow.platform !== "tiktok") {
+    return { ok: false, error: "Invalid login request. Try connecting again." };
+  }
+  if (stateRow.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, error: "Login request expired. Try connecting again." };
+  }
+  // Opportunistic cleanup of other expired states.
+  await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
+
+  const creds = ownerTikTokCredentials();
+  if (!creds.ok || !isRealTikTokConfig(creds.clientId, true)) {
+    return { ok: false, error: "TikTok credentials changed during login. Reconnect." };
+  }
+
+  let tokens: Awaited<ReturnType<typeof exchangeTikTokCode>>;
+  let userInfo: Awaited<ReturnType<typeof getTikTokUserInfo>>;
+  try {
+    tokens = await exchangeTikTokCode({
+      clientKey: creds.clientId,
+      clientSecret: creds.clientSecret,
+      redirectUri: stateRow.redirectUri,
+      code,
+    });
+    userInfo = await getTikTokUserInfo(tokens.accessToken);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "TikTok login failed." };
+  }
+  const now = new Date();
+  await db
+    .insert(schema.tiktokConnections)
+    .values({
+      userId: stateRow.userId,
+      tiktokOpenId: tokens.openId || userInfo.openId,
+      tiktokDisplayName: userInfo.displayName,
+      accessTokenEncrypted: encryptToken(tokens.accessToken),
+      refreshTokenEncrypted: encryptToken(tokens.refreshToken),
+      expiresAt: new Date(now.getTime() + tokens.expiresIn * 1000),
+      connectedAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.tiktokConnections.userId],
+      set: {
+        tiktokOpenId: tokens.openId || userInfo.openId,
+        tiktokDisplayName: userInfo.displayName,
+        accessTokenEncrypted: encryptToken(tokens.accessToken),
+        refreshTokenEncrypted: encryptToken(tokens.refreshToken),
+        expiresAt: new Date(now.getTime() + tokens.expiresIn * 1000),
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(schema.connectedAccounts)
+    .values({
+      userId: stateRow.userId,
+      platform: "tiktok",
+      handle: `@${userInfo.displayName}`,
+      status: "connected",
+      authMode: "oauth",
+      tokenHint: `tt:${tokens.openId || userInfo.openId}`,
+      retryAfter: null,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+      set: {
+        handle: `@${userInfo.displayName}`,
+        status: "connected",
+        authMode: "oauth",
+        tokenHint: `tt:${tokens.openId || userInfo.openId}`,
+        retryAfter: null,
+        connectedAt: now,
+      },
+    });
+  return { ok: true };
+}
+
+/**
+ * Handles GET /oauth/x/callback. Verifies the single-use state, exchanges
+ * the code for tokens using the stored PKCE code_verifier (confidential
+ * client: Basic auth on the token endpoint), fetches the X user, and
+ * stores the encrypted connection. The X channel is marked connected with
+ * @username as its handle.
+ */
+export async function handleXOAuthCallback(
+  db: Db,
+  query: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (typeof query.error === "string" && query.error) {
+    return { ok: false, error: String(query.error_description ?? query.error) };
+  }
+  const state = typeof query.state === "string" ? query.state : "";
+  const code = typeof query.code === "string" ? query.code : "";
+  if (!state || !code) return { ok: false, error: "Missing code or state." };
+
+  const stateRows = await db.select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
+  const stateRow = stateRows[0];
+  // Single-use: consume whatever we found.
+  if (stateRow) await db.delete(schema.oauthStates).where(eq(schema.oauthStates.id, stateRow.id));
+  if (!stateRow || stateRow.platform !== "x") {
+    return { ok: false, error: "Invalid login request. Try connecting again." };
+  }
+  if (stateRow.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, error: "Login request expired. Try connecting again." };
+  }
+  if (!stateRow.codeVerifier) {
+    return { ok: false, error: "Login request is missing its security verifier. Try connecting again." };
+  }
+  // Opportunistic cleanup of other expired states.
+  await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
+
+  const ownerCreds = ownerXCredentials();
+  if (!ownerCreds.ok || !isRealXConfig(ownerCreds.clientId, true)) {
+    return { ok: false, error: "X credentials changed during login. Reconnect." };
+  }
+  const clientId = ownerCreds.clientId;
+  const clientSecret = ownerCreds.clientSecret;
+
+  let userInfo: { id: string; username: string; name: string };
+  let accessTokenEncrypted: string;
+  let refreshTokenEncrypted: string | null;
+  let expiresAt: Date | null;
+  try {
+    const tokens = await exchangeXCodeForToken({
+      clientId,
+      clientSecret: clientSecret as string,
+      redirectUri: stateRow.redirectUri,
+      code,
+      codeVerifier: stateRow.codeVerifier,
+    });
+    userInfo = await getXUserInfo(tokens.accessToken);
+    accessTokenEncrypted = encryptToken(tokens.accessToken);
+    refreshTokenEncrypted = tokens.refreshToken ? encryptToken(tokens.refreshToken) : null;
+    expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "X login failed." };
+  }
+  const now = new Date();
+  await db
+    .insert(schema.xConnections)
+    .values({
+      userId: stateRow.userId,
+      xUserId: userInfo.id,
+      xUsername: userInfo.username,
+      accessTokenEncrypted,
+      refreshTokenEncrypted,
+      expiresAt,
+      connectedAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.xConnections.userId],
+      set: {
+        xUserId: userInfo.id,
+        xUsername: userInfo.username,
+        accessTokenEncrypted,
+        refreshTokenEncrypted,
+        expiresAt,
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(schema.connectedAccounts)
+    .values({
+      userId: stateRow.userId,
+      platform: "x",
+      handle: `@${userInfo.username}`,
+      status: "connected",
+      authMode: "oauth",
+      tokenHint: `x:${userInfo.id}`,
+      retryAfter: null,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+      set: {
+        handle: `@${userInfo.username}`,
+        status: "connected",
+        authMode: "oauth",
+        tokenHint: `x:${userInfo.id}`,
         retryAfter: null,
         connectedAt: now,
       },

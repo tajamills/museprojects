@@ -32,6 +32,9 @@ type WorkspaceResult = {
 type SettingsResult = {
   ok: boolean;
   metaConfigured: boolean;
+  tiktokConfigured: boolean;
+  youtubeConfigured: boolean;
+  xConfigured: boolean;
   platforms: Array<{ platform: Platform; label: string; clientId: string; secretReference: string; developerApp: string; credentialFields: string; warning: string; failureHint: string }>;
 };
 type CreatePostRequest = {
@@ -72,6 +75,9 @@ type ClientApi = {
   listFacebookPages(args: { sessionToken: string }): Promise<FacebookPagesResult>;
   selectFacebookPage(args: { sessionToken: string; pageId: string }): Promise<BasicResult>;
   connectInstagram(args: { sessionToken: string }): Promise<ConnectInstagramResult>;
+  connectYoutube(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
+  connectTikTok(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
+  connectX(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
   listInstagramAccounts(args: { sessionToken: string }): Promise<InstagramAccountsResult>;
   selectInstagramAccount(args: { sessionToken: string; igUserId: string }): Promise<BasicResult>;
   disconnectAccount(args: { sessionToken: string; accountId: number }): Promise<BasicResult>;

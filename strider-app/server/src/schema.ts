@@ -71,6 +71,8 @@ export const oauthStates = pgTable(
     platform: text("platform").notNull(),
     /** Exact redirect_uri used in the auth URL; token exchange must match it. */
     redirectUri: text("redirect_uri").notNull(),
+    /** PKCE code_verifier for flows that use it (X). Null for the rest. */
+    codeVerifier: text("code_verifier"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
   },
@@ -108,6 +110,51 @@ export const instagramConnections = pgTable("instagram_connections", {
   pageId: text("page_id").notNull(),
   pageName: text("page_name").notNull(),
   userTokenEncrypted: text("user_token_encrypted").notNull(),
+  connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
+/**
+ * Real X (Twitter) OAuth 2.0 connection per user. X access tokens live
+ * ~2 hours; offline.access yields a refresh token, which publish.ts uses
+ * to refresh before posting. Both tokens are AES-256-GCM encrypted
+ * (see TOKEN_ENCRYPTION_KEY); never plaintext.
+ */
+export const xConnections = pgTable("x_connections", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  xUserId: text("x_user_id").notNull(),
+  xUsername: text("x_username").notNull(),
+  accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted"),
+  expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }),
+  connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
+export const tiktokConnections = pgTable("tiktok_connections", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  tiktokOpenId: text("tiktok_open_id").notNull(),
+  tiktokDisplayName: text("tiktok_display_name").notNull(),
+  accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+  connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
+/** Real YouTube OAuth connections (YouTube Data API v3). Tokens are
+ *  AES-256-GCM encrypted (see TOKEN_ENCRYPTION_KEY); never plaintext. The
+ *  refresh token lets the server mint fresh access tokens (~1h lifetime). */
+export const youtubeConnections = pgTable("youtube_connections", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  channelId: text("channel_id").notNull(),
+  channelTitle: text("channel_title").notNull(),
+  accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
   connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
 });

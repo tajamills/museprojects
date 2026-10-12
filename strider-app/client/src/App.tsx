@@ -340,6 +340,42 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     },
     onSettled: () => setBusyPlatform(null),
   });
+  const connectTt = useMutation({
+    mutationFn: () => api.connectTikTok({ sessionToken: token }),
+    onSuccess: async (result) => {
+      if (result.ok && result.mode === "oauth" && result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
+    onSettled: () => setBusyPlatform(null),
+  });
+  const connectYt = useMutation({
+    mutationFn: () => api.connectYoutube({ sessionToken: token }),
+    onSuccess: async (result) => {
+      if (result.ok && result.mode === "oauth" && result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
+    onSettled: () => setBusyPlatform(null),
+  });
+  const connectX = useMutation({
+    mutationFn: () => api.connectX({ sessionToken: token }),
+    onSuccess: async (result) => {
+      if (result.ok && result.mode === "oauth" && result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
+    onSettled: () => setBusyPlatform(null),
+  });
   const disconnect = useMutation({
     mutationFn: (accountId: number) => api.disconnectAccount({ sessionToken: token, accountId }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
@@ -354,12 +390,15 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
       const needsReconnect = account && account.status !== "connected";
       const isFacebook = platform === "facebook";
       const isInstagram = platform === "instagram";
+      const isTiktok = platform === "tiktok";
+      const isYoutube = platform === "youtube";
+      const isX = platform === "x";
       const connectBusy = busyPlatform === platform;
-      const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else connect.mutate(platform); };
+      const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else if (isTiktok) connectTt.mutate(); else if (isYoutube) connectYt.mutate(); else if (isX) connectX.mutate(); else connect.mutate(platform); };
       const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
       return <article className="connect-row" key={platform}>
         <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending} onClick={startConnect}>{connectLabel}</button></div>}
+        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}>{connectLabel}</button></div>}
         {isFacebook && account?.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
         {isInstagram && account?.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
         <details><summary>If connecting fails</summary><p>{setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
@@ -419,7 +458,59 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }
   </details>;
 }
 
-function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean }) {
+function TikTokPlatformCard({ isAdmin, tiktokConfigured }: { isAdmin: boolean; tiktokConfigured: boolean }) {
+  const steps = [
+    "Create a TikTok for Developers app with Login Kit and the video.upload + video.publish scopes.",
+    "Add https://zepostia.com/oauth/tiktok/callback as a Redirect URI in the TikTok app.",
+    "Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET on the server, then hit Connect on the Accounts page.",
+  ];
+  return <details className="settings-card" open>
+    <summary><span><PlatformBadge platform="tiktok" /><strong>TikTok</strong></span><span>No setup needed</span></summary>
+    <div className="settings-body">
+      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      <p className="secret-note">TikTok posts video only. New TikTok apps post privately until the app passes TikTok's audit.</p>
+      {isAdmin && <p className="secret-note">Owner TikTok app: {tiktokConfigured ? "configured" : "not configured — set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET on the server"}.</p>}
+      {!isAdmin && <p className="secret-note">Connect with TikTok on the Accounts page — no setup needed.</p>}
+    </div>
+  </details>;
+}
+
+function XPlatformCard({ isAdmin, xConfigured }: { isAdmin: boolean; xConfigured: boolean }) {
+  const steps = [
+    "Create an X app in the X Developer Portal with OAuth 2.0 enabled.",
+    "Add https://zepostia.com/oauth/x/callback as the Callback URI / Redirect URL in the app's OAuth 2.0 settings.",
+    "Set X_CLIENT_ID and X_CLIENT_SECRET on the server, then hit Connect on the Accounts page.",
+  ];
+  return <details className="settings-card" open>
+    <summary><span><PlatformBadge platform="x" /><strong>X</strong></span><span>No setup needed</span></summary>
+    <div className="settings-body">
+      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      <p className="secret-note">X posts text only (280 characters max).</p>
+      {isAdmin && <p className="secret-note">Owner X app: {xConfigured ? "configured" : "not configured — set X_CLIENT_ID and X_CLIENT_SECRET on the server"}.</p>}
+      {isAdmin && <p className="secret-note">Heads up: X charges per tweet on new developer accounts (pay-per-use, roughly $0.015 per post, more for posts with links). Every customer tweet bills your X account — fund credits in the X Developer Console before real posting.</p>}
+      {!isAdmin && <p className="secret-note">Connect with X on the Accounts page — no setup needed.</p>}
+    </div>
+  </details>;
+}
+
+function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean; youtubeConfigured: boolean }) {
+  const steps = [
+    "Create a Google Cloud project and enable the YouTube Data API v3.",
+    "Create an OAuth 2.0 Client ID (Web application) and add https://zepostia.com/oauth/youtube/callback as an Authorized redirect URI.",
+    "Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on the server, then hit Connect on the Accounts page and pick your channel.",
+  ];
+  return <details className="settings-card" open>
+    <summary><span><PlatformBadge platform="youtube" /><strong>YouTube</strong></span><span>No setup needed</span></summary>
+    <div className="settings-body">
+      <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
+      <p className="secret-note">YouTube posts video only — every upload needs a video file and a title. Uploads use ~1,600 API quota units each (10,000/day free).</p>
+      {isAdmin && <p className="secret-note">Owner YouTube app: {youtubeConfigured ? "configured" : "not configured — set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on the server"}.</p>}
+      {!isAdmin && <p className="secret-note">Connect with YouTube on the Accounts page — no setup needed.</p>}
+    </div>
+  </details>;
+}
+
+function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
   const [clientSecret, setClientSecret] = useState("");
@@ -430,6 +521,15 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
   });
   if (setting.platform === "facebook" || setting.platform === "instagram") {
     return <MetaPlatformCard setting={setting} isAdmin={isAdmin} metaConfigured={metaConfigured} token={token} onMessage={onMessage} />;
+  }
+  if (setting.platform === "tiktok") {
+    return <TikTokPlatformCard isAdmin={isAdmin} tiktokConfigured={tiktokConfigured} />;
+  }
+  if (setting.platform === "youtube") {
+    return <YoutubePlatformCard isAdmin={isAdmin} youtubeConfigured={youtubeConfigured} />;
+  }
+  if (setting.platform === "x") {
+    return <XPlatformCard isAdmin={isAdmin} xConfigured={xConfigured} />;
   }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
@@ -480,12 +580,12 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
-function Settings({ settings, token, user, metaConfigured, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><span className="section-code">GO-LIVE CHECKLIST</span><h1>Five modular connections. One rulebook.</h1><p>This build stays in demo mode until each official developer app, callback, permission review, and server-side secret is ready.</p></div>
     <section className="security-manifest"><h2>Credential boundary</h2><p>Client IDs may be stored here. Client secrets, refresh tokens, and access tokens must live in a deployment secret vault and only be read by server-side OAuth and publishing handlers. Platform passwords are never accepted.</p></section>
-    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} />)}</section>
+    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><span className="section-code">APP ACCOUNT</span><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
   </div>;
@@ -526,6 +626,12 @@ export function App() {
     else if (oauth === "facebook_error") setToast(`Facebook connection failed: ${params.get("reason") ?? "unknown error"}`);
     else if (oauth === "instagram_ok") setToast("Instagram connected — posting as your professional account.");
     else if (oauth === "instagram_error") setToast(`Instagram connection failed: ${params.get("reason") ?? "unknown error"}`);
+    else if (oauth === "tiktok_ok") setToast("TikTok connected — ready to post video.");
+    else if (oauth === "tiktok_error") setToast(`TikTok connection failed: ${params.get("reason") ?? "unknown error"}`);
+    else if (oauth === "youtube_ok") setToast("YouTube connected — ready to upload video.");
+    else if (oauth === "youtube_error") setToast(`YouTube connection failed: ${params.get("reason") ?? "unknown error"}`);
+    else if (oauth === "x_ok") setToast("X connected — ready to post tweets.");
+    else if (oauth === "x_error") setToast(`X connection failed: ${params.get("reason") ?? "unknown error"}`);
     else return;
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
@@ -556,7 +662,7 @@ export function App() {
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} onMessage={setToast} onSignOut={signOut} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} onMessage={setToast} onSignOut={signOut} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span>{item.glyph}</span><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}
