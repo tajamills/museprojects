@@ -1,4 +1,5 @@
 import { SafeAreaTopScrim, fileToBase64 } from "./client-helpers";
+import { TermsPage, PrivacyPage } from "./legal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { api, type ApiResponse } from "./api";
@@ -221,7 +222,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <footer className="landing-footer">
         <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
         <p>&copy; 2026 zepostia. All rights reserved.</p>
-        <nav aria-label="Footer"><a href="#terms">Terms</a><a href="#privacy">Privacy</a></nav>
+        <nav aria-label="Footer"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
       </footer>
       {authOpen && <div className="auth-modal" role="dialog" aria-modal="true" aria-label="zepostia account access">
         <div className="auth-modal-backdrop" onClick={() => setAuthOpen(null)} />
@@ -735,7 +736,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   const trialEnd = statusQuery.data?.trialEndsAt ? new Date(statusQuery.data.trialEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   return <section className="profile-block" aria-label="Billing">
-    <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime.</p></div>
+    <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime. <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></p></div>
     {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
       <p><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
       {subscribed
@@ -900,11 +901,21 @@ function HelpPage({ go }: { go: (page: Page) => void }) {
         </details>
       </div>
     </section>
+
+    <section className="help-section">
+      <h2>Legal</h2>
+      <div className="help-article">
+        <p><a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
+      </div>
+    </section>
   </div>;
 }
 
 export function App() {
+  const pathname = window.location.pathname;
   const demoMode = useServerDemoMode();
+  if (pathname === "/terms") return <TermsPage />;
+  if (pathname === "/privacy") return <PrivacyPage />;
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem("marketing-app-session") ?? "");
   const [page, setPage] = useState<Page>("dashboard");
   const [toast, setToast] = useState("");
