@@ -300,6 +300,26 @@ function FacebookPagePicker({ token, onMessage }: { token: string; onMessage: (m
   >{pages.data.pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}</select></label>;
 }
 
+function InstagramAccountPicker({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+  const queryClient = useQueryClient();
+  const accounts = useQuery({ queryKey: ["ig-accounts", token], queryFn: () => api.listInstagramAccounts({ sessionToken: token }) });
+  const select = useMutation({
+    mutationFn: (igUserId: string) => api.selectInstagramAccount({ sessionToken: token, igUserId }),
+    onSuccess: async (result) => {
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+      await queryClient.invalidateQueries({ queryKey: ["ig-accounts", token] });
+    },
+  });
+  if (!accounts.data?.ok || (accounts.data.accounts?.length ?? 0) < 2) return null;
+  return <label className="page-picker"><span>Posting as</span><select
+    aria-label="Instagram account"
+    value={accounts.data.selectedIgUserId ?? ""}
+    disabled={select.isPending}
+    onChange={(event) => select.mutate(event.target.value)}
+  >{accounts.data.accounts.map((account) => <option key={account.igUserId} value={account.igUserId}>@{account.username} · {account.pageName}</option>)}</select></label>;
+}
+
 function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
@@ -311,6 +331,18 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
   });
   const connectFb = useMutation({
     mutationFn: () => api.connectFacebook({ sessionToken: token }),
+    onSuccess: async (result) => {
+      if (result.ok && result.mode === "oauth" && result.authUrl) {
+        window.location.href = result.authUrl;
+        return;
+      }
+      onMessage(result.message);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
+    onSettled: () => setBusyPlatform(null),
+  });
+  const connectIg = useMutation({
+    mutationFn: () => api.connectInstagram({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
         window.location.href = result.authUrl;
@@ -334,13 +366,15 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
       const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
       const needsReconnect = account && account.status !== "connected";
       const isFacebook = platform === "facebook";
+      const isInstagram = platform === "instagram";
       const connectBusy = busyPlatform === platform;
-      const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else connect.mutate(platform); };
+      const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else connect.mutate(platform); };
       const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
       return <article className="connect-row" key={platform}>
         <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending || connectFb.isPending} onClick={startConnect}>{connectLabel}</button>}
+        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending} onClick={startConnect}>{connectLabel}</button>}
         {isFacebook && account?.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
+        {isInstagram && account?.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
         <details><summary>If connecting fails</summary><p>{setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
@@ -470,6 +504,8 @@ export function App() {
     const oauth = params.get("oauth");
     if (oauth === "facebook_ok") setToast("Facebook connected — posting as your Page.");
     else if (oauth === "facebook_error") setToast(`Facebook connection failed: ${params.get("reason") ?? "unknown error"}`);
+    else if (oauth === "instagram_ok") setToast("Instagram connected — posting as your professional account.");
+    else if (oauth === "instagram_error") setToast(`Instagram connection failed: ${params.get("reason") ?? "unknown error"}`);
     else return;
     window.history.replaceState({}, "", window.location.pathname);
   }, []);

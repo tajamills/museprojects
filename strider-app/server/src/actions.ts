@@ -16,6 +16,12 @@ import {
   isRealFacebookConfig,
   requireTokenEncryption,
 } from "./facebook.js";
+import {
+  buildInstagramAuthUrl,
+  instagramRedirectUri,
+  isRealInstagramConfig,
+  listInstagramBusinessAccounts,
+} from "./instagram.js";
 import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
 import { resolvePlatformSecret } from "./secrets.js";
 
@@ -38,8 +44,8 @@ const PLATFORM_INFO: Record<Platform, {
   },
   instagram: {
     label: "Instagram",
-    developerApp: "Meta for Developers app with Instagram Graph API; connect a professional Instagram account to a Facebook Page",
-    credentialFields: "Meta App ID + App Secret (kept in a server-side secret vault)",
+    developerApp: "Same Meta app as Facebook, plus the \"Manage messaging & content on Instagram\" use case; connect a professional Instagram account to a Facebook Page",
+    credentialFields: "Same Meta App ID as Facebook (set it in the Facebook card) + App Secret in Railway",
     failureHint: "Confirm the Instagram account is Professional and linked to a Facebook Page, then reconnect.",
     warning: "Instagram publishing requires an image or video and an eligible professional account.",
   },
@@ -201,7 +207,10 @@ async function demoConnectAccount(
 /** Real Facebook app credentials for a user, or null when the simulated
  *  fallback should be used. App ID comes from Settings; the secret from
  *  FACEBOOK_CLIENT_SECRET (never from the database). */
-async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ clientId: string; clientSecret: string; missing: string } | { missing: string }> {
+/** Meta app credentials: ok + values, or ok:false with which piece is missing. */
+type MetaAppCreds = { ok: true; clientId: string; clientSecret: string } | { ok: false; missing: string };
+
+async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<MetaAppCreds> {
   const rows = await ctx.db
     .select()
     .from(schema.platformConfigs)
@@ -209,9 +218,24 @@ async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<{ cl
     .limit(1);
   const clientId = (rows[0]?.clientId ?? "").trim();
   const clientSecret = resolvePlatformSecret("facebook");
-  if (!clientId || clientId.startsWith("DEMO_")) return { missing: "app-id" };
-  if (!clientSecret) return { missing: "app-secret" };
-  return { clientId, clientSecret: clientSecret as string, missing: "" };
+  if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
+  if (!clientSecret) return { ok: false, missing: "app-secret" };
+  return { ok: true, clientId, clientSecret: clientSecret as string };
+}
+
+/** Instagram shares the Meta app with Facebook: the App ID is read from the
+ *  Facebook platform config row, the secret from FACEBOOK_CLIENT_SECRET. */
+async function instagramAppCredentials(ctx: AppCtx, userId: number): Promise<MetaAppCreds> {
+  const rows = await ctx.db
+    .select()
+    .from(schema.platformConfigs)
+    .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
+    .limit(1);
+  const clientId = (rows[0]?.clientId ?? "").trim();
+  const clientSecret = resolvePlatformSecret("facebook");
+  if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
+  if (!clientSecret) return { ok: false, missing: "app-secret" };
+  return { ok: true, clientId, clientSecret: clientSecret as string };
 }
 
 export const actions: Record<string, ActionDef> = {
@@ -418,7 +442,7 @@ export const actions: Record<string, ActionDef> = {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
       const creds = await facebookAppCredentials(ctx, user.id);
-      if (creds.missing) {
+      if (!creds.ok) {
         if (!isDemoMode()) {
           const what = creds.missing === "app-id"
             ? "Add your Facebook App ID in Settings \u2192 Facebook first, then connect."
@@ -446,6 +470,105 @@ export const actions: Record<string, ActionDef> = {
       });
       const authUrl = buildFacebookAuthUrl({ clientId: creds.clientId, redirectUri, state });
       return { ok: true, message: "Opening Facebook…", mode: "oauth", authUrl };
+    },
+  },
+
+  /**
+   * Instagram connect entry point. Instagram shares the Meta app (and App
+   * ID) with Facebook: the App ID is read from the Facebook platform
+   * config, the secret from FACEBOOK_CLIENT_SECRET. Without them it
+   * refuses in production (never a silent demo), mirroring connectFacebook.
+   */
+  connectInstagram: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; mode: "oauth" | "demo"; authUrl: string | null }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", mode: "demo", authUrl: null };
+      const creds = await instagramAppCredentials(ctx, user.id);
+      if (!creds.ok) {
+        if (!isDemoMode()) {
+          const what = creds.missing === "app-id"
+            ? "Add your Meta App ID in Settings \u2192 Facebook first (Instagram uses the same Meta app), then connect."
+            : "Set FACEBOOK_CLIENT_SECRET in Railway (and redeploy), then connect.";
+          return { ok: false, message: what, mode: "oauth", authUrl: null };
+        }
+        const demo = await demoConnectAccount(ctx, user, "instagram");
+        return { ...demo, mode: "demo", authUrl: null };
+      }
+      try {
+        requireTokenEncryption();
+      } catch {
+        return { ok: false, message: "Set TOKEN_ENCRYPTION_KEY on the server before connecting Instagram.", mode: "oauth", authUrl: null };
+      }
+      const redirectUri = instagramRedirectUri(ctx.origin);
+      const state = crypto.randomUUID();
+      const now = new Date();
+      await ctx.db.insert(schema.oauthStates).values({
+        state,
+        userId: user.id,
+        platform: "instagram",
+        redirectUri,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+      });
+      const authUrl = buildInstagramAuthUrl({ clientId: creds.clientId, redirectUri, state });
+      return { ok: true, message: "Opening Instagram…", mode: "oauth", authUrl };
+    },
+  },
+
+  /** Instagram professional accounts reachable through the user's Pages (for the account picker). */
+  listInstagramAccounts: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; accounts: Array<{ igUserId: string; username: string; pageId: string; pageName: string }>; selectedIgUserId: string | null; error?: string }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, accounts: [], selectedIgUserId: null };
+      const rows = await ctx.db.select().from(schema.instagramConnections).where(eq(schema.instagramConnections.userId, user.id)).limit(1);
+      const conn = rows[0];
+      if (!conn) return { ok: true, accounts: [], selectedIgUserId: null };
+      let userToken: string;
+      try {
+        userToken = decryptToken(conn.userTokenEncrypted);
+      } catch {
+        return { ok: false, accounts: [], selectedIgUserId: conn.igUserId, error: "Stored token could not be decrypted." };
+      }
+      try {
+        const accounts = await listInstagramBusinessAccounts(userToken);
+        return { ok: true, accounts, selectedIgUserId: conn.igUserId };
+      } catch (err) {
+        return { ok: false, accounts: [], selectedIgUserId: conn.igUserId, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  },
+
+  /** Switch the Instagram account that zepostia posts as. */
+  selectInstagramAccount: {
+    request: z.object({ sessionToken: z.string().min(1), igUserId: z.string().min(1).max(100) }),
+    async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      const rows = await ctx.db.select().from(schema.instagramConnections).where(eq(schema.instagramConnections.userId, user.id)).limit(1);
+      const conn = rows[0];
+      if (!conn) return { ok: false, message: "Instagram is not connected." };
+      let userToken: string;
+      try {
+        userToken = decryptToken(conn.userTokenEncrypted);
+      } catch {
+        return { ok: false, message: "The stored Instagram token could not be decrypted. Reconnect the channel." };
+      }
+      const accounts = await listInstagramBusinessAccounts(userToken).catch(() => []);
+      const account = accounts.find((a) => a.igUserId === args.igUserId);
+      if (!account) return { ok: false, message: "That Instagram account was not found on your Pages." };
+      const now = new Date();
+      await ctx.db
+        .update(schema.instagramConnections)
+        .set({ igUserId: account.igUserId, igUsername: account.username, pageId: account.pageId, pageName: account.pageName, updatedAt: now })
+        .where(eq(schema.instagramConnections.id, conn.id));
+      await ctx.db
+        .update(schema.connectedAccounts)
+        .set({ handle: `@${account.username}` })
+        .where(and(eq(schema.connectedAccounts.userId, user.id), eq(schema.connectedAccounts.platform, "instagram")));
+      ctx.invalidateQueries();
+      return { ok: true, message: `Now posting as @${account.username}.` };
     },
   },
 
@@ -585,7 +708,7 @@ export const actions: Record<string, ActionDef> = {
           return { ok: false, message: `Publishing failed: ${result.firstError ?? "unknown error"}`, postId: post.id };
         }
         publishNote = result.real > 0
-          ? `Published to Facebook${result.published > result.real ? " and simulated targets" : ""}.`
+          ? `Published${result.published > result.real ? " (some targets simulated)" : ""}.`
           : "Publish complete (simulated — no external API was called).";
       } else {
         publishNote = "Post scheduled.";
@@ -851,6 +974,125 @@ export async function handleFacebookOAuthCallback(
         status: "connected",
         authMode: "oauth",
         tokenHint: `page:${page.id}`,
+        retryAfter: null,
+        connectedAt: now,
+      },
+    });
+  return { ok: true };
+}
+
+/**
+ * Handles GET /oauth/instagram/callback. Verifies the single-use state,
+ * exchanges the code for tokens, resolves the Instagram professional
+ * account linked to the user's Facebook Pages, and stores the encrypted
+ * connection. The Instagram channel is marked connected with @username as
+ * its handle.
+ */
+export async function handleInstagramOAuthCallback(
+  db: Db,
+  query: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (typeof query.error === "string" && query.error) {
+    return { ok: false, error: String(query.error_description ?? query.error) };
+  }
+  const state = typeof query.state === "string" ? query.state : "";
+  const code = typeof query.code === "string" ? query.code : "";
+  if (!state || !code) return { ok: false, error: "Missing code or state." };
+
+  const stateRows = await db.select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
+  const stateRow = stateRows[0];
+  // Single-use: consume whatever we found.
+  if (stateRow) await db.delete(schema.oauthStates).where(eq(schema.oauthStates.id, stateRow.id));
+  if (!stateRow || stateRow.platform !== "instagram") {
+    return { ok: false, error: "Invalid login request. Try connecting again." };
+  }
+  if (stateRow.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, error: "Login request expired. Try connecting again." };
+  }
+  // Opportunistic cleanup of other expired states.
+  await db.delete(schema.oauthStates).where(lte(schema.oauthStates.expiresAt, new Date())).catch(() => undefined);
+
+  const cfgRows = await db
+    .select()
+    .from(schema.platformConfigs)
+    .where(and(eq(schema.platformConfigs.userId, stateRow.userId), eq(schema.platformConfigs.platform, "facebook")))
+    .limit(1);
+  const clientId = (cfgRows[0]?.clientId ?? "").trim();
+  const clientSecret = resolvePlatformSecret("facebook");
+  if (!isRealInstagramConfig(clientId, Boolean(clientSecret))) {
+    return { ok: false, error: "Meta credentials changed during login. Reconnect." };
+  }
+
+  let userTokenEncrypted: string;
+  let account: { igUserId: string; username: string; pageId: string; pageName: string };
+  try {
+    const shortToken = await exchangeCodeForToken({
+      clientId,
+      clientSecret: clientSecret as string,
+      redirectUri: stateRow.redirectUri,
+      code,
+    });
+    const longToken = await exchangeForLongLivedToken({
+      clientId,
+      clientSecret: clientSecret as string,
+      shortLivedToken: shortToken.accessToken,
+    });
+    const accounts = await listInstagramBusinessAccounts(longToken.accessToken);
+    const first = accounts[0];
+    if (!first) {
+      return {
+        ok: false,
+        error: "No Instagram professional account found. Link a business or creator Instagram account to one of your Facebook Pages first.",
+      };
+    }
+    account = first;
+    userTokenEncrypted = encryptToken(longToken.accessToken);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Instagram login failed." };
+  }
+  const now = new Date();
+  await db
+    .insert(schema.instagramConnections)
+    .values({
+      userId: stateRow.userId,
+      igUserId: account.igUserId,
+      igUsername: account.username,
+      pageId: account.pageId,
+      pageName: account.pageName,
+      userTokenEncrypted,
+      connectedAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.instagramConnections.userId],
+      set: {
+        igUserId: account.igUserId,
+        igUsername: account.username,
+        pageId: account.pageId,
+        pageName: account.pageName,
+        userTokenEncrypted,
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(schema.connectedAccounts)
+    .values({
+      userId: stateRow.userId,
+      platform: "instagram",
+      handle: `@${account.username}`,
+      status: "connected",
+      authMode: "oauth",
+      tokenHint: `ig:${account.igUserId}`,
+      retryAfter: null,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [schema.connectedAccounts.userId, schema.connectedAccounts.platform],
+      set: {
+        handle: `@${account.username}`,
+        status: "connected",
+        authMode: "oauth",
+        tokenHint: `ig:${account.igUserId}`,
         retryAfter: null,
         connectedAt: now,
       },

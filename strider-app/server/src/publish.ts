@@ -2,6 +2,8 @@
 //
 // For each pending target of a post:
 //   - Facebook + authMode "oauth"  -> real Graph API publish (POST /{page-id}/feed)
+//   - Instagram + authMode "oauth" -> real Instagram Graph publish
+//                                      (container -> READY -> media_publish)
 //   - everything else              -> simulated publish (existing demo behavior)
 //
 // Bump comments follow the same split: real comments via
@@ -12,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import type { AppCtx } from "./ctx.js";
 import * as schema from "./schema.js";
 import { decryptToken, publishPageComment, publishPagePost } from "./facebook.js";
+import { publishInstagramMedia } from "./instagram.js";
 
 export interface PublishSummary {
   published: number;
@@ -39,6 +42,45 @@ async function realFacebookPostId(ctx: AppCtx, userId: number, body: string): Pr
   return facebookPostId;
 }
 
+/**
+ * Publishes a post's media to the connected Instagram business account via
+ * the container flow. The media URL must be publicly reachable, so it is
+ * built from APP_BASE_URL (the /media static route is public).
+ */
+async function realInstagramMediaId(
+  ctx: AppCtx,
+  userId: number,
+  post: { body: string; mediaBlobKey: string | null; mediaType: string | null },
+): Promise<string> {
+  if (!post.mediaBlobKey) {
+    throw new Error("Instagram requires an image or video. Add media or remove the Instagram target.");
+  }
+  const mediaType = (post.mediaType ?? "").startsWith("video/") ? "video" : "image";
+  const base = (process.env.APP_BASE_URL || ctx.origin || "http://localhost:3000").replace(/\/+$/, "");
+  const mediaUrl = `${base}/media/${post.mediaBlobKey}`;
+  const rows = await ctx.db
+    .select()
+    .from(schema.instagramConnections)
+    .where(eq(schema.instagramConnections.userId, userId))
+    .limit(1);
+  const conn = rows[0];
+  if (!conn) throw new Error("Instagram is not connected with real OAuth. Reconnect the channel.");
+  let userToken: string;
+  try {
+    userToken = decryptToken(conn.userTokenEncrypted);
+  } catch {
+    throw new Error("The stored Instagram token could not be decrypted. Reconnect the channel.");
+  }
+  const { mediaId } = await publishInstagramMedia({
+    igUserId: conn.igUserId,
+    userAccessToken: userToken,
+    mediaUrl,
+    mediaType,
+    caption: post.body,
+  });
+  return mediaId;
+}
+
 /** Publishes every pending target of a post; updates target + post rows. */
 export async function publishPendingTargets(ctx: AppCtx, postId: number): Promise<PublishSummary> {
   const postRows = await ctx.db.select().from(schema.posts).where(eq(schema.posts.id, postId)).limit(1);
@@ -54,12 +96,15 @@ export async function publishPendingTargets(ctx: AppCtx, postId: number): Promis
 
   const now = new Date();
   for (const { target, account } of targets) {
-    if (account.platform === "facebook" && account.authMode === "oauth") {
+    const isReal = account.authMode === "oauth" && (account.platform === "facebook" || account.platform === "instagram");
+    if (isReal) {
       try {
-        const fbId = await realFacebookPostId(ctx, post.userId, post.body);
+        const remoteId = account.platform === "facebook"
+          ? await realFacebookPostId(ctx, post.userId, post.body)
+          : await realInstagramMediaId(ctx, post.userId, post);
         await ctx.db
           .update(schema.postTargets)
-          .set({ status: "published", remoteId: fbId, publishedAt: now, errorMessage: null })
+          .set({ status: "published", remoteId, publishedAt: now, errorMessage: null })
           .where(eq(schema.postTargets.id, target.id));
         summary.published += 1;
         summary.real += 1;

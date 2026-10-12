@@ -15,8 +15,8 @@ import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
 //
 // Demo-mode semantics: targets without real OAuth credentials are still
 // "published" with a `demo-` remote id, exactly like the original "Post now"
-// path. Facebook targets with a real OAuth connection publish through the
-// Graph API (see publish.ts).
+// path. Facebook and Instagram targets with a real OAuth connection publish
+// through the real APIs (see publish.ts).
 
 export async function publishDuePosts(ctx: AppCtx): Promise<number> {
   const now = new Date();

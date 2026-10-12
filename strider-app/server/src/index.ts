@@ -2,7 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
-import { actions, handleFacebookOAuthCallback } from "./actions.js";
+import { actions, handleFacebookOAuthCallback, handleInstagramOAuthCallback } from "./actions.js";
 import { stripeWebhookHandler } from "./billing.js";
 import { createCtx, resolveMediaDir } from "./ctx.js";
 import { createDb, createPool, migrate } from "./db.js";
@@ -53,6 +53,17 @@ async function main() {
       return;
     }
     res.redirect(302, `/?oauth=facebook_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+  });
+
+  // Instagram OAuth callback. Must be registered in the Meta app as a Valid
+  // OAuth Redirect URI: {APP_BASE_URL}/oauth/instagram/callback
+  app.get("/oauth/instagram/callback", async (req, res) => {
+    const result = await handleInstagramOAuthCallback(db, req.query as Record<string, unknown>);
+    if (result.ok) {
+      res.redirect(302, "/?oauth=instagram_ok");
+      return;
+    }
+    res.redirect(302, `/?oauth=instagram_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
   });
 
   // Action RPC: POST /actions { action, args } -> { data } | { error }.

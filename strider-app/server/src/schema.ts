@@ -92,6 +92,25 @@ export const facebookConnections = pgTable("facebook_connections", {
   updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
 });
 
+/**
+ * Real Instagram connection per user. Instagram publishing uses the
+ * long-lived user token against the selected IG business account, which
+ * must be linked to a Facebook Page the user manages (see
+ * server/src/instagram.ts). Tokens are AES-256-GCM encrypted
+ * (see TOKEN_ENCRYPTION_KEY); never plaintext.
+ */
+export const instagramConnections = pgTable("instagram_connections", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  igUserId: text("ig_user_id").notNull(),
+  igUsername: text("ig_username").notNull(),
+  pageId: text("page_id").notNull(),
+  pageName: text("page_name").notNull(),
+  userTokenEncrypted: text("user_token_encrypted").notNull(),
+  connectedAt: timestamp("connected_at", { mode: "date", withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
 export const posts = pgTable("posts", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

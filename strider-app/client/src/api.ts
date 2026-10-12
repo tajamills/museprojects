@@ -53,6 +53,8 @@ type RedirectResult = { url: string };
 
 type ConnectFacebookResult = BasicResult & { mode: "oauth" | "demo"; authUrl: string | null };
 type FacebookPagesResult = { ok: boolean; pages: Array<{ id: string; name: string }>; selectedPageId: string | null; error?: string };
+type ConnectInstagramResult = BasicResult & { mode: "oauth" | "demo"; authUrl: string | null };
+type InstagramAccountsResult = { ok: boolean; accounts: Array<{ igUserId: string; username: string; pageId: string; pageName: string }>; selectedIgUserId: string | null; error?: string };
 
 type PublicConfigResult = { demoMode: boolean };
 type ClientApi = {
@@ -67,6 +69,9 @@ type ClientApi = {
   connectFacebook(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
   listFacebookPages(args: { sessionToken: string }): Promise<FacebookPagesResult>;
   selectFacebookPage(args: { sessionToken: string; pageId: string }): Promise<BasicResult>;
+  connectInstagram(args: { sessionToken: string }): Promise<ConnectInstagramResult>;
+  listInstagramAccounts(args: { sessionToken: string }): Promise<InstagramAccountsResult>;
+  selectInstagramAccount(args: { sessionToken: string; igUserId: string }): Promise<BasicResult>;
   disconnectAccount(args: { sessionToken: string; accountId: number }): Promise<BasicResult>;
   createPost(args: CreatePostRequest): Promise<BasicResult & { postId: number | null }>;
   advanceBumpDemo(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
