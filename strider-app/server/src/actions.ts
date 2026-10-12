@@ -401,6 +401,26 @@ export const actions: Record<string, ActionDef> = {
     },
   },
 
+  testMetaCredentials: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; valid: boolean; message: string }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user || !isAdminEmail(user.email)) return { ok: false, valid: false, message: "Admin only." };
+      const creds = ownerMetaAppCredentials();
+      if (!creds.ok) return { ok: true, valid: false, message: `Missing ${creds.missing === "app-id" ? "App ID (FACEBOOK_APP_ID)" : "App Secret (FACEBOOK_CLIENT_SECRET)"} on the server.` };
+      try {
+        const params = new URLSearchParams({ client_id: creds.clientId, client_secret: creds.clientSecret, grant_type: "client_credentials" });
+        const res = await fetch(`https://graph.facebook.com/v26.0/oauth/access_token?${params.toString()}`);
+        const body = await res.json() as any;
+        if (body.access_token) return { ok: true, valid: true, message: "Meta accepted the App ID and secret. Ready to connect." };
+        const err = body?.error?.message ?? "Unknown error";
+        return { ok: true, valid: false, message: `Meta rejected the credentials: ${err} The App ID and secret in Railway do not match. Copy both fresh from the same app.` };
+      } catch (err) {
+        return { ok: true, valid: false, message: `Could not reach Meta: ${err instanceof Error ? err.message : "network error"}` };
+      }
+    },
+  },
+
   savePlatformConfig: {
     request: z.object({ sessionToken: z.string().min(1), platform: platformSchema, clientId: z.string().trim().min(1).max(300), secretReference: z.string().trim().max(500).optional().default(""), clientSecret: z.string().trim().max(500).optional().default("") }),
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {

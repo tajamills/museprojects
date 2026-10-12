@@ -68,6 +68,7 @@ type ClientApi = {
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;
   connectDemoAccount(args: { sessionToken: string; platform: Platform }): Promise<BasicResult>;
   connectFacebook(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
+  testMetaCredentials(args: { sessionToken: string }): Promise<{ ok: boolean; valid: boolean; message: string }>;
   listFacebookPages(args: { sessionToken: string }): Promise<FacebookPagesResult>;
   selectFacebookPage(args: { sessionToken: string; pageId: string }): Promise<BasicResult>;
   connectInstagram(args: { sessionToken: string }): Promise<ConnectInstagramResult>;

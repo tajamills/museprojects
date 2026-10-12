@@ -397,7 +397,11 @@ function PostPage({ accounts, posts, token, onMessage, goAccounts }: { accounts:
   </div>;
 }
 
-function MetaPlatformCard({ setting, isAdmin, metaConfigured }: { setting: PlatformSetting; isAdmin: boolean; metaConfigured: boolean }) {
+function MetaPlatformCard({ setting, isAdmin, metaConfigured, token, onMessage }: { setting: PlatformSetting; isAdmin: boolean; metaConfigured: boolean; token: string; onMessage: (message: string) => void }) {
+  const test = useMutation({
+    mutationFn: () => api.testMetaCredentials({ sessionToken: token }),
+    onSuccess: (result) => onMessage(result.message),
+  });
   const steps = setting.platform === "facebook"
     ? ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Choose the Pages you want zepostia to post to."]
     : ["Hit Connect on the Accounts page.", "Log in with Facebook and approve zepostia.", "Pick your professional Instagram account (it must be linked to a Facebook Page)."];
@@ -407,6 +411,7 @@ function MetaPlatformCard({ setting, isAdmin, metaConfigured }: { setting: Platf
       {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
       <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>
       {isAdmin && <p className="secret-note">Owner Meta app: {metaConfigured ? "configured" : "not configured — set FACEBOOK_APP_ID and FACEBOOK_CLIENT_SECRET on the server"}.</p>}
+      {isAdmin && setting.platform === "facebook" && <button className="secondary-button" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? "Testing…" : "Test Meta connection"}</button>}
       {!isAdmin && <p className="secret-note">Connect with {setting.label} on the Accounts page — no setup needed.</p>}
     </div>
   </details>;
@@ -422,7 +427,7 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["settings", token] }); },
   });
   if (setting.platform === "facebook" || setting.platform === "instagram") {
-    return <MetaPlatformCard setting={setting} isAdmin={isAdmin} metaConfigured={metaConfigured} />;
+    return <MetaPlatformCard setting={setting} isAdmin={isAdmin} metaConfigured={metaConfigured} token={token} onMessage={onMessage} />;
   }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
