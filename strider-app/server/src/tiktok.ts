@@ -376,8 +376,13 @@ export type TikTokAppCreds = { ok: true; clientId: string; clientSecret: string 
  * Per-user platform_configs rows are ignored for tiktok.
  */
 export function ownerTikTokCredentials(): TikTokAppCreds {
-  const clientId = (process.env.TIKTOK_CLIENT_KEY ?? "").trim();
-  const clientSecret = resolvePlatformSecret("tiktok");
+  const sandbox = process.env.TIKTOK_SANDBOX === "true";
+  const clientId = (sandbox
+    ? (process.env.TIKTOK_SANDBOX_CLIENT_KEY ?? "")
+    : (process.env.TIKTOK_CLIENT_KEY ?? "")).trim();
+  const clientSecret = sandbox
+    ? (process.env.TIKTOK_SANDBOX_CLIENT_SECRET ?? "").trim()
+    : resolvePlatformSecret("tiktok");
   if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
   if (!clientSecret) return { ok: false, missing: "app-secret" };
   return { ok: true, clientId, clientSecret: clientSecret as string };
