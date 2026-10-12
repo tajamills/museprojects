@@ -15,6 +15,43 @@ const CLIENT_DIR = process.env.CLIENT_DIR ?? path.join(here, "client");
 const MIGRATIONS_DIR = process.env.MIGRATIONS_DIR ?? path.join(here, "migrations");
 const mediaDir = resolveMediaDir();
 
+// OAuth popup completion page. The Connect buttons open the platform auth
+// flow in a popup window; the platform redirects back to these callbacks
+// inside the popup. This page notifies the opener via postMessage and closes
+// itself. If opened without an opener (popup blocked -> full-page fallback),
+// it falls back to the legacy /?oauth=... redirect.
+function sendOAuthPopupResult(
+  res: express.Response,
+  platform: "facebook" | "instagram" | "x" | "youtube" | "tiktok",
+  result: { ok: boolean; error?: string },
+  successMessage: string,
+): void {
+  const payload = JSON.stringify({
+    type: "zepostia-oauth",
+    platform,
+    ok: result.ok,
+    message: successMessage,
+    reason: result.ok ? null : (result.error ?? "unknown"),
+  }).replace(/</g, "\\u003c");
+  const fallback = result.ok
+    ? `/?oauth=${platform}_ok`
+    : `/?oauth=${platform}_error&reason=${encodeURIComponent(result.error ?? "unknown")}`;
+  res.type("html").send(`<!doctype html><html><head><meta charset="utf-8"><title>Connecting&hellip;</title></head><body><p>Finishing connection&hellip;</p><script>
+(function () {
+  var payload = ${payload};
+  var fallback = ${JSON.stringify(fallback)};
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage(payload, window.location.origin);
+      window.close();
+      return;
+    }
+  } catch (e) { /* fall through to redirect */ }
+  window.location.replace(fallback);
+})();
+</script></body></html>`);
+}
+
 async function main() {
   const pool = createPool();
   await migrate(pool, MIGRATIONS_DIR);
@@ -48,22 +85,14 @@ async function main() {
   // OAuth Redirect URI: {APP_BASE_URL}/oauth/facebook/callback
   app.get("/oauth/facebook/callback", async (req, res) => {
     const result = await handleFacebookOAuthCallback(db, req.query as Record<string, unknown>);
-    if (result.ok) {
-      res.redirect(302, "/?oauth=facebook_ok");
-      return;
-    }
-    res.redirect(302, `/?oauth=facebook_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+    sendOAuthPopupResult(res, "facebook", result, "Facebook connected — posting as your Page.");
   });
 
   // Instagram OAuth callback. Must be registered in the Meta app as a Valid
   // OAuth Redirect URI: {APP_BASE_URL}/oauth/instagram/callback
   app.get("/oauth/instagram/callback", async (req, res) => {
     const result = await handleInstagramOAuthCallback(db, req.query as Record<string, unknown>);
-    if (result.ok) {
-      res.redirect(302, "/?oauth=instagram_ok");
-      return;
-    }
-    res.redirect(302, `/?oauth=instagram_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+    sendOAuthPopupResult(res, "instagram", result, "Instagram connected — posting as your professional account.");
   });
 
   // X OAuth 2.0 callback. Must be registered in the X developer portal
@@ -71,33 +100,21 @@ async function main() {
   // {APP_BASE_URL}/oauth/x/callback
   app.get("/oauth/x/callback", async (req, res) => {
     const result = await handleXOAuthCallback(db, req.query as Record<string, unknown>);
-    if (result.ok) {
-      res.redirect(302, "/?oauth=x_ok");
-      return;
-    }
-    res.redirect(302, `/?oauth=x_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+    sendOAuthPopupResult(res, "x", result, "X connected — ready to post tweets.");
   });
 
   // YouTube OAuth callback. Must be registered in the Google Cloud OAuth
   // client as an Authorized redirect URI: {APP_BASE_URL}/oauth/youtube/callback
   app.get("/oauth/youtube/callback", async (req, res) => {
     const result = await handleYoutubeOAuthCallback(db, req.query as Record<string, unknown>);
-    if (result.ok) {
-      res.redirect(302, "/?oauth=youtube_ok");
-      return;
-    }
-    res.redirect(302, `/?oauth=youtube_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+    sendOAuthPopupResult(res, "youtube", result, "YouTube connected — ready to upload video.");
   });
 
   // TikTok OAuth callback. Must be registered in the TikTok app as a
   // Redirect URI: {APP_BASE_URL}/oauth/tiktok/callback
   app.get("/oauth/tiktok/callback", async (req, res) => {
     const result = await handleTikTokOAuthCallback(db, req.query as Record<string, unknown>);
-    if (result.ok) {
-      res.redirect(302, "/?oauth=tiktok_ok");
-      return;
-    }
-    res.redirect(302, `/?oauth=tiktok_error&reason=${encodeURIComponent(result.error ?? "unknown")}`);
+    sendOAuthPopupResult(res, "tiktok", result, "TikTok connected — ready to post video.");
   });
 
   // Action RPC: POST /actions { action, args } -> { data } | { error }.

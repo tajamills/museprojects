@@ -445,6 +445,37 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
+  // OAuth popup flow: Connect opens the platform auth page in a popup.
+  // The popup posts a "zepostia-oauth" message on completion and closes
+  // itself; we refresh the connection list without a full page reload.
+  useEffect(() => {
+    const onOAuthMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as { type?: string; platform?: string; ok?: boolean; message?: string; reason?: string } | null;
+      if (!data || data.type !== "zepostia-oauth") return;
+      if (data.ok) onMessage(data.message || "Account connected.");
+      else onMessage(`Connection failed: ${data.reason || "unknown error"}`);
+      await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    };
+    window.addEventListener("message", onOAuthMessage);
+    return () => window.removeEventListener("message", onOAuthMessage);
+  }, [queryClient, token, onMessage]);
+  const openOAuthPopup = (authUrl: string): void => {
+    const popup = window.open(authUrl, "zepostia-oauth", "width=600,height=700,menubar=no,toolbar=no,location=yes");
+    if (!popup) {
+      // Popup blocked — fall back to a full-page redirect.
+      window.location.href = authUrl;
+      return;
+    }
+    // If the user closes the popup manually (completed or abandoned),
+    // refresh the connection list so the UI reflects the current state.
+    const timer = window.setInterval(async () => {
+      if (popup.closed) {
+        window.clearInterval(timer);
+        await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+      }
+    }, 500);
+  };
   const connect = useMutation({
     mutationFn: (platform: Platform) => api.connectDemoAccount({ sessionToken: token, platform }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
@@ -454,7 +485,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     mutationFn: () => api.connectFacebook({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
-        window.location.href = result.authUrl;
+        openOAuthPopup(result.authUrl);
         return;
       }
       onMessage(result.message);
@@ -466,7 +497,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     mutationFn: () => api.connectInstagram({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
-        window.location.href = result.authUrl;
+        openOAuthPopup(result.authUrl);
         return;
       }
       onMessage(result.message);
@@ -478,7 +509,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     mutationFn: () => api.connectTikTok({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
-        window.location.href = result.authUrl;
+        openOAuthPopup(result.authUrl);
         return;
       }
       onMessage(result.message);
@@ -490,7 +521,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     mutationFn: () => api.connectYoutube({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
-        window.location.href = result.authUrl;
+        openOAuthPopup(result.authUrl);
         return;
       }
       onMessage(result.message);
@@ -502,7 +533,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
     mutationFn: () => api.connectX({ sessionToken: token }),
     onSuccess: async (result) => {
       if (result.ok && result.mode === "oauth" && result.authUrl) {
-        window.location.href = result.authUrl;
+        openOAuthPopup(result.authUrl);
         return;
       }
       onMessage(result.message);
