@@ -511,3 +511,25 @@ input[type="password"]::placeholder {
 .legal-doc a { color: var(--text); font-weight: 600; }
 .brand-home { text-decoration: none; color: inherit; }
 .brand-home strong { font-size: 18px; }
+
+/* Auth: forgot password + reset page */
+.auth-modal-title { margin: 0 0 8px; font-size: 20px; font-weight: 700; }
+.forgot-link { margin-top: 10px; font-size: 13px; }
+.back-link { margin-top: 12px; font-size: 13px; }
+.reset-main { display: flex; justify-content: center; padding: 48px 16px; }
+.reset-card { max-width: 420px; width: 100%; }
+.reset-card h1 { margin: 0 0 16px; font-size: 22px; font-weight: 700; }
+.reset-card .primary-button.wide { margin-top: 8px; }
+
+/* Visible sign out in navigation */
+.rail-signout { margin-top: 10px; display: flex; align-items: center; gap: 8px; border: 1px solid #2A3037; background: transparent; color: #9AA3AD; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; width: 100%; text-align: left; }
+.rail-signout:hover { color: #F2F4F5; border-color: #3A4149; background: #1D2126; }
+.rail-signout svg { width: 16px; height: 16px; }
+
+/* Admin password-reset tool */
+.admin-reset { margin-top: 24px; }
+.admin-reset h2 { margin: 0 0 6px; font-size: 15px; font-weight: 700; }
+.admin-reset-row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.admin-reset-row input { flex: 1; min-width: 200px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+.reset-link { margin: 12px 0 0; padding: 10px 12px; background: var(--surface-alt, #F5F6F7); border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.reset-link code { font-size: 12px; }

@@ -122,6 +122,17 @@ async function digestPassword(password: string, salt: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** SHA-256 hex of a password-reset token. The raw token is never stored. */
+async function hashResetToken(token: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Public base URL used for reset links. */
+function appBaseUrl(): string {
+  return (process.env.APP_BASE_URL ?? "https://zepostia.com").trim().replace(/\/+$/, "");
+}
+
 async function initializeConfigs(ctx: AppCtx, userId: number) {
   const now = new Date();
   await ctx.db.insert(schema.platformConfigs).values(
@@ -362,6 +373,73 @@ export const actions: Record<string, ActionDef> = {
       }
       const sessionToken = await createSession(ctx, user.id);
       return { ok: true, message: "Signed in.", sessionToken, user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode, role } };
+    },
+  },
+
+  /** Password reset: token itself is never stored, only its SHA-256 hash. */
+  requestPasswordReset: {
+    request: z.object({ email: z.string().email().max(200) }),
+    async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
+      const email = args.email.trim().toLowerCase();
+      const rows = await ctx.db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+      // Always respond the same way so the endpoint can't be used to enumerate accounts.
+      const done = { ok: true, message: "If that email has an account, a reset link is on its way. It expires in 1 hour." };
+      if (!rows[0]) return done;
+      const userId = rows[0].id;
+      // Invalidate any older unused tokens for this user.
+      await ctx.db.delete(schema.passwordResets).where(and(eq(schema.passwordResets.userId, userId)));
+      const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+      const tokenHash = await hashResetToken(token);
+      await ctx.db.insert(schema.passwordResets).values({
+        userId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: new Date(),
+      });
+      const resetUrl = `${appBaseUrl()}/reset?token=${token}`;
+      // No transactional email is configured yet; log the link so the owner can relay it.
+      console.log(`[password-reset] Reset link for ${email}: ${resetUrl}`);
+      return done;
+    },
+  },
+
+  resetPassword: {
+    request: z.object({ token: z.string().min(1).max(200), password: z.string().min(8).max(200) }),
+    async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
+      const tokenHash = await hashResetToken(args.token.trim());
+      const rows = await ctx.db.select().from(schema.passwordResets).where(eq(schema.passwordResets.tokenHash, tokenHash)).limit(1);
+      const reset = rows[0];
+      if (!reset || reset.usedAt || reset.expiresAt.getTime() <= Date.now()) {
+        return { ok: false, message: "That reset link is invalid or has expired. Request a new one." };
+      }
+      const salt = crypto.randomUUID();
+      await ctx.db.update(schema.users)
+        .set({ passwordHash: await digestPassword(args.password, salt), passwordSalt: salt })
+        .where(eq(schema.users.id, reset.userId));
+      await ctx.db.update(schema.passwordResets).set({ usedAt: new Date() }).where(eq(schema.passwordResets.id, reset.id));
+      return { ok: true, message: "Your password was updated. Sign in with your new password." };
+    },
+  },
+
+  /** Admin-only: mint a reset link for any account (used when email delivery isn't available). */
+  generatePasswordResetLink: {
+    request: z.object({ sessionToken: z.string().min(1), email: z.string().email().max(200) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; resetUrl: string | null }> {
+      const admin = await requireUser(ctx, args.sessionToken);
+      if (!admin || admin.role !== "admin") return { ok: false, message: "Admin access required.", resetUrl: null };
+      const email = args.email.trim().toLowerCase();
+      const rows = await ctx.db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+      if (!rows[0]) return { ok: false, message: "No account uses that email.", resetUrl: null };
+      const userId = rows[0].id;
+      await ctx.db.delete(schema.passwordResets).where(and(eq(schema.passwordResets.userId, userId)));
+      const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+      await ctx.db.insert(schema.passwordResets).values({
+        userId,
+        tokenHash: await hashResetToken(token),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: new Date(),
+      });
+      return { ok: true, message: "Reset link generated. It expires in 1 hour and can be used once.", resetUrl: `${appBaseUrl()}/reset?token=${token}` };
     },
   },
 

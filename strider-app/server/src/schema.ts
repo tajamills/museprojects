@@ -61,6 +61,20 @@ export const connectedAccounts = pgTable(
   (table) => [uniqueIndex("connected_accounts_user_platform").on(table.userId, table.platform)],
 );
 
+/** Single-use password reset tokens. Token itself is never stored — only its SHA-256 hash. */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { mode: "date", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+  },
+  (table) => [uniqueIndex("idx_password_resets_token_hash").on(table.tokenHash)],
+);
+
 /** Single-use OAuth CSRF states (currently Facebook). */
 export const oauthStates = pgTable(
   "oauth_states",

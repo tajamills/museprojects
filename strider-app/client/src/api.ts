@@ -70,6 +70,9 @@ type ClientApi = {
   createDemoSession(args: Record<string, never>): Promise<AuthResult>;
   signup(args: { email: string; displayName: string; password: string }): Promise<AuthResult>;
   login(args: { email: string; password: string }): Promise<AuthResult>;
+  requestPasswordReset(args: { email: string }): Promise<BasicResult>;
+  resetPassword(args: { token: string; password: string }): Promise<BasicResult>;
+  generatePasswordResetLink(args: { sessionToken: string; email: string }): Promise<{ ok: boolean; message: string; resetUrl: string | null }>;
   getWorkspace(args: { sessionToken: string }): Promise<WorkspaceResult>;
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;

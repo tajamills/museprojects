@@ -27,6 +27,7 @@ const IconCompose = () => <StrokeIcon><path d="M12 20h9" /><path d="M16.5 3.5a2.
 const IconUsers = () => <StrokeIcon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></StrokeIcon>;
 const IconGear = () => <StrokeIcon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></StrokeIcon>;
 const IconHelp = () => <StrokeIcon><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></StrokeIcon>;
+const IconLogout = () => <StrokeIcon><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></StrokeIcon>;
 const IconHeart = () => <StrokeIcon><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></StrokeIcon>;
 const IconComment = () => <StrokeIcon><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></StrokeIcon>;
 const IconShare = () => <StrokeIcon><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></StrokeIcon>;
@@ -85,11 +86,12 @@ function EmptyState({ title, body, action }: { title: string; body: string; acti
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => void }) {
   const demoMode = useServerDemoMode();
-  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("signup");
   const [message, setMessage] = useState("");
   const demo = useMutation({ mutationFn: () => api.createDemoSession({}) });
   const signup = useMutation({ mutationFn: (payload: { email: string; displayName: string; password: string }) => api.signup(payload) });
   const login = useMutation({ mutationFn: (payload: { email: string; password: string }) => api.login(payload) });
+  const requestReset = useMutation({ mutationFn: (payload: { email: string }) => api.requestPasswordReset(payload) });
 
   const finish = (result: Awaited<ReturnType<typeof api.createDemoSession>>) => {
     setMessage(result.message);
@@ -229,22 +231,79 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
         <section className="auth-panel auth-modal-card">
           <button className="modal-close" onClick={() => setAuthOpen(null)} aria-label="Close">&times;</button>
           {demoMode && <div className="demo-ribbon">DEMO / TEST MODE</div>}
-          <div className="auth-tabs" role="tablist" aria-label="Account access mode">
-            <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} role="tab" aria-selected={mode === "signup"}>Create account</button>
-            <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} role="tab" aria-selected={mode === "login"}>Sign in</button>
-          </div>
-          <form onSubmit={submit}>
-            {mode === "signup" && <label>Display name<input name="displayName" autoComplete="name" required minLength={2} placeholder="Your name" /></label>}
-            <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
-            <label>Password<input name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 8 : 1} placeholder="At least 8 characters" /></label>
-            <button className="primary-button wide" type="submit" disabled={busy}>{busy ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}</button>
-          </form>
+          {mode === "forgot" ? <>
+            <h2 className="auth-modal-title">Reset your password</h2>
+            <p className="auth-note">Enter the email you signed up with. If it has an account, a reset link good for 1 hour will be sent to it.</p>
+            <form onSubmit={async (event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              const result = await requestReset.mutateAsync({ email: String(form.get("email") ?? "") });
+              setMessage(result.message);
+            }}>
+              <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
+              <button className="primary-button wide" type="submit" disabled={requestReset.isPending}>{requestReset.isPending ? "Sending…" : "Send reset link"}</button>
+            </form>
+            <button className="text-button back-link" onClick={() => { setMode("login"); setMessage(""); }}>Back to sign in</button>
+          </> : <>
+            <div className="auth-tabs" role="tablist" aria-label="Account access mode">
+              <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")} role="tab" aria-selected={mode === "signup"}>Create account</button>
+              <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} role="tab" aria-selected={mode === "login"}>Sign in</button>
+            </div>
+            <form onSubmit={submit}>
+              {mode === "signup" && <label>Display name<input name="displayName" autoComplete="name" required minLength={2} placeholder="Your name" /></label>}
+              <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
+              <label>Password<input name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 8 : 1} placeholder="At least 8 characters" /></label>
+              <button className="primary-button wide" type="submit" disabled={busy}>{busy ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}</button>
+            </form>
+            {mode === "login" && <button className="text-button forgot-link" onClick={() => { setMode("forgot"); setMessage(""); }}>Forgot password?</button>}
+          </>}
           {message && <p className="form-message" role="status">{message}</p>}
           {demoMode && <><div className="or-rule"><span>or</span></div>
           <button className="secondary-button wide" disabled={busy} onClick={async () => finish(await demo.mutateAsync())}>Enter a fresh demo workspace</button></>}
           <p className="auth-note">Sign in with your zepostia account.</p>
         </section>
       </div>}
+    </div>
+  );
+}
+
+function ResetPasswordPage() {
+  const [message, setMessage] = useState("");
+  const [done, setDone] = useState(false);
+  const reset = useMutation({ mutationFn: (payload: { token: string; password: string }) => api.resetPassword(payload) });
+  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    const confirm = String(form.get("confirm") ?? "");
+    if (password !== confirm) { setMessage("The two passwords don't match."); return; }
+    const result = await reset.mutateAsync({ token, password });
+    setMessage(result.message);
+    if (result.ok) setDone(true);
+  };
+  return (
+    <div className="landing-shell">
+      <SafeAreaTopScrim backgroundColor="var(--bg)" />
+      <header className="landing-header">
+        <div className="landing-brand"><a href="/" className="brand-home" aria-label="zepostia home"><BrandMark className="brand-mark" /><strong>zepostia</strong></a></div>
+      </header>
+      <main className="landing-main reset-main">
+        <section className="auth-panel reset-card">
+          <h1>Set a new password</h1>
+          {done ? <>
+            <p className="form-message" role="status">{message}</p>
+            <a className="primary-button wide" href="/">Sign in</a>
+          </> : <>
+            <form onSubmit={submit}>
+              <label>New password<input name="password" type="password" autoComplete="new-password" required minLength={8} placeholder="At least 8 characters" /></label>
+              <label>Confirm password<input name="confirm" type="password" autoComplete="new-password" required minLength={8} placeholder="Repeat your new password" /></label>
+              <button className="primary-button wide" type="submit" disabled={reset.isPending}>{reset.isPending ? "Saving…" : "Set new password"}</button>
+            </form>
+            {message && <p className="form-message" role="status">{message}</p>}
+          </>}
+        </section>
+      </main>
     </div>
   );
 }
@@ -747,6 +806,29 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   </section>;
 }
 
+function AdminResetTool({ token }: { token: string }) {
+  const [email, setEmail] = useState("");
+  const [link, setLink] = useState("");
+  const [message, setMessage] = useState("");
+  const generate = useMutation({ mutationFn: (payload: { sessionToken: string; email: string }) => api.generatePasswordResetLink(payload) });
+  const run = async () => {
+    setMessage(""); setLink("");
+    const result = await generate.mutateAsync({ sessionToken: token, email });
+    setMessage(result.message);
+    if (result.ok && result.resetUrl) setLink(result.resetUrl);
+  };
+  return <section className="settings-card admin-reset">
+    <h2>Password reset (admin)</h2>
+    <p className="secret-note">Generate a one-time reset link for any account. The link expires in 1 hour and works once.</p>
+    <div className="admin-reset-row">
+      <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="user@example.com" aria-label="Account email" />
+      <button className="secondary-button" disabled={generate.isPending || !email.trim()} onClick={run}>{generate.isPending ? "Generating…" : "Generate link"}</button>
+    </div>
+    {message && <p className="form-message" role="status">{message}</p>}
+    {link && <p className="reset-link"><code>{link}</code></p>}
+  </section>;
+}
+
 function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
@@ -755,6 +837,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
     <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
+    {isAdmin && <AdminResetTool token={token} />}
   </div>;
 }
 
@@ -916,6 +999,7 @@ export function App() {
   const demoMode = useServerDemoMode();
   if (pathname === "/terms") return <TermsPage />;
   if (pathname === "/privacy") return <PrivacyPage />;
+  if (pathname === "/reset") return <ResetPasswordPage />;
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem("marketing-app-session") ?? "");
   const [page, setPage] = useState<Page>("dashboard");
   const [toast, setToast] = useState("");
@@ -973,13 +1057,13 @@ export function App() {
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
       <strong className="mobile-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
-      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Open settings" onClick={() => setPage("settings")}><IconGear /></button></div>
+      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Sign out" title="Sign out" onClick={signOut}><IconLogout /></button><button aria-label="Open settings" onClick={() => setPage("settings")}><IconGear /></button></div>
     </header>
     <aside className="side-rail">
       <div className="rail-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
       {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
       <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
-      <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small></div>
+      <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small><button className="rail-signout" onClick={signOut}><IconLogout /><span>Sign out</span></button></div>
     </aside>
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
