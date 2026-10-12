@@ -161,6 +161,7 @@ const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.s
 const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY", "SELL", "TRADE", "SEND", "RECEIVE", "STAKING", "AIRDROP"]), asset: z.string().min(2).max(12), amount: z.number().positive(), priceUsd: z.number().nonnegative(), feeUsd: z.number().nonnegative(), receivedAsset: z.string().max(12).optional(), receivedAmount: z.number().positive().optional(), receivedPriceUsd: z.number().nonnegative().optional(), fromWalletId: z.number().int().positive().optional(), toWalletId: z.number().int().positive().optional(), note: z.string().max(200).optional(), occurredAt: z.string() });
 const addTransactionResponse = z.object({ ok: z.literal(true), classification: z.string() });
 const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum(["FIFO", "LIFO", "HIFO"]) });
+const savePayoutInfoRequest = z.object({ token: z.string(), payoutMethod: z.enum(["zelle", "stripe"]), payoutZelleInfo: z.string().max(128).optional(), payoutTaxName: z.string().max(128), payoutTaxAddress: z.string().max(256) });
 const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
@@ -256,7 +257,7 @@ export const Actions = {
         if (tx.type.toUpperCase() === "TRADE" && tx.receivedAsset && tx.receivedAmount && tx.receivedPriceUsd != null) assetMap.set(tx.receivedAsset.toUpperCase(), { amount: tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0), value: (tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0)) * tx.receivedPriceUsd });
       }
       return {
-        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus },
+        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, payoutMethod: user.payoutMethod, payoutZelleInfo: user.payoutZelleInfo, payoutTaxName: user.payoutTaxName, payoutTaxAddress: user.payoutTaxAddress },
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
         exchanges: exchanges.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
@@ -315,6 +316,21 @@ export const Actions = {
     handler: async (ctx: Ctx, args: z.infer<typeof setCostBasisMethodRequest>): Promise<z.infer<typeof okResponse>> => {
       const user = await requireUser(ctx, args.token);
       await ctx.db.update(schema.users).set({ costBasisMethod: args.method }).where(eq(schema.users.id, user.id));
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
+  savePayoutInfo: {
+    request: savePayoutInfoRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof savePayoutInfoRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      await ctx.db.update(schema.users).set({
+        payoutMethod: args.payoutMethod,
+        payoutZelleInfo: args.payoutMethod === "zelle" ? (args.payoutZelleInfo?.trim() || null) : null,
+        payoutTaxName: args.payoutTaxName.trim(),
+        payoutTaxAddress: args.payoutTaxAddress.trim(),
+      }).where(eq(schema.users.id, user.id));
       ctx.invalidateQueries();
       return { ok: true };
     },
