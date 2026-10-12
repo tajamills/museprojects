@@ -110,10 +110,16 @@ export function tiktokRedirectUri(origin: string | null): string {
 }
 
 export function buildTikTokAuthUrl(args: { clientKey: string; redirectUri: string; state: string }): string {
+  // In sandbox mode, video.publish isn't available (requires Direct Post approval),
+  // so only request scopes the sandbox app actually has.
+  const sandbox = process.env.TIKTOK_SANDBOX === "true";
+  const scopes = sandbox
+    ? ["user.info.basic", "video.upload"]
+    : [...TIKTOK_OAUTH_SCOPES];
   const params = new URLSearchParams({
     client_key: args.clientKey,
     response_type: "code",
-    scope: TIKTOK_OAUTH_SCOPES.join(","),
+    scope: scopes.join(","),
     redirect_uri: args.redirectUri,
     state: args.state,
   });
