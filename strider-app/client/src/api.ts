@@ -64,7 +64,7 @@ type ClientApi = {
   login(args: { email: string; password: string }): Promise<AuthResult>;
   getWorkspace(args: { sessionToken: string }): Promise<WorkspaceResult>;
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
-  savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string }): Promise<BasicResult>;
+  savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;
   connectDemoAccount(args: { sessionToken: string; platform: Platform }): Promise<BasicResult>;
   connectFacebook(args: { sessionToken: string }): Promise<ConnectFacebookResult>;
   listFacebookPages(args: { sessionToken: string }): Promise<FacebookPagesResult>;

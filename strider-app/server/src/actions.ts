@@ -210,6 +210,19 @@ async function demoConnectAccount(
 /** Meta app credentials: ok + values, or ok:false with which piece is missing. */
 type MetaAppCreds = { ok: true; clientId: string; clientSecret: string } | { ok: false; missing: string };
 
+/** Client secret: encrypted DB value first, FACEBOOK_CLIENT_SECRET env fallback. */
+function resolveMetaClientSecret(encValue: string | null): string | null {
+  if (encValue) {
+    try {
+      const dec = decryptToken(encValue);
+      if (dec) return dec;
+    } catch {
+      // fall through to env
+    }
+  }
+  return resolvePlatformSecret("facebook");
+}
+
 async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<MetaAppCreds> {
   const rows = await ctx.db
     .select()
@@ -217,7 +230,7 @@ async function facebookAppCredentials(ctx: AppCtx, userId: number): Promise<Meta
     .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
     .limit(1);
   const clientId = (rows[0]?.clientId ?? "").trim();
-  const clientSecret = resolvePlatformSecret("facebook");
+  const clientSecret = resolveMetaClientSecret(rows[0]?.clientSecretEnc ?? null);
   if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
   if (!clientSecret) return { ok: false, missing: "app-secret" };
   return { ok: true, clientId, clientSecret: clientSecret as string };
@@ -232,7 +245,7 @@ async function instagramAppCredentials(ctx: AppCtx, userId: number): Promise<Met
     .where(and(eq(schema.platformConfigs.userId, userId), eq(schema.platformConfigs.platform, "facebook")))
     .limit(1);
   const clientId = (rows[0]?.clientId ?? "").trim();
-  const clientSecret = resolvePlatformSecret("facebook");
+  const clientSecret = resolveMetaClientSecret(rows[0]?.clientSecretEnc ?? null);
   if (!clientId || clientId.startsWith("DEMO_")) return { ok: false, missing: "app-id" };
   if (!clientSecret) return { ok: false, missing: "app-secret" };
   return { ok: true, clientId, clientSecret: clientSecret as string };
@@ -404,15 +417,23 @@ export const actions: Record<string, ActionDef> = {
   },
 
   savePlatformConfig: {
-    request: z.object({ sessionToken: z.string().min(1), platform: platformSchema, clientId: z.string().trim().min(1).max(300), secretReference: z.string().trim().max(500).optional().default("") }),
+    request: z.object({ sessionToken: z.string().min(1), platform: platformSchema, clientId: z.string().trim().min(1).max(300), secretReference: z.string().trim().max(500).optional().default(""), clientSecret: z.string().trim().max(500).optional().default("") }),
     async handler(ctx, args): Promise<z.infer<typeof accountResponse>> {
       const user = await requireUser(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      let secretEnc: string | null = null;
+      if (args.clientSecret.trim()) {
+        try {
+          secretEnc = encryptToken(args.clientSecret.trim());
+        } catch {
+          return { ok: false, message: "Server encryption is not configured. Contact support." };
+        }
+      }
       await ctx.db.insert(schema.platformConfigs).values({
-        userId: user.id, platform: args.platform, clientId: args.clientId.trim(), secretReference: args.secretReference.trim(), updatedAt: new Date(),
+        userId: user.id, platform: args.platform, clientId: args.clientId.trim(), secretReference: args.secretReference.trim(), clientSecretEnc: secretEnc, updatedAt: new Date(),
       }).onConflictDoUpdate({
         target: [schema.platformConfigs.userId, schema.platformConfigs.platform],
-        set: { clientId: args.clientId.trim(), secretReference: args.secretReference.trim(), updatedAt: new Date() },
+        set: { clientId: args.clientId.trim(), secretReference: args.secretReference.trim(), ...(secretEnc ? { clientSecretEnc: secretEnc } : {}), updatedAt: new Date() },
       });
       ctx.invalidateQueries();
       return { ok: true, message: `${PLATFORM_INFO[args.platform as Platform].label} configuration saved.` };
@@ -446,7 +467,7 @@ export const actions: Record<string, ActionDef> = {
         if (!isDemoMode()) {
           const what = creds.missing === "app-id"
             ? "Add your Facebook App ID in Settings \u2192 Facebook first, then connect."
-            : "Set FACEBOOK_CLIENT_SECRET in Railway (and redeploy), then connect.";
+            : "Add your App Secret in Settings \u2192 Facebook first, then connect.";
           return { ok: false, message: what, mode: "oauth", authUrl: null };
         }
         const demo = await demoConnectAccount(ctx, user, "facebook");

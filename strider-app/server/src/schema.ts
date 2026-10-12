@@ -39,6 +39,7 @@ export const platformConfigs = pgTable(
     platform: text("platform", { enum: ["facebook", "instagram", "tiktok", "youtube", "x"] }).notNull(),
     clientId: text("client_id").notNull(),
     secretReference: text("secret_reference").notNull(),
+    clientSecretEnc: text("client_secret_enc"),
     updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
   },
   (table) => [uniqueIndex("platform_configs_user_platform").on(table.userId, table.platform)],

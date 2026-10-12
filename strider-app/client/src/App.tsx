@@ -407,9 +407,10 @@ function Queue({ posts, token, onMessage }: { posts: Post[]; token: string; onMe
 function PlatformSettingsCard({ setting, token, onMessage }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
+  const [clientSecret, setClientSecret] = useState("");
   useEffect(() => { setClientId(setting.clientId); }, [setting.clientId]);
   const save = useMutation({
-    mutationFn: () => api.savePlatformConfig({ sessionToken: token, platform: setting.platform, clientId, secretReference: "" }),
+    mutationFn: () => api.savePlatformConfig({ sessionToken: token, platform: setting.platform, clientId, secretReference: "", clientSecret }),
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["settings", token] }); },
   });
   return <details className="settings-card" open>
@@ -418,7 +419,8 @@ function PlatformSettingsCard({ setting, token, onMessage }: { setting: Platform
       {setting.platform === "facebook" && <video className="setup-video" controls preload="metadata" src="/facebook-setup-tutorial.mp4"><p>Watch the step-by-step Facebook setup walkthrough.</p></video>}
       <div className="go-live-list"><p><b>1</b><span>Create:</span> {setting.developerApp}</p><p><b>2</b><span>Collect:</span> {setting.credentialFields}</p><p><b>3</b><span>Callback:</span> Deploy the app on your host, then add the exact OAuth callback URL for that deployment (see DEPLOY.md).</p><p><b>4</b><span>Permissions:</span> Request only sign-in, profile/account discovery, and content publishing scopes.</p></div>
       <label>App ID (Client ID)<input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="Paste your Facebook App ID" /></label>
-      <p className="secret-note">Your app secret stays in Railway as FACEBOOK_CLIENT_SECRET — never paste it here.</p>
+      <label>App Secret<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder="Paste your Facebook App Secret" /></label>
+      <p className="secret-note">Your secret is encrypted before it is stored and never shown again.</p>
       <button className="secondary-button" disabled={save.isPending || !clientId.trim()} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save configuration"}</button>
     </div>
   </details>;
