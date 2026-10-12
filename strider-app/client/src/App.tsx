@@ -135,20 +135,6 @@ function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]
     </section>
 
     <section className="content-section">
-      <div className="section-heading"><div><span className="section-code">TOKEN HEALTH</span><h2>Account lines</h2></div><button className="text-button" onClick={() => go("accounts")}>Manage all</button></div>
-      <div className="account-lines">
-        {PLATFORM_ORDER.map((platform) => {
-          const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
-          return <button key={platform} className="account-line" onClick={() => go("accounts")}>
-            <PlatformBadge platform={platform} />
-            <span className="account-copy"><strong>{PLATFORM_META[platform].label}</strong><small>{account ? account.handle : "Not connected"}</small></span>
-            {account ? <StatusPill status={account.status} /> : <span className="connect-word">Connect →</span>}
-          </button>;
-        })}
-      </div>
-    </section>
-
-    <section className="content-section">
       <div className="section-heading"><div><span className="section-code">LATEST RUNS</span><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("queue")}>Open queue</button></div>
       {posts.length === 0 ? <EmptyState title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("compose")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
     </section>
