@@ -54,9 +54,12 @@ export class TikTokApiError extends Error {
 
 type FetchFn = typeof fetch;
 
-const TIKTOK_API_BASE = process.env.TIKTOK_SANDBOX === "true"
-  ? "https://open-sandbox.tiktokapis.com/v2"
-  : "https://open.tiktokapis.com/v2";
+// TikTok serves BOTH environments from one API host, open.tiktokapis.com.
+// The environment follows the client key in use (sandbox keys start with
+// "sb"): sandbox vs production differ only in credentials, never in host.
+// (open-sandbox.tiktokapis.com does not exist — DNS returns NXDOMAIN for it;
+// pointing the base there made every sandbox API call fail with ENOTFOUND.)
+const TIKTOK_API_BASE = "https://open.tiktokapis.com/v2";
 
 function tiktokUrl(path: string): string {
   return `${TIKTOK_API_BASE}${path}`;

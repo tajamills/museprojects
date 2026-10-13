@@ -39,6 +39,14 @@ All keys go into the zepostia service on Railway: **Variables** tab.
 3. Railway vars: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`
 4. Note: TikTok apps that haven't passed TikTok's audit can only publish
    **privately**. Real customer publishing needs audit approval.
+5. **Sandbox mode** (for TikTok's app-review demo): set `TIKTOK_SANDBOX=true`
+   plus `TIK_SAND_CLIENT` / `TIKTOK_SAND_SECRET` (the sandbox app's client key
+   and secret from the developer portal's Sandbox view) in Railway. Sandbox
+   uses the **same API host** as production — `open.tiktokapis.com`; TikTok
+   has no separate sandbox host, the environment follows the client key. In
+   sandbox mode only the sandbox app's registered target users can connect,
+   and posts stay inside the sandbox. Remove `TIKTOK_SANDBOX` (or set it to
+   anything but `true`) to return to production credentials.
 
 ## 4. YouTube
 
