@@ -76,7 +76,7 @@ const html = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="icon" href="./logo-mark.png" />
+    <link rel="icon" type="image/svg+xml" href="./brand-mark.svg" />
     <title>kovala</title>
     <link rel="stylesheet" href="./assets/theme.css" />
     <script type="module" src="./assets/${jsFile}"></script>
@@ -89,5 +89,6 @@ const html = `<!doctype html>
 await writeFile(path.join(outDir, "index.html"), html);
 await cp(path.join(here, "logo.png"), path.join(outDir, "logo.png"));
 await cp(path.join(here, "logo-mark.png"), path.join(outDir, "logo-mark.png"));
+await cp(path.join(here, "brand-mark.svg"), path.join(outDir, "brand-mark.svg"));
 
 console.log(`Client bundle written to ${outDir}`);
