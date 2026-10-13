@@ -61,17 +61,17 @@ function PrimaryButton({ children, busy }: {
 function Auth({ onAuth }: {
     onAuth: (token: string, email: string) => void;
 }) {
-    const [mode, setMode] = useState<"signin" | "signup">("signup");
+    const [mode, setMode] = useState<"signin" | "signup">("signin");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const mutation = useMutation({ mutationFn: () => mode === "signup" ? api.signUp({ email, password }) : api.signIn({ email, password }), onSuccess: (data) => onAuth(data.token, data.email), onError: (e) => setError(errText(e)) });
-    return <main className="auth-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><section className="auth-panel"><header className="auth-brand" aria-label="kovala"><BrandMark/><strong>kovala</strong></header><h1>Keep the back office in order.</h1><p className="auth-copy">Deadlines, documents, and decisions—organized around each business you run. Now including registered agent service: we receive your official mail and legal notices, scan them into your vault, and alert you the same day.</p><form onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(); }}>
+    return <main className="auth-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><section className="auth-panel"><header className="auth-brand" aria-label="kovala"><BrandMark/><strong>kovala</strong></header><h1>Keep the back office in order.</h1><p className="auth-copy">Deadlines, documents, and decisions—organized around each business you run. Now including registered agent service: we receive your official mail and legal notices, scan them into your vault, and alert you the same day.</p><div className="auth-switch" role="group" aria-label="Sign in or create a workspace"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setError(""); }}>Sign in</button><button type="button" className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setError(""); }}>Create workspace</button></div><form onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(); }}>
     <Field label="Email"><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required/></Field>
     <Field label="Password"><input type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={mode === "signup" ? 8 : 1} required/></Field>
     {mode === "signup" && <p className="field-note">Use at least 8 characters.</p>}{error && <p className="error-note" role="alert">{error}</p>}
     <PrimaryButton busy={mutation.isPending}>{mode === "signup" ? "Create workspace" : "Sign in"}</PrimaryButton>
-  </form><button className="text-button" onClick={() => { setMode(mode === "signup" ? "signin" : "signup"); setError(""); }}>{mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}</button></section></main>;
+  </form></section></main>;
 }
 function EntityForm({ token, onDone, entity, focusField }: {
     token: string;
