@@ -479,6 +479,8 @@ input[type="password"]::placeholder {
 /* Help center */
 .help-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
 .help-section h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 20px; color: var(--text); }
+.help-subline { margin: -8px 0 20px; color: var(--dim); font-size: 14px; line-height: 1.6; }
+.help-video { display: block; width: 100%; max-width: 880px; border: 1px solid var(--border); border-radius: 10px; background: #000; }
 .help-steps { display: grid; gap: 16px; }
 .help-step { display: flex; gap: 16px; align-items: flex-start; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
 .help-step > span { flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%; background: var(--text); color: var(--surface); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }

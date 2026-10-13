@@ -959,6 +959,12 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
     <div className="page-heading"><h1>Help</h1><p>Everything you need to connect your accounts and start posting. No technical setup required — you just click Connect and log in with each platform.</p></div>
 
     <section className="help-section">
+      <h2>Watch the tour</h2>
+      <p className="help-subline">A one-minute walkthrough: connect your accounts, write a post, and publish.</p>
+      <video className="help-video" controls preload="none" poster="/getting-started-poster.png" src="/getting-started-tutorial.mp4" />
+    </section>
+
+    <section className="help-section">
       <h2>Getting started</h2>
       <div className="help-steps">
         <div className="help-step"><span>1</span><div><strong>Create your account</strong><p>Sign up for zepostia and pick the $19.88/month plan. Your first 14 days are free.</p></div></div>
