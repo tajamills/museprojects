@@ -62,6 +62,45 @@ function tiktokUrl(path: string): string {
   return `${TIKTOK_API_BASE}${path}`;
 }
 
+/** Host of the TikTok API base currently in use (host only — safe to log). */
+export function tiktokApiHost(): string {
+  try {
+    return new URL(TIKTOK_API_BASE).host;
+  } catch {
+    return TIKTOK_API_BASE;
+  }
+}
+
+/**
+ * Flatten an error and its `cause` chain into one loggable string. Node's
+ * fetch (undici) hides the real network reason (ENOTFOUND, TLS failures,
+ * timeouts) in err.cause — the top-level message is a bare "fetch failed".
+ */
+export function describeErrorChain(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (current instanceof Error) {
+      const code = (current as { code?: unknown }).code;
+      const errno = (current as { errno?: unknown }).errno;
+      let part = `${current.name}: ${current.message}`;
+      if (typeof code === "string" && code) part += ` (code=${code})`;
+      if (typeof errno === "number") part += ` (errno=${errno})`;
+      parts.push(part);
+      current = (current as { cause?: unknown }).cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(" | caused by: ");
+}
+
+/** Server-side log of a failed TikTok step, with the full error cause chain. */
+export function logTikTokError(step: string, err: unknown): void {
+  console.error(`[tiktok] ${step} failed against ${tiktokApiHost()}: ${describeErrorChain(err)}`);
+}
+
 /** Throw on TikTok's {error:{code:"ok"}} envelope or HTTP errors. */
 async function tiktokRequest(
   method: "GET" | "POST",
@@ -110,12 +149,11 @@ export function tiktokRedirectUri(origin: string | null): string {
 }
 
 export function buildTikTokAuthUrl(args: { clientKey: string; redirectUri: string; state: string }): string {
-  // In sandbox mode, video.publish isn't available (requires Direct Post approval),
-  // so only request scopes the sandbox app actually has.
-  const sandbox = process.env.TIKTOK_SANDBOX === "true";
-  const scopes = sandbox
-    ? ["user.info.basic", "video.upload"]
-    : [...TIKTOK_OAUTH_SCOPES];
+  // This app's TikTok sandbox carries Direct Post + video.publish (enabled in
+  // the developer portal), and the direct-post publish call requires
+  // video.publish on the granted token — so sandbox requests the full scope
+  // set, same as production.
+  const scopes = [...TIKTOK_OAUTH_SCOPES];
   const params = new URLSearchParams({
     client_key: args.clientKey,
     response_type: "code",
@@ -147,11 +185,17 @@ export async function exchangeTikTokCode(
     grant_type: "authorization_code",
     redirect_uri: args.redirectUri,
   });
-  const res = await fetchFn(tiktokUrl("/oauth/token/"), {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  });
+  let res: Response;
+  try {
+    res = await fetchFn(tiktokUrl("/oauth/token/"), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+  } catch (err) {
+    logTikTokError("token exchange (exchangeTikTokCode)", err);
+    throw err;
+  }
   const body = (await res.json().catch(() => ({}))) as any;
   if (!res.ok || !body.access_token) {
     throw new TikTokApiError(
@@ -179,11 +223,17 @@ export async function refreshTikTokToken(
     grant_type: "refresh_token",
     refresh_token: args.refreshToken,
   });
-  const res = await fetchFn(tiktokUrl("/oauth/token/"), {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  });
+  let res: Response;
+  try {
+    res = await fetchFn(tiktokUrl("/oauth/token/"), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+  } catch (err) {
+    logTikTokError("token refresh (refreshTikTokToken)", err);
+    throw err;
+  }
   const body = (await res.json().catch(() => ({}))) as any;
   if (!res.ok || !body.access_token) {
     throw new TikTokApiError(

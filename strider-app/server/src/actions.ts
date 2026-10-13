@@ -28,6 +28,7 @@ import {
   getTikTokUserInfo,
   isRealTikTokConfig,
   isTikTokAppConfigured,
+  logTikTokError,
   ownerTikTokCredentials,
   tiktokRedirectUri,
 } from "./tiktok.js";
@@ -1566,6 +1567,7 @@ export async function handleTikTokOAuthCallback(
 
   let tokens: Awaited<ReturnType<typeof exchangeTikTokCode>>;
   let userInfo: Awaited<ReturnType<typeof getTikTokUserInfo>>;
+  let step = "token exchange";
   try {
     tokens = await exchangeTikTokCode({
       clientKey: creds.clientId,
@@ -1573,8 +1575,10 @@ export async function handleTikTokOAuthCallback(
       redirectUri: stateRow.redirectUri,
       code,
     });
+    step = "user info";
     userInfo = await getTikTokUserInfo(tokens.accessToken);
   } catch (err) {
+    logTikTokError(`OAuth callback ${step}`, err);
     return { ok: false, error: err instanceof Error ? err.message : "TikTok login failed." };
   }
   const now = new Date();
