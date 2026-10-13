@@ -108,7 +108,7 @@
 .attention-main{flex:1;min-width:0}
 .attention-main strong{font-size:14.5px;display:block}
 .attention-main p{margin:3px 0 0;color:var(--dim);font-size:12.5px;line-height:1.45}
-.fix-button{border:1px solid var(--border);background:linear-gradient(180deg,var(--surface) 0%,var(--warm-soft) 100%);border-radius:12px;padding:8px 15px;font-weight:700;font-size:12.5px;flex:0 0 auto;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 5px rgba(34,30,26,.10);transition:transform .12s ease,box-shadow .12s ease}
+.fix-button{border:1px solid var(--border);background:linear-gradient(180deg,var(--surface) 0%,var(--warm-soft) 100%);border-radius:6px;padding:8px 15px;font-weight:700;font-size:12.5px;flex:0 0 auto;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 5px rgba(34,30,26,.10);transition:transform .12s ease,box-shadow .12s ease}
 .fix-button:hover{transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 4px 9px rgba(34,30,26,.14)}
 .fix-button:active{transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(34,30,26,.14)}
 .details-list{margin:4px 0 0}
@@ -124,7 +124,7 @@
 /* Button geometry (2026-10-13, Layla): action buttons are rounded squares
    (12px), not full pills. Status/flag chips and due chips are labels and
    stay pill; round icon buttons (close, add, check) stay circular. */
-.primary,.secondary{border-radius:12px}
+.primary,.secondary{border-radius:6px}
 .field input,.field select,.field textarea,.repeat-row input,.action-row input,.action-row select,.search input{border-radius:12px;border-color:color-mix(in srgb,var(--border) 52%,var(--dim) 48%)}
 .sheet{background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 42%)}
 .form-callout{border-radius:12px}
@@ -139,7 +139,7 @@
 .focus-deadline{border-radius:18px}
 .sheet{border:1px solid var(--border)}
 .segmented{border-radius:14px;padding:4px;border:1px solid var(--border);background:color-mix(in srgb,var(--warm-soft) 80%,#ded4c4 20%);box-shadow:inset 0 2px 5px rgba(34,30,26,.16),inset 0 -1px 0 rgba(255,255,255,.45)}
-.segmented button{border-radius:12px}
+.segmented button{border-radius:6px}
 .segmented button.active{box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(34,30,26,.18),0 6px 14px rgba(34,30,26,.10)}
 .pulse{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(34,30,26,.05),0 10px 24px rgba(34,30,26,.07);padding:6px 16px}
 .pulse div:first-child{padding-left:8px}
@@ -153,9 +153,9 @@
 .empty-art{width:72px;height:72px;margin:0 auto;border-radius:50%;display:grid;place-items:center;color:var(--accent);background:linear-gradient(180deg,color-mix(in srgb,var(--warm-soft) 55%,#ffffff 45%),var(--warm-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 4px rgba(34,30,26,.08),0 4px 10px rgba(34,30,26,.12)}
 .empty-art svg{width:34px;height:34px}
 .empty h3{margin-top:16px}
-.desktop-rail button{border-radius:12px;color:color-mix(in srgb,var(--text) 74%,var(--dim) 26%);font-weight:600}
+.desktop-rail button{border-radius:6px;color:color-mix(in srgb,var(--text) 74%,var(--dim) 26%);font-weight:600}
 .bottom-nav button{color:color-mix(in srgb,var(--text) 68%,var(--dim) 32%);font-weight:600}
-.bottom-nav button.active{border-radius:12px}
+.bottom-nav button.active{border-radius:6px}
 .auth-panel{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 2px 3px rgba(34,30,26,.06),0 16px 34px rgba(34,30,26,.10);padding:32px 34px}
 @media (max-width:480px){.auth-panel{padding:24px 20px}}
 .overview-attention{margin-top:34px}
@@ -167,7 +167,7 @@
    next 3 open reminders; when more exist, a footer link row in the same
    drawn-arrow language as "View business" / the rollup rows carries the
    total and jumps to the Deadlines tab. */
-.coming-up-more{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border-radius:12px;padding:13px 16px;color:var(--accent);font-weight:700;font-size:14px;text-align:left;box-shadow:0 1px 2px rgba(34,30,26,.05),0 8px 20px rgba(34,30,26,.06)}
+.coming-up-more{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border-radius:6px;padding:13px 16px;color:var(--accent);font-weight:700;font-size:14px;text-align:left;box-shadow:0 1px 2px rgba(34,30,26,.05),0 8px 20px rgba(34,30,26,.06)}
 .coming-up-more:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .coming-up-more .entity-open-arrow{color:var(--accent)}
 /* Overview rollup collapse (2026-10-13): the Needs attention header is the
@@ -252,7 +252,7 @@
 .meta-missing{color:var(--danger)}
 .meta-link{display:block;margin-top:3px;border:0;background:none;padding:0;color:var(--accent);font-weight:700;font-size:12.5px}
 .entity-menu-wrap{position:relative;flex:0 0 auto}
-.entity-menu-button{width:36px;height:36px;border:1px solid var(--border);background:var(--surface);border-radius:12px;display:grid;place-items:center;color:var(--dim)}
+.entity-menu-button{width:36px;height:36px;border:1px solid var(--border);background:var(--surface);border-radius:6px;display:grid;place-items:center;color:var(--dim)}
 .entity-menu-button svg{width:18px;height:18px}
 .entity-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:172px;display:grid}
 .entity-menu button{border:0;background:none;text-align:left;padding:9px 10px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--text)}
@@ -274,7 +274,7 @@
    segmented-tray language (12px rounded-square segments) and the screen
    DEFAULTS TO SIGN IN; the buried footnote toggle link is gone. */
 .auth-switch{display:grid;grid-template-columns:1fr 1fr;padding:4px;background:color-mix(in srgb,var(--warm-soft) 80%,#ded4c4 20%);border:1px solid var(--border);border-radius:14px;box-shadow:inset 0 2px 5px rgba(34,30,26,.16),inset 0 -1px 0 rgba(255,255,255,.45);margin-bottom:20px}
-.auth-switch button{border:0;background:transparent;padding:10px 4px;border-radius:12px;color:var(--dim);font-size:13.5px;font-weight:600;transition:transform .12s ease,box-shadow .12s ease}
+.auth-switch button{border:0;background:transparent;padding:10px 4px;border-radius:6px;color:var(--dim);font-size:13.5px;font-weight:600;transition:transform .12s ease,box-shadow .12s ease}
 .auth-switch button.active{background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 82%,var(--warm-soft)));color:var(--text);font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(34,30,26,.18),0 6px 14px rgba(34,30,26,.10)}
 /* Businesses desktop composition (2026-10-13, Layla + her ChatGPT mockup —
    her verdict on the first pass was "this could be cleaner"): the list's
