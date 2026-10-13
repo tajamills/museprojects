@@ -276,3 +276,33 @@
 .auth-switch{display:grid;grid-template-columns:1fr 1fr;padding:4px;background:color-mix(in srgb,var(--warm-soft) 80%,#ded4c4 20%);border:1px solid var(--border);border-radius:14px;box-shadow:inset 0 2px 5px rgba(34,30,26,.16),inset 0 -1px 0 rgba(255,255,255,.45);margin-bottom:20px}
 .auth-switch button{border:0;background:transparent;padding:10px 4px;border-radius:12px;color:var(--dim);font-size:13.5px;font-weight:600;transition:transform .12s ease,box-shadow .12s ease}
 .auth-switch button.active{background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 82%,var(--warm-soft)));color:var(--text);font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(34,30,26,.18),0 6px 14px rgba(34,30,26,.10)}
+/* Businesses desktop composition (2026-10-13, Layla + her ChatGPT mockup —
+   her verdict on the first pass was "this could be cleaner"): the list's
+   content column widens so the row has room to be composed at all, and once
+   the LIST ITSELF is wide enough (container query — the card's real width,
+   not the window's) each row is laid out on a strict shared grid: a fixed
+   identity track (names on one line at the mockup's serif size, status chip
+   directly under "LLC · State"), four meta columns separated by hairline
+   rules with matching baselines, the whole meta grid vertically centered
+   against the identity block, and roomier card padding. Below that width
+   the wrapped / 2×2 layouts above stay untouched (phones included).
+   The filter counts render as small filled circular badges (mockup style),
+   and the sub-row's View business — a light rounded-square .secondary
+   button — is pinned right with margin-left:auto, so even when the sub-row
+   wraps it lands bottom-right on every card instead of wandering. */
+.entity-list{container-type:inline-size}
+.count-badge{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--warm-soft);color:var(--dim);display:inline-grid;place-items:center;font-size:11px;font-weight:700;line-height:1}
+.biz-chips button.active .count-badge{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}
+.entity-view{margin-left:auto;padding:10px 18px}
+@media (min-width:800px){.content.wide{max-width:1280px}.entity-card{padding:26px 30px}}
+@container (min-width:920px){
+.entity-top{display:grid;grid-template-columns:minmax(330px,390px) minmax(0,1fr) auto;gap:28px;align-items:center}
+.entity-main{align-items:center;flex:none;min-width:0}
+.entity-title h2{font-size:27px}
+.entity-meta{grid-template-columns:.85fr 1fr 1.4fr 1.05fr;gap:0;align-self:center}
+.meta-cell{padding:4px 22px;border-left:1px solid var(--border)}
+.meta-cell:first-child{padding-left:0;border-left:0}
+.meta-cell:last-child{padding-right:0}
+.meta-cell:first-child strong{white-space:nowrap}
+.entity-menu-wrap{align-self:start;margin-top:4px}
+}
