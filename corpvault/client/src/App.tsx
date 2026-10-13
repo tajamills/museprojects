@@ -11,7 +11,7 @@ type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "close" | "check" | "upload" | "lock";
+    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
@@ -22,6 +22,7 @@ function Icon({ name }: {
         billing: <><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></>,
         plus: <path d="M12 5v14M5 12h14"/>, close: <path d="m6 6 12 12M18 6 6 18"/>, check: <path d="m5 12 4 4L19 6"/>,
         upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v5h14v-5"/></>, lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
+        info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.8v.3"/></>,
     };
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -224,9 +225,20 @@ function Billing({ token }: {
     const data = statusQuery.data as { status?: string; currentPeriodEnd?: string | null } | undefined;
     const status = data?.status ?? "none";
     const periodEnd = data?.currentPeriodEnd ?? null;
-    const label = status === "active" ? "Active" : status === "past_due" ? "Payment issue — update your card" : status === "canceled" ? "Canceled" : "No subscription yet";
     const subscribed = status === "active" || status === "past_due";
-    return <div className="page"><header className="page-head"><div><p className="eyebrow">Billing</p><h1>Kovala Plan</h1><p>$199.88/year, billed annually. Cancel anytime.</p></div></header><section className="panel-card"><div className="section-head"><h2>Subscription</h2></div>{statusQuery.isPending ? <p className="quiet">Loading…</p> : statusQuery.isError ? <p className="error-note">Could not load billing status.</p> : <p><strong>{label}</strong>{status === "active" && periodEnd ? ` · renews ${dateLabel(periodEnd.slice(0, 10))}` : null}</p>}{notice && <p className="error-note" role="alert">{notice}</p>}{subscribed ? <button className="primary compact" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button> : <button className="primary compact" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Subscribe — $199.88/yr"}</button>}<p className="field-note billing-note">Checkout is secured by Stripe. Your card is charged $199.88 immediately, then once a year.</p></section></div>;
+    /** A Stripe billing account exists once a subscription has been started
+     *  (active, past due, or canceled) — only those states have a real
+     *  customer-portal target for the Manage button and View invoices. */
+    const hasBillingAccount = subscribed || status === "canceled";
+    return <div className="page"><header className="page-head billing-head"><div><p className="eyebrow">Billing</p><h1>Kovala Plan</h1><p className="page-sub">$199.88/year, billed annually. Cancel anytime.</p></div>{hasBillingAccount && <button className="secondary billing-manage" disabled={portal.isPending} onClick={() => portal.mutate()}><Icon name="billing"/>{portal.isPending ? "Working…" : "Manage"}</button>}</header><section className="panel-card billing-card"><div className="billing-top"><span className="billing-bubble"><Icon name="billing"/></span><div><p className="eyebrow">Subscription</p><h2 className="billing-plan">Kovala Plan</h2><p className="quiet">$199.88/year</p></div></div>{statusQuery.isPending ? <p className="quiet billing-loading">Loading…</p> : statusQuery.isError ? <p className="error-note billing-loading">Could not load billing status.</p> : <>
+    {subscribed && <><hr className="billing-divider"/><div className="billing-meta"><div><span>Billing cycle</span><strong>Annual</strong></div><div><span>Next billing date</span><strong>{periodEnd ? dateLabel(periodEnd.slice(0, 10)) : "—"}</strong></div><div><span>Payment method</span><strong>Managed in Stripe</strong></div></div></>}
+    {status === "active" && <div className="billing-strip"><Icon name="info"/><div><strong>Your subscription is active</strong><p>{periodEnd ? `You're all set — your plan renews on ${dateLabel(periodEnd.slice(0, 10))}.` : "You're all set."}</p></div></div>}
+    {status === "past_due" && <div className="billing-strip danger"><Icon name="info"/><div><strong>Payment issue — update your card</strong><p>Your last payment didn't go through. Choose Manage to update your payment method and keep your plan active.</p></div></div>}
+    {status === "canceled" && <div className="billing-strip neutral"><Icon name="info"/><div><strong>Subscription canceled</strong><p>Your plan is no longer active. Subscribe again anytime to restart it.</p></div></div>}
+    {notice && <p className="error-note billing-alert" role="alert">{notice}</p>}
+    {!subscribed && <div className="billing-actions">{status === "none" && <p className="quiet">No subscription yet.</p>}<button className="primary compact" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Subscribe — $199.88/yr"}</button><p className="field-note billing-note">Checkout is secured by Stripe. Your card is charged $199.88 immediately, then once a year.</p></div>}
+    {hasBillingAccount && <button className="billing-invoices" disabled={portal.isPending} onClick={() => portal.mutate()}><Icon name="documents"/>View invoices<span className="entity-open-arrow" aria-hidden="true"/></button>}
+    </>}</section></div>;
 }
 export function App() {
     const [token, setToken] = useState(() => localStorage.getItem("bizkeep_token") ?? "");
