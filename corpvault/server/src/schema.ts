@@ -34,6 +34,7 @@ export const entities = pgTable("entities", {
   einValue: text("ein_value"),
   registeredAgent: text("registered_agent"),
   agentRenewalDate: text("agent_renewal_date"),
+  archived: boolean("archived").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
 });
 

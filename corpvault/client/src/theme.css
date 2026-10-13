@@ -193,3 +193,54 @@
 .billing-invoices svg{width:18px;height:18px}
 .billing-invoices:disabled{opacity:.45;cursor:not-allowed}
 @media (max-width:680px){.billing-meta{grid-template-columns:1fr}.billing-card{padding:20px}}
+/* Businesses page (2026-10-13, Layla's mockup): search + Add business in
+   the header, a filter chip row with live counts and a sort select, and
+   wide row cards — identity block, a four-column meta grid (Formed / EIN /
+   Registered agent / Renewal) with deep-focus Add links, an overflow menu
+   (View / Edit / Archive), and a hairline sub-row carrying the document
+   count and the next deadline. The attention flag chips left the cards;
+   the flags themselves live on in the detail view and Overview rollup. */
+.chip-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
+.biz-head{flex-wrap:wrap;gap:16px}
+.biz-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.biz-search input{width:210px}
+.biz-add{display:inline-flex;align-items:center;gap:7px}
+.biz-add svg{width:16px;height:16px}
+.biz-filters{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.biz-chips{display:flex;gap:8px;flex-wrap:wrap}
+.biz-chips button{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--dim)}
+.biz-chips button.active{color:var(--text);border-color:color-mix(in srgb,var(--text) 35%,transparent);box-shadow:0 1px 2px rgba(23,35,61,.05),0 6px 16px rgba(23,35,61,.07)}
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.dot-green{background:var(--accent)}
+.dot-amber{background:var(--amber)}
+.dot-gray{background:var(--dim)}
+.biz-sort{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:13px;font-weight:600}
+.biz-sort select{border:1px solid color-mix(in srgb,var(--border) 52%,var(--dim) 48%);background:var(--surface);border-radius:12px;padding:9px 10px;font:inherit;font-size:13.5px;color:var(--text)}
+.entity-card{flex-direction:column;align-items:stretch;gap:0;padding:22px 24px}
+.entity-top{display:flex;gap:22px;align-items:flex-start;min-width:0}
+.entity-main{display:flex;gap:14px;align-items:flex-start;flex:0 1 300px;min-width:0}
+.entity-status{display:inline-block;margin-top:9px}
+.entity-meta{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 18px;min-width:0}
+.meta-cell{min-width:0}
+.meta-label{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.meta-label svg{width:14px;height:14px}
+.meta-cell strong{display:block;font-size:14.5px;line-height:1.35;overflow-wrap:anywhere}
+.meta-sub{display:block;color:var(--dim);font-size:12px;margin-top:3px}
+.meta-missing{color:var(--danger)}
+.meta-link{display:block;margin-top:3px;border:0;background:none;padding:0;color:var(--accent);font-weight:700;font-size:12.5px}
+.entity-menu-wrap{position:relative;flex:0 0 auto}
+.entity-menu-button{width:36px;height:36px;border:1px solid var(--border);background:var(--surface);border-radius:12px;display:grid;place-items:center;color:var(--dim)}
+.entity-menu-button svg{width:18px;height:18px}
+.entity-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:172px;display:grid}
+.entity-menu button{border:0;background:none;text-align:left;padding:9px 10px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--text)}
+.entity-menu button:hover{background:var(--navy-soft)}
+.entity-subrow{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.entity-subitems{display:flex;gap:10px 22px;align-items:center;flex-wrap:wrap;min-width:0}
+.sub-link{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:0;font-weight:700;font-size:13.5px;color:var(--text)}
+.sub-link svg{width:17px;height:17px;color:var(--accent)}
+.sub-deadline{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;min-width:0}
+.sub-deadline svg{width:17px;height:17px;color:var(--dim);flex:0 0 auto}
+.sub-muted{color:var(--dim)}
+.entity-view{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px}
+@media (max-width:900px){.entity-top{flex-wrap:wrap}.entity-meta{grid-template-columns:repeat(2,minmax(0,1fr));flex:1 1 100%}}
+@media (max-width:680px){.entity-card{gap:0}}

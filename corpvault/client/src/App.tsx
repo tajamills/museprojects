@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "./safe-area";
 import { api, type ApiResponse } from "./api";
-import { CATEGORIES, dateLabel, daysUntil, entityAttention, relativeDue, workspaceAttention, type AttentionTone, type DocumentCategory, type EntityAttention, type EntityField } from "./attention";
+import { annualCycle, CATEGORIES, dateLabel, daysUntil, entityAttention, relativeDue, workspaceAttention, type AttentionTone, type DocumentCategory, type EntityAttention, type EntityField } from "./attention";
 type Workspace = ApiResponse<typeof api, "getWorkspace">;
 type Entity = Workspace["entities"][number];
 type Reminder = Workspace["reminders"][number];
@@ -11,7 +11,7 @@ type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info";
+    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
@@ -23,6 +23,9 @@ function Icon({ name }: {
         plus: <path d="M12 5v14M5 12h14"/>, close: <path d="m6 6 12 12M18 6 6 18"/>, check: <path d="m5 12 4 4L19 6"/>,
         upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v5h14v-5"/></>, lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
         info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.8v.3"/></>,
+        user: <><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.4-3.8 4.4-5.5 7.5-5.5s6.1 1.7 7.5 5.5"/></>,
+        clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
+        more: <><circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/></>,
     };
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -158,12 +161,28 @@ function StatusChip({ att }: {
     att: EntityAttention;
 }) {
     if (att.overdueCount > 0)
-        return <Chip tone="red" large>Overdue</Chip>;
+        return <Chip tone="red" large><span className="chip-dot" aria-hidden="true"/>Overdue</Chip>;
     if (att.actionCount > 0)
-        return <Chip tone="amber" large>Action needed</Chip>;
+        return <Chip tone="amber" large><span className="chip-dot" aria-hidden="true"/>Action needed</Chip>;
     if (att.formsOn)
-        return <Chip tone="info" large>Forms {dateLabel(att.formsOn)}</Chip>;
-    return <Chip tone="green" large>All set</Chip>;
+        return <Chip tone="info" large><span className="chip-dot" aria-hidden="true"/>Forms {dateLabel(att.formsOn)}</Chip>;
+    return <Chip tone="green" large><span className="chip-dot" aria-hidden="true"/>Active</Chip>;
+}
+type BizFilter = "all" | "active" | "action" | "archived";
+type BizSort = "recent" | "name" | "formation";
+/** The Renewal cell for a business row: the state annual date the app already
+ *  computes (WY anniversary-month 1st, GA April 1) when it applies, else the
+ *  registered-agent renewal date on file, else null (→ "Not set" + Add date). */
+function renewalCell(e: Entity): { value: string; sub: string } | null {
+    let due: string | null = null;
+    if (e.formation_date && (e.state === "WY" || e.state === "GA"))
+        due = annualCycle(e.formation_date, e.state === "WY" ? Number(e.formation_date.slice(5, 7)) : 4, 1).due;
+    else if (e.agent_renewal_date)
+        due = e.agent_renewal_date;
+    if (!due)
+        return null;
+    const d = daysUntil(due);
+    return { value: dateLabel(due), sub: d < 0 ? "Overdue" : d === 0 ? "Due today" : `${d} day${d === 1 ? "" : "s"} left` };
 }
 function Entities({ data, token, open, onEdit, selectedId, onSelect, onUploadDoc }: {
     data: Workspace;
@@ -174,13 +193,34 @@ function Entities({ data, token, open, onEdit, selectedId, onSelect, onUploadDoc
     onSelect: (id: number | null) => void;
     onUploadDoc: (entity: Entity, category: DocumentCategory) => void;
 }) {
+    const qc = useQueryClient();
+    const [query, setQuery] = useState("");
+    const [filter, setFilter] = useState<BizFilter>("all");
+    const [sort, setSort] = useState<BizSort>("recent");
+    const [menuFor, setMenuFor] = useState<number | null>(null);
+    const archiveMutation = useMutation({ mutationFn: (args: { id: number; archived: boolean }) => api.setEntityArchived({ token, id: args.id, archived: args.archived }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) });
     const selected = selectedId != null ? data.entities.find((e) => e.id === selectedId) : undefined;
     if (selected)
         return <EntityDetail data={data} token={token} entity={selected} open={open} onEdit={onEdit} onUploadDoc={onUploadDoc} onBack={() => onSelect(null)}/>;
-    return <div className="page"><header className="page-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1></div><button className="round-add" aria-label="Add business" onClick={() => open("entity")}><Icon name="plus"/></button></header>{data.entities.length ? <div className="entity-list">{data.entities.map((e) => { const att = entityAttention(e, data.documents); const next = att.upcoming[0]; return <article className="entity-card" key={e.id} role="button" tabIndex={0} aria-label={`View ${e.name}`} onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") {
+    const atts = new Map(data.entities.map((e) => [e.id, entityAttention(e, data.documents)]));
+    const counts = {
+        active: data.entities.filter((e) => !e.archived && atts.get(e.id)!.actionCount === 0).length,
+        action: data.entities.filter((e) => !e.archived && atts.get(e.id)!.actionCount > 0).length,
+        archived: data.entities.filter((e) => e.archived).length,
+    };
+    const q = query.trim().toLowerCase();
+    const visible = data.entities
+        .filter((e) => filter === "archived" ? e.archived : filter === "active" ? !e.archived && atts.get(e.id)!.actionCount === 0 : filter === "action" ? !e.archived && atts.get(e.id)!.actionCount > 0 : !e.archived)
+        .filter((e) => !q || e.name.toLowerCase().includes(q))
+        .sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "formation" ? (a.formation_date || "9999").localeCompare(b.formation_date || "9999") : b.created_at.localeCompare(a.created_at));
+    return <div className="page"><header className="page-head biz-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1><p className="page-sub">Your companies, filings, documents and deadlines.</p></div><div className="biz-tools"><label className="search biz-search"><span className="sr-only">Search businesses</span><input aria-label="Search businesses" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search businesses..."/></label><button className="primary compact biz-add" onClick={() => open("entity")}><Icon name="plus"/>Add business</button></div></header>{data.entities.length ? <>
+    <div className="biz-filters"><div className="biz-chips" role="group" aria-label="Filter businesses"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All</button><button className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}><span className="dot dot-green" aria-hidden="true"/>Active · {counts.active}</button><button className={filter === "action" ? "active" : ""} onClick={() => setFilter("action")}><span className="dot dot-amber" aria-hidden="true"/>Action needed · {counts.action}</button><button className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}><span className="dot dot-gray" aria-hidden="true"/>Archived · {counts.archived}</button></div><label className="biz-sort"><span>Sort by</span><select aria-label="Sort businesses" value={sort} onChange={(e) => setSort(e.target.value as BizSort)}><option value="recent">Recent</option><option value="name">Name A–Z</option><option value="formation">Formation date</option></select></label></div>
+    {visible.length ? <div className="entity-list">{visible.map((e) => { const att = atts.get(e.id)!; const docs = data.documents.filter((d) => d.entity_id === e.id); const nextDeadline = data.reminders.find((r) => r.entity_id === e.id && r.status === "open"); const renewal = renewalCell(e); return <article className="entity-card" key={e.id} role="button" tabIndex={0} aria-label={`View ${e.name}`} onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.target !== ev.currentTarget)
+            return; if (ev.key === "Enter" || ev.key === " ") {
             ev.preventDefault();
             onSelect(e.id);
-        } }}><div className="entity-id"><div className="entity-monogram">{e.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{e.name}</h2><p>{e.entity_type} · {e.state}</p></div></div><div className="entity-flags"><StatusChip att={att}/><div className="entity-chips">{att.needs.length ? att.needs.map((i) => <Chip key={i.key} tone={chipTone(i.tone)}>{i.chip}</Chip>) : <Chip tone="green">All details on file</Chip>}</div></div><div className="entity-side"><p className="entity-next">{next ? <>Next up · <strong>{next.label}</strong>{next.detail ? ` — ${next.detail}` : ""}</> : att.formsOn ? `Formation scheduled for ${dateLabel(att.formsOn)}` : e.formation_date ? `Formed ${dateLabel(e.formation_date)} · nothing due soon` : "Add the formation date to unlock deadlines"}</p><span className="entity-open">View business<span className="entity-open-arrow" aria-hidden="true"/></span></div></article>; })}</div> : <Empty icon="entities" title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/>}</div>;
+        } }}><div className="entity-top"><div className="entity-main"><div className="entity-monogram">{e.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{e.name}</h2><p>{e.entity_type} · {e.state}</p><span className="entity-status"><StatusChip att={att}/></span></div></div><div className="entity-meta"><div className="meta-cell"><span className="meta-label"><Icon name="calendar"/>Formed</span><strong>{e.formation_date ? dateLabel(e.formation_date) : "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="billing"/>EIN</span>{e.ein_masked ? <strong>{e.ein_masked}</strong> : <><strong className="meta-missing">Not added</strong><button className="meta-link" onClick={(ev) => { ev.stopPropagation(); onEdit(e, "ein"); }}>Add EIN</button></>}</div><div className="meta-cell"><span className="meta-label"><Icon name="user"/>Registered agent</span><strong>{e.registered_agent ?? "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="clock"/>Renewal</span>{renewal ? <><strong>{renewal.value}</strong><span className="meta-sub">{renewal.sub}</span></> : <><strong>Not set</strong><button className="meta-link" onClick={(ev) => { ev.stopPropagation(); onEdit(e, "renewal"); }}>Add date</button></>}</div></div><div className="entity-menu-wrap" onClick={(ev) => ev.stopPropagation()}><button className="entity-menu-button" aria-label={`More actions for ${e.name}`} aria-expanded={menuFor === e.id} onClick={() => setMenuFor(menuFor === e.id ? null : e.id)}><Icon name="more"/></button>{menuFor === e.id && <div className="entity-menu" role="menu"><button onClick={() => { setMenuFor(null); onSelect(e.id); }}>View business</button><button onClick={() => { setMenuFor(null); onEdit(e); }}>Edit details</button><button disabled={archiveMutation.isPending} onClick={() => { setMenuFor(null); archiveMutation.mutate({ id: e.id, archived: !e.archived }); }}>{e.archived ? "Unarchive" : "Archive"}</button></div>}</div></div><div className="entity-subrow"><div className="entity-subitems"><button className="sub-link" onClick={(ev) => { ev.stopPropagation(); onSelect(e.id); }}><Icon name="documents"/>{docs.length} Document{docs.length === 1 ? "" : "s"}<span className="entity-open-arrow" aria-hidden="true"/></button><span className="sub-deadline"><Icon name="calendar"/>{nextDeadline ? <><strong>1 Upcoming deadline</strong><span className="sub-muted">{nextDeadline.title} · Due {dateLabel(nextDeadline.due_date)}</span></> : <span className="sub-muted">No upcoming deadlines</span>}</span></div><button className="secondary entity-view" onClick={(ev) => { ev.stopPropagation(); onSelect(e.id); }}>View business<span className="entity-open-arrow" aria-hidden="true"/></button></div></article>; })}</div> : <Empty icon="entities" title={q ? "No matching businesses" : filter === "archived" ? "Nothing archived yet" : "No businesses in this view"} body={q ? "Try a different search, or clear the filters to see every business." : filter === "archived" ? "Archived businesses keep all of their data and can be brought back from their menu at any time." : "Businesses matching this filter will appear here."} action={<button className="secondary" onClick={() => { setQuery(""); setFilter("all"); }}>Clear filters</button>}/>}
+    </> : <Empty icon="entities" title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/>}</div>;
 }
 function EntityDetail({ data, token, entity, open, onEdit, onUploadDoc, onBack }: {
     data: Workspace;

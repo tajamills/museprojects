@@ -137,9 +137,12 @@ export function entityAttention(e: Entity, documents: WorkspaceDocument[]): Enti
 export type RollupEntry = { entity: Entity; item: AttentionItem };
 
 /** Every attention flag across every business in the workspace, worst first:
- *  overdue, then action-needed/due-soon, then informational. */
+ *  overdue, then action-needed/due-soon, then informational. Archived
+ *  businesses are excluded — archiving is the owner's way of saying a
+ *  business no longer needs watching. */
 export function workspaceAttention(data: Workspace): RollupEntry[] {
     return data.entities
+        .filter((entity) => !entity.archived)
         .flatMap((entity) => entityAttention(entity, data.documents).needs.map((item) => ({ entity, item })))
         .sort((a, b) => byAttentionRank(a.item, b.item));
 }
