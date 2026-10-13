@@ -263,6 +263,30 @@ export const actionDefs = {
             return { id: entity.id };
         },
     },
+    updateEntity: {
+        request: z.object({ token: z.string(), id: z.number(), name: z.string().min(1).max(120), entity_type: z.enum(entityTypes), state: z.string().length(2), formation_date: z.string().min(1), ein: z.string().max(20).optional(), registered_agent: z.string().max(120).optional(), agent_renewal_date: z.string().optional() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number; name: string; entity_type: "LLC" | "Corporation" | "DBA"; state: string; formation_date: string; ein?: string; registered_agent?: string; agent_renewal_date?: string }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            const owned = await ctx.db.select({ id: schema.entities.id }).from(schema.entities).where(and(eq(schema.entities.id, args.id), eq(schema.entities.accountId, accountId))).limit(1);
+            if (!owned.length)
+                throw new Error("That business is not available.");
+            const patch: Partial<{ name: string; entityType: "LLC" | "Corporation" | "DBA"; state: string; formationDate: string; einValue: string | null; registeredAgent: string | null; agentRenewalDate: string | null }> = {
+                name: args.name.trim(), entityType: args.entity_type, state: args.state.toUpperCase(), formationDate: args.formation_date,
+            };
+            // Optional fields: undefined = leave unchanged, "" = clear, value = set.
+            // The client omits `ein` when the owner leaves it blank so the EIN on
+            // file (only ever exposed masked) is never wiped by an edit.
+            if (args.ein !== undefined)
+                patch.einValue = args.ein.trim() || null;
+            if (args.registered_agent !== undefined)
+                patch.registeredAgent = args.registered_agent.trim() || null;
+            if (args.agent_renewal_date !== undefined)
+                patch.agentRenewalDate = args.agent_renewal_date || null;
+            await ctx.db.update(schema.entities).set(patch).where(and(eq(schema.entities.id, args.id), eq(schema.entities.accountId, accountId)));
+            return { ok: true };
+        },
+    },
     addReminder: {
         request: z.object({ token: z.string(), entity_id: z.number().nullable(), title: z.string().min(1).max(160), reminder_type: z.string().min(1).max(80), due_date: z.string(), notes: z.string().max(1000).optional() }),
         response: z.object({ id: z.number() }),

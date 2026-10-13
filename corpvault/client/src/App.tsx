@@ -64,14 +64,20 @@ function Auth({ onAuth }: {
     <PrimaryButton busy={mutation.isPending}>{mode === "signup" ? "Create workspace" : "Sign in"}</PrimaryButton>
   </form><button className="text-button" onClick={() => { setMode(mode === "signup" ? "signin" : "signup"); setError(""); }}>{mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}</button></section></main>;
 }
-function EntityForm({ token, onDone }: {
+function EntityForm({ token, onDone, entity, focusField }: {
     token: string;
     onDone: () => void;
+    entity?: Entity;
+    focusField?: EntityField;
 }) {
     const qc = useQueryClient();
     const [error, setError] = useState("");
-    const mutation = useMutation({ mutationFn: (form: FormData) => api.addEntity({ token, name: String(form.get("name")), entity_type: String(form.get("type")) as "LLC" | "Corporation" | "DBA", state: String(form.get("state")), formation_date: String(form.get("formation")), ein: String(form.get("ein") || ""), registered_agent: String(form.get("agent") || ""), agent_renewal_date: String(form.get("renewal") || "") }), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["workspace"] }); onDone(); }, onError: (e) => setError(errText(e)) });
-    return <form className="form-grid" onSubmit={(e) => { e.preventDefault(); mutation.mutate(new FormData(e.currentTarget)); }}><Field label="Business name"><input name="name" required autoFocus/></Field><div className="two-col"><Field label="Entity type"><select name="type"><option>LLC</option><option>Corporation</option><option>DBA</option></select></Field><Field label="Formation state"><select name="state" defaultValue="WY">{STATES.map((s) => <option key={s}>{s}</option>)}</select></Field></div><Field label="Formation date"><input name="formation" type="date" required/></Field><Field label="EIN"><input name="ein" inputMode="numeric" placeholder="Optional — displayed masked"/></Field><Field label="Registered agent"><input name="agent" placeholder="Name or service"/></Field><Field label="Registered agent renewal"><input name="renewal" type="date"/></Field><p className="form-callout">Wyoming, Florida, Georgia, Texas, and California LLC records receive a source-linked filing reminder. Always verify legal deadlines.</p>{error && <p className="error-note">{error}</p>}<PrimaryButton busy={mutation.isPending}>Add business</PrimaryButton></form>;
+    const mutation = useMutation({ mutationFn: async (form: FormData) => { const ein = String(form.get("ein") || "").trim(); if (entity) {
+            await api.updateEntity({ token, id: entity.id, name: String(form.get("name")), entity_type: String(form.get("type")) as "LLC" | "Corporation" | "DBA", state: String(form.get("state")), formation_date: String(form.get("formation")), registered_agent: String(form.get("agent") || ""), agent_renewal_date: String(form.get("renewal") || ""), ...(ein ? { ein } : {}) });
+            return;
+        } await api.addEntity({ token, name: String(form.get("name")), entity_type: String(form.get("type")) as "LLC" | "Corporation" | "DBA", state: String(form.get("state")), formation_date: String(form.get("formation")), ein, registered_agent: String(form.get("agent") || ""), agent_renewal_date: String(form.get("renewal") || "") }); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["workspace"] }); onDone(); }, onError: (e) => setError(errText(e)) });
+    const focus = (field: EntityField) => entity ? focusField === field : field === "name";
+    return <form className="form-grid" onSubmit={(e) => { e.preventDefault(); mutation.mutate(new FormData(e.currentTarget)); }}><Field label="Business name"><input name="name" required defaultValue={entity?.name} autoFocus={focus("name")}/></Field><div className="two-col"><Field label="Entity type"><select name="type" defaultValue={entity?.entity_type}><option>LLC</option><option>Corporation</option><option>DBA</option></select></Field><Field label="Formation state"><select name="state" defaultValue={entity?.state ?? "WY"}>{STATES.map((s) => <option key={s}>{s}</option>)}</select></Field></div><Field label="Formation date"><input name="formation" type="date" required defaultValue={entity?.formation_date} autoFocus={focus("formation")}/></Field><Field label="EIN"><input name="ein" inputMode="numeric" placeholder={entity?.ein_masked ? `On file ${entity.ein_masked} — leave blank to keep it` : "Optional — displayed masked"} autoFocus={focus("ein")}/></Field><Field label="Registered agent"><input name="agent" placeholder="Name or service" defaultValue={entity?.registered_agent ?? ""} autoFocus={focus("agent")}/></Field><Field label="Registered agent renewal"><input name="renewal" type="date" defaultValue={entity?.agent_renewal_date ?? ""} autoFocus={focus("renewal")}/></Field>{entity ? <p className="form-callout">Changes save to this business only. Leave the EIN blank to keep the one already on file.</p> : <p className="form-callout">Wyoming, Florida, Georgia, Texas, and California LLC records receive a source-linked filing reminder. Always verify legal deadlines.</p>}{error && <p className="error-note">{error}</p>}<PrimaryButton busy={mutation.isPending}>{entity ? "Save changes" : "Add business"}</PrimaryButton></form>;
 }
 function ReminderForm({ token, entities, onDone }: {
     token: string;
@@ -135,10 +141,135 @@ function Overview({ data, token, open }: {
     <section className="section"><div className="section-head"><h2>Recent documents</h2><button onClick={() => open("document")} disabled={!data.entities.length}>Upload</button></div>{data.documents.length ? <div className="doc-list">{data.documents.slice(0, 3).map((d) => <a className="doc-row" key={d.id} href={d.download_url} target="_blank" rel="noreferrer"><span className="file-stamp">{d.filename.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span><span><strong>{d.filename}</strong><small>{d.entity_name} · {d.category}</small></span><time>{new Date(d.uploaded_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></a>)}</div> : <p className="quiet">Documents you upload will stay organized by business.</p>}</section>
   </div>;
 }
-function Entities({ data, open }: {
+type EntityField = "name" | "formation" | "ein" | "agent" | "renewal";
+type AttentionTone = "overdue" | "missing" | "soon" | "info" | "upcoming" | "ok";
+type AttentionItem = { key: string; tone: AttentionTone; chip: string; label: string; detail?: string; field?: EntityField };
+type EntityAttention = { needs: AttentionItem[]; upcoming: AttentionItem[]; done: AttentionItem[]; actionCount: number; overdueCount: number; formsOn: string | null };
+/** Next occurrence (and the one just before it) of a yearly month/day deadline,
+ *  counting cycles from the year after formation — the first annual obligation
+ *  falls in the anniversary year, never the formation year itself. */
+function annualCycle(formation: string, month: number, day: number): {
+    due: string;
+    prevDue: string | null;
+} {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const mk = (y: number) => `${y}-${pad(month)}-${pad(day)}`;
+    const today = todayKey();
+    let year = Number(formation.slice(0, 4)) + 1;
+    let due = mk(year);
+    let prevDue: string | null = null;
+    while (due < today) {
+        prevDue = due;
+        year += 1;
+        due = mk(year);
+    }
+    return { due, prevDue };
+}
+/** The attention layer: computed from the record on file + state rules.
+ *  Says what is missing, what is due, and what is in good shape — in plain
+ *  language, never as raw record fields. */
+function entityAttention(e: Entity): EntityAttention {
+    const needs: AttentionItem[] = [];
+    const upcoming: AttentionItem[] = [];
+    const done: AttentionItem[] = [];
+    let formsOn: string | null = null;
+    if (!e.formation_date) {
+        needs.push({ key: "formation", tone: "missing", chip: "Formation date missing", label: "Formation date missing", detail: "Add the date this business was formed — every deadline counts from it.", field: "formation" });
+    }
+    else if (daysUntil(e.formation_date) > 0) {
+        formsOn = e.formation_date;
+        needs.push({ key: "forms", tone: "info", chip: `Forms ${dateLabel(e.formation_date)}`, label: `Forms on ${dateLabel(e.formation_date)}`, detail: "Not formed yet — deadlines count from the formation date." });
+        done.push({ key: "formation-date", tone: "ok", chip: "", label: `Formation date set · ${dateLabel(e.formation_date)}` });
+    }
+    else {
+        done.push({ key: "formation-date", tone: "ok", chip: "", label: `Formed ${dateLabel(e.formation_date)}` });
+    }
+    if (!e.ein_masked)
+        needs.push({ key: "ein", tone: "missing", chip: "EIN missing", label: "EIN missing", detail: "Add the federal tax ID so filings, banking, and payroll records match.", field: "ein" });
+    else
+        done.push({ key: "ein", tone: "ok", chip: "", label: `EIN on file · ${e.ein_masked}` });
+    if (!e.registered_agent)
+        needs.push({ key: "agent", tone: "missing", chip: "Agent not added", label: "Registered agent not added", detail: "Name the person or service that receives official mail and legal notices.", field: "agent" });
+    else
+        done.push({ key: "agent", tone: "ok", chip: "", label: `Registered agent · ${e.registered_agent}` });
+    if (!e.agent_renewal_date) {
+        needs.push({ key: "renewal", tone: "missing", chip: "Agent renewal not set", label: "Registered agent renewal date not set", detail: "Set the renewal date so the agent service never lapses unnoticed.", field: "renewal" });
+    }
+    else {
+        const d = daysUntil(e.agent_renewal_date);
+        if (d < 0)
+            needs.push({ key: "renewal", tone: "overdue", chip: "Agent renewal overdue", label: "Registered agent renewal overdue", detail: `Was due ${dateLabel(e.agent_renewal_date)} — ${relativeDue(e.agent_renewal_date)}. Renew or confirm the service.`, field: "renewal" });
+        else if (d <= 60)
+            needs.push({ key: "renewal", tone: "soon", chip: "Agent renewal soon", label: `Registered agent renewal due ${dateLabel(e.agent_renewal_date)}`, detail: `${relativeDue(e.agent_renewal_date)} — renew or confirm the service.`, field: "renewal" });
+        else
+            done.push({ key: "renewal", tone: "ok", chip: "", label: `Agent renewal · ${dateLabel(e.agent_renewal_date)}` });
+    }
+    if (e.formation_date && (e.state === "WY" || e.state === "GA")) {
+        const isWY = e.state === "WY";
+        const name = isWY ? "Wyoming annual report" : "Georgia annual registration";
+        const { due, prevDue } = annualCycle(e.formation_date, isWY ? Number(e.formation_date.slice(5, 7)) : 4, 1);
+        const windowOpen = !isWY && todayKey() >= `${due.slice(0, 4)}-01-01`;
+        if (daysUntil(due) <= 60 || windowOpen)
+            needs.push({ key: "annual", tone: "soon", chip: "Annual filing due", label: `${name} due ${dateLabel(due)}`, detail: isWY ? "Due on the first day of the anniversary month. Verify current requirements before filing." : "Filing window January 1 – April 1. Verify current requirements before filing." });
+        else if (prevDue)
+            needs.push({ key: "annual", tone: "overdue", chip: "Annual filing overdue", label: `${name} overdue`, detail: `Was due ${dateLabel(prevDue)}. File as soon as possible and verify any late fees.` });
+        else
+            upcoming.push({ key: "annual", tone: "upcoming", chip: "", label: name, detail: isWY ? `Due ${dateLabel(due)}` : `Window January 1 – April 1 · due ${dateLabel(due)}` });
+    }
+    const rank: Record<AttentionTone, number> = { overdue: 0, missing: 1, soon: 2, info: 3, upcoming: 4, ok: 5 };
+    needs.sort((a, b) => rank[a.tone] - rank[b.tone]);
+    return { needs, upcoming, done, actionCount: needs.filter((i) => i.tone === "overdue" || i.tone === "missing" || i.tone === "soon").length, overdueCount: needs.filter((i) => i.tone === "overdue").length, formsOn };
+}
+function Chip({ tone, large, children }: {
+    tone: "amber" | "red" | "green" | "info";
+    large?: boolean;
+    children: ReactNode;
+}) { return <span className={`chip chip-${tone}${large ? " chip-lg" : ""}`}>{children}</span>; }
+function chipTone(tone: AttentionTone): "amber" | "red" | "green" | "info" { return tone === "overdue" ? "red" : tone === "missing" || tone === "soon" ? "amber" : tone === "ok" ? "green" : "info"; }
+function StatusChip({ att }: {
+    att: EntityAttention;
+}) {
+    if (att.overdueCount > 0)
+        return <Chip tone="red" large>Overdue</Chip>;
+    if (att.actionCount > 0)
+        return <Chip tone="amber" large>Action needed</Chip>;
+    if (att.formsOn)
+        return <Chip tone="info" large>Forms {dateLabel(att.formsOn)}</Chip>;
+    return <Chip tone="green" large>All set</Chip>;
+}
+function Entities({ data, token, open, onEdit }: {
     data: Workspace;
+    token: string;
     open: (m: Modal) => void;
-}) { return <div className="page"><header className="page-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1></div><button className="round-add" aria-label="Add business" onClick={() => open("entity")}><Icon name="plus"/></button></header>{data.entities.length ? <div className="entity-list">{data.entities.map((e) => <article className="entity-card" key={e.id}><div className="entity-monogram">{e.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{e.name}</h2><p>{e.entity_type} · {e.state}</p></div><dl><div><dt>Formed</dt><dd>{dateLabel(e.formation_date)}</dd></div><div><dt>EIN</dt><dd>{e.ein_masked ?? "Not added"}</dd></div><div><dt>Registered agent</dt><dd>{e.registered_agent ?? "Not added"}</dd></div><div><dt>Renewal</dt><dd>{e.agent_renewal_date ? dateLabel(e.agent_renewal_date) : "Not set"}</dd></div></dl></article>)}</div> : <Empty title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/>}</div>; }
+    onEdit: (entity: Entity, focus?: EntityField) => void;
+}) {
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const selected = selectedId != null ? data.entities.find((e) => e.id === selectedId) : undefined;
+    if (selected)
+        return <EntityDetail data={data} token={token} entity={selected} open={open} onEdit={onEdit} onBack={() => setSelectedId(null)}/>;
+    return <div className="page"><header className="page-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1></div><button className="round-add" aria-label="Add business" onClick={() => open("entity")}><Icon name="plus"/></button></header>{data.entities.length ? <div className="entity-list">{data.entities.map((e) => { const att = entityAttention(e); const next = att.upcoming[0]; return <article className="entity-card" key={e.id} role="button" tabIndex={0} aria-label={`View ${e.name}`} onClick={() => setSelectedId(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            setSelectedId(e.id);
+        } }}><div className="entity-card-top"><div className="entity-monogram">{e.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{e.name}</h2><p>{e.entity_type} · {e.state}</p></div><StatusChip att={att}/></div><div className="entity-chips">{att.needs.length ? att.needs.map((i) => <Chip key={i.key} tone={chipTone(i.tone)}>{i.chip}</Chip>) : <Chip tone="green">All details on file</Chip>}</div><p className="entity-next">{next ? <>Next up · <strong>{next.label}</strong>{next.detail ? ` — ${next.detail}` : ""}</> : att.formsOn ? `Formation scheduled for ${dateLabel(att.formsOn)}` : e.formation_date ? `Formed ${dateLabel(e.formation_date)} · nothing due soon` : "Add the formation date to unlock deadlines"}</p></article>; })}</div> : <Empty title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/>}</div>;
+}
+function EntityDetail({ data, token, entity, open, onEdit, onBack }: {
+    data: Workspace;
+    token: string;
+    entity: Entity;
+    open: (m: Modal) => void;
+    onEdit: (entity: Entity, focus?: EntityField) => void;
+    onBack: () => void;
+}) {
+    const att = entityAttention(entity);
+    const deadlines = data.reminders.filter((r) => r.entity_id === entity.id && r.status === "open").slice(0, 5);
+    return <div className="page"><button className="back-button" onClick={onBack}>← All businesses</button><section className="panel-card detail-head"><div className="entity-monogram">{entity.name.slice(0, 2).toUpperCase()}</div><div className="detail-head-main"><h1>{entity.name}</h1><p>{entity.entity_type} · {entity.state}</p></div><StatusChip att={att}/></section>
+    <section className="panel-card"><div className="panel-head"><h2>Needs attention</h2>{att.actionCount > 0 && <Chip tone={att.overdueCount ? "red" : "amber"} large>{att.actionCount} to handle</Chip>}</div>{att.needs.length ? att.needs.map((i) => <div className="attention-row" key={i.key}><span className={`attention-dot tone-${i.tone}`}>{i.tone === "info" ? <Icon name="calendar"/> : "!"}</span><div className="attention-main"><strong>{i.label}</strong>{i.detail && <p>{i.detail}</p>}</div>{i.field && <button className="fix-button" onClick={() => onEdit(entity, i.field)}>{i.tone === "missing" ? "Add" : "Update"}</button>}</div>) : <div className="attention-row"><span className="attention-dot tone-ok"><Icon name="check"/></span><div className="attention-main"><strong>Nothing needs attention</strong><p>This business is in good shape right now.</p></div></div>}</section>
+    {att.upcoming.length > 0 && <section className="panel-card"><div className="panel-head"><h2>Coming up</h2></div>{att.upcoming.map((i) => <div className="attention-row" key={i.key}><span className="attention-dot tone-info"><Icon name="calendar"/></span><div className="attention-main"><strong>{i.label}</strong>{i.detail && <p>{i.detail}</p>}</div></div>)}</section>}
+    {att.done.length > 0 && <section className="panel-card"><div className="panel-head"><h2>On file</h2></div>{att.done.map((i) => <div className="attention-row" key={i.key}><span className="attention-dot tone-ok"><Icon name="check"/></span><div className="attention-main"><strong>{i.label}</strong></div></div>)}</section>}
+    {deadlines.length > 0 && <section className="section"><div className="section-head"><h2>Deadlines on record</h2><button onClick={() => open("reminder")}>Add</button></div><div className="deadline-list">{deadlines.map((r) => <ReminderItem key={r.id} reminder={r} token={token}/>)}</div></section>}
+    <section className="panel-card"><div className="panel-head"><h2>Details</h2><button className="fix-button" onClick={() => onEdit(entity)}>Edit details</button></div><dl className="details-list"><div><dt>Business name</dt><dd>{entity.name}</dd></div><div><dt>Type</dt><dd>{entity.entity_type}</dd></div><div><dt>Formation state</dt><dd>{entity.state}</dd></div><div><dt>Formation date</dt><dd>{entity.formation_date ? dateLabel(entity.formation_date) : "Not added"}</dd></div><div><dt>EIN</dt><dd>{entity.ein_masked ?? "Not added"}</dd></div><div><dt>Registered agent</dt><dd>{entity.registered_agent ?? "Not added"}</dd></div><div><dt>Agent renewal</dt><dd>{entity.agent_renewal_date ? dateLabel(entity.agent_renewal_date) : "Not set"}</dd></div></dl></section>
+  </div>;
+}
 function Documents({ data, open }: {
     data: Workspace;
     open: (m: Modal) => void;
@@ -172,6 +303,10 @@ export function App() {
     const [email, setEmail] = useState(() => localStorage.getItem("bizkeep_email") ?? "");
     const [tab, setTab] = useState<Tab>("overview");
     const [modal, setModal] = useState<Modal>(null);
+    const [entityEdit, setEntityEdit] = useState<{
+        entity: Entity;
+        focus?: EntityField;
+    } | null>(null);
     const workspace = useQuery({ queryKey: ["workspace", token], queryFn: () => api.getWorkspace({ token }), enabled: Boolean(token), retry: false });
     const data = workspace.data;
     const modalBody = useMemo(() => { if (!modal || !data)
@@ -185,5 +320,5 @@ export function App() {
         return <div className="loading"><span></span><p>Opening your records…</p></div>;
     if (workspace.isError || !data)
         return <main className="error-page"><h1>We couldn't open this workspace.</h1><p>{errText(workspace.error)}</p><button className="primary compact" onClick={() => { localStorage.removeItem("bizkeep_token"); localStorage.removeItem("bizkeep_email"); setToken(""); }}>Return to sign in</button></main>;
-    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" /><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className="content">{tab === "overview" && <Overview data={data} token={token} open={setModal}/>}{tab === "entities" && <Entities data={data} open={setModal}/>}{tab === "documents" && <Documents data={data} open={setModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={setModal}/>}{tab === "minutes" && <Minutes data={data} open={setModal}/>}{tab === "billing" && <Billing token={token}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={() => setModal(null)}>{modalBody}</Sheet>}</div>;
+    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" /><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><img src="/logo-mark.png" alt="" aria-hidden="true" className="brand-mark" />kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className="content">{tab === "overview" && <Overview data={data} token={token} open={setModal}/>}{tab === "entities" && <Entities data={data} token={token} open={setModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })}/>}{tab === "documents" && <Documents data={data} open={setModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={setModal}/>}{tab === "minutes" && <Minutes data={data} open={setModal}/>}{tab === "billing" && <Billing token={token}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={() => setModal(null)}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
 }

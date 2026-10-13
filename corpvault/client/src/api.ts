@@ -4,8 +4,8 @@
 // `createActionClient` from "@hatch/space-sdk/client"). The wire protocol
 // is identical: `api.<actionName>(args)` POSTs `{action, args}` JSON to
 // `/actions` and resolves with the parsed `data` payload. Errors from the
-// server reject with an Error whose message is `action <name> error: <msg>`,
-// matching the old client so `App.tsx` error handling works unchanged.
+// server reject with an Error carrying the server's plain-language message
+// (the wire format is unchanged; only the customer-facing text is cleaned).
 //
 // `import type { ActionsClient }` is type-only by design: the client bundle
 // never pulls in any server runtime (pg, fs, etc.).
@@ -27,9 +27,9 @@ function createRpcClient<T extends Record<string, (args: never) => Promise<unkno
         ? String(body.error)
         : null;
     if (!response.ok || serverError) {
-      throw new Error(
-        `action ${action} error: ${serverError ?? `HTTP ${response.status}`}`,
-      );
+      // Surface only the server's plain-language message — never the RPC
+      // plumbing ("action <name> error: …") to the person using the app.
+      throw new Error(serverError ?? "Something went wrong. Please try again.");
     }
     return (body as { data?: unknown }).data;
   };
