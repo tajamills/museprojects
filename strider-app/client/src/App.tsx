@@ -1,7 +1,7 @@
 import { SafeAreaTopScrim, fileToBase64 } from "./client-helpers";
 import { TermsPage, PrivacyPage } from "./legal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { api, type ApiResponse } from "./api";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
@@ -57,6 +57,43 @@ const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
   { id: "settings", label: "Settings", Icon: IconGear },
   { id: "help", label: "Help", Icon: IconHelp },
 ];
+
+/** URL path for each in-app view. The address bar mirrors the current
+ *  view (pushState on navigation, popstate on back/forward) so a view can
+ *  be reloaded or shared and land in the right place. Unknown paths fall
+ *  back to the Overview. */
+const PAGE_PATHS: Record<Page, string> = {
+  dashboard: "/",
+  post: "/post",
+  accounts: "/accounts",
+  settings: "/settings",
+  help: "/help",
+};
+
+function pageFromPath(pathname: string): Page {
+  const match = (Object.keys(PAGE_PATHS) as Page[]).find((page) => PAGE_PATHS[page] === pathname);
+  return match ?? "dashboard";
+}
+
+/**
+ * The Accounts tiles are the one source of truth for connection state:
+ * a platform's channel is its visible account row — a row only counts as
+ * visible when it is a real OAuth connection, or any connection while
+ * the server runs in demo mode. The Overview count and the composer
+ * derive from this same lookup so they can never disagree with the
+ * tiles. (One row per platform is guaranteed server-side by the
+ * connected_accounts unique index.)
+ */
+function accountForPlatform(accounts: Account[], platform: Platform, demoMode: boolean): Account | undefined {
+  return accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
+}
+
+/** The visible channel rows, in tile order — exactly what Accounts renders. */
+function channelAccounts(accounts: Account[], demoMode: boolean): Account[] {
+  return PLATFORM_ORDER
+    .map((platform) => accountForPlatform(accounts, platform, demoMode))
+    .filter((account): account is Account => Boolean(account));
+}
 
 /** Server-wide demo mode (DEMO_MODE env). Default false: demo UI chrome is hidden. */
 function useServerDemoMode(): boolean {
@@ -308,11 +345,14 @@ function ResetPasswordPage() {
   );
 }
 
-function Dashboard({ accounts, posts, go }: { accounts: Account[]; posts: Post[]; go: (page: Page) => void }) {
+function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; posts: Post[]; go: (page: Page) => void; xVisible: boolean }) {
   const demoMode = useServerDemoMode();
-  const connected = accounts.filter((account) => account.status === "connected" && (demoMode || account.authMode === "oauth")).length;
+  // Count exactly what the Accounts tiles show: the visible channel rows
+  // (same lookup, same X gating), tallied by their current status.
+  const channels = channelAccounts(accounts, demoMode).filter((account) => account.platform !== "x" || xVisible);
+  const connected = channels.filter((account) => account.status === "connected").length;
   const pending = posts.filter((post) => post.status === "pending").length;
-  const needsAttention = accounts.filter((account) => account.status !== "connected");
+  const needsAttention = channels.filter((account) => account.status !== "connected");
   return <div className="page-stack">
     <section className="dash-hero">
       <div><h1>{connected === 0 ? "Connect your first channel" : connected === 1 ? "1 channel connected" : `${connected} channels connected`}</h1><p>{connected === 0 ? "Connect your social accounts to start publishing." : "Write once, publish everywhere."}</p></div>
@@ -357,7 +397,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
 function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]; token: string; onDone: (message: string) => void; goAccounts: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
-  const connected = accounts.filter((account) => account.status === "connected" && (demoMode || account.authMode === "oauth"));
+  const connected = channelAccounts(accounts, demoMode).filter((account) => account.status === "connected");
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
@@ -611,7 +651,7 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
     <div className="connect-list">{PLATFORM_ORDER.filter((platform) => platform !== "x" || xVisible).map((platform) => {
       const meta = PLATFORM_META[platform];
       const setting = settings.find((item) => item.platform === platform);
-      const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
+      const account = accountForPlatform(accounts, platform, demoMode);
       const needsReconnect = account && account.status !== "connected";
       const isFacebook = platform === "facebook";
       const isInstagram = platform === "instagram";
@@ -1073,8 +1113,9 @@ export function App() {
   if (pathname === "/privacy") return <PrivacyPage />;
   if (pathname === "/reset") return <ResetPasswordPage />;
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem("marketing-app-session") ?? "");
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>(() => pageFromPath(pathname));
   const [toast, setToast] = useState("");
+  const queryClient = useQueryClient();
   const workspace = useQuery({
     queryKey: ["workspace", sessionToken],
     queryFn: () => api.getWorkspace({ sessionToken }),
@@ -1128,8 +1169,31 @@ export function App() {
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
+  // In-app navigation keeps the address bar in sync with the view.
+  const go = (next: Page) => {
+    setPage(next);
+    const path = PAGE_PATHS[next];
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+  };
+  // Browser back/forward switches the view to match the URL.
+  useEffect(() => {
+    const onPopState = () => setPage(pageFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  // Every view switch re-reads the workspace, so each view renders the
+  // CURRENT channels/posts rather than a snapshot from an earlier view.
+  const isFirstPage = useRef(true);
+  useEffect(() => {
+    if (isFirstPage.current) {
+      isFirstPage.current = false;
+      return;
+    }
+    if (sessionToken) void queryClient.invalidateQueries({ queryKey: ["workspace", sessionToken] });
+  }, [page, sessionToken, queryClient]);
+
   const authenticate = (token: string) => { localStorage.setItem("marketing-app-session", token); setSessionToken(token); };
-  const signOut = () => { localStorage.removeItem("marketing-app-session"); setSessionToken(""); setPage("dashboard"); };
+  const signOut = () => { localStorage.removeItem("marketing-app-session"); setSessionToken(""); setPage("dashboard"); window.history.replaceState({}, "", "/"); };
 
   if (!sessionToken) return <AuthScreen onAuthenticated={authenticate} />;
   if (workspace.isPending || settings.isPending) return <div className="loading-screen"><SafeAreaTopScrim backgroundColor="var(--bg)" /><span className="loading-mark">///</span><p>Opening control room…</p></div>;
@@ -1142,22 +1206,22 @@ export function App() {
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
       <strong className="mobile-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
-      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Sign out" title="Sign out" onClick={signOut}><IconLogout /></button><button aria-label="Open settings" onClick={() => setPage("settings")}><IconGear /></button></div>
+      <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<button aria-label="Sign out" title="Sign out" onClick={signOut}><IconLogout /></button><button aria-label="Open settings" onClick={() => go("settings")}><IconGear /></button></div>
     </header>
     <aside className="side-rail">
       <div className="rail-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
       {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
-      <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
+      <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => go(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
       <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small><button className="rail-signout" onClick={signOut}><IconLogout /><span>Sign out</span></button></div>
     </aside>
     <main className="main-canvas">
-      {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
-      {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} xVisible={xVisible} />}
-      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => setPage("settings")} />}
-      {page === "help" && <HelpPage go={setPage} xVisible={xVisible} />}
+      {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={go} xVisible={xVisible} />}
+      {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => go("accounts")} xVisible={xVisible} />}
+      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("settings")} />}
+      {page === "help" && <HelpPage go={go} xVisible={xVisible} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} />}
     </main>
-    <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
+    <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => go(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}
   </div>;
 }
