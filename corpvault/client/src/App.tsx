@@ -11,7 +11,7 @@ type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more" | "chevron";
+    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
@@ -27,6 +27,10 @@ function Icon({ name }: {
         clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
         more: <><circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/></>,
         chevron: <path d="m6 9 6 6 6-6"/>,
+        agreement: <><path d="M6 3h8l4 4v14H6V3Zm8 0v5h5"/><path d="m9.3 16.3 1.9 1.9 3.4-3.8"/></>,
+        receipt: <><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21V3Z"/><path d="M9.5 8h5m-5 4h5"/></>,
+        license: <><circle cx="12" cy="9.5" r="5.5"/><path d="m9.5 9.6 1.8 1.8 3.2-3.5M9.6 14.3 8.2 21l3.8-2.3L15.8 21l-1.4-6.7"/></>,
+        folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>,
     };
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -41,6 +45,13 @@ function Field({ label, children }: {
  *  (client/brand-mark.svg carries the same drawing). */
 function BrandMark() {
     return <svg className="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="11" fill="#10151d" stroke="rgba(255,255,255,.18)"/><path d="M15.5 13v22M32.5 13 17.2 23.2M19 25.4l13.8 9.6" fill="none" stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
+/** The filing-cabinet empty-state illustration (Layla's mockup): a drawn
+ *  document page — folded corner, ruled lines — with a copper circular
+ *  upload-arrow badge overlapping its lower right. Drawn in the app's icon
+ *  discipline (paths and strokes), never stock art or emoji. */
+function CabinetArt() {
+    return <svg className="cabinet-art" viewBox="0 0 120 120" aria-hidden="true" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M32 10h36l20 20v72a6 6 0 0 1-6 6H32a6 6 0 0 1-6-6V16a6 6 0 0 1 6-6Z" fill="var(--surface)" stroke="var(--dim)" strokeWidth="2"/><path d="M68 10v20h20" fill="var(--warm-soft)" stroke="var(--dim)" strokeWidth="2"/><path d="M39 48h34M39 62h34M39 76h22" stroke="var(--dim)" strokeWidth="2.5" opacity=".55"/><circle cx="90" cy="94" r="16" fill="var(--accent)" stroke="var(--bg)" strokeWidth="3"/><path d="M90 102V86m0 0-5.5 5.5M90 86l5.5 5.5" stroke="var(--bg)" strokeWidth="2.6"/></svg>;
 }
 function Empty({ title, body, action, icon = "calendar" }: {
     title: string;
@@ -258,10 +269,43 @@ function EntityDetail({ data, token, entity, open, onEdit, onUploadDoc, onBack }
     <section className="panel-card"><div className="panel-head"><h2>Details</h2><button className="fix-button" onClick={() => onEdit(entity)}>Edit details</button></div><dl className="details-list"><div><dt>Business name</dt><dd>{entity.name}</dd></div><div><dt>Type</dt><dd>{entity.entity_type}</dd></div><div><dt>Formation state</dt><dd>{entity.state}</dd></div><div><dt>Formation date</dt><dd>{entity.formation_date ? dateLabel(entity.formation_date) : "Not added"}</dd></div><div><dt>EIN</dt><dd>{entity.ein_masked ?? "Not added"}</dd></div><div><dt>Registered agent</dt><dd>{entity.registered_agent ?? "Not added"}</dd></div><div><dt>Agent renewal</dt><dd>{entity.agent_renewal_date ? dateLabel(entity.agent_renewal_date) : "Not set"}</dd></div></dl></section>
   </div>;
 }
+/** Category filters for the Documents page (Layla's mockup). The chips and
+ *  the category select are two views of ONE filter state; the short chip
+ *  labels map to the app's real categories as follows:
+ *  Formation → "Formation" · Agreements → "Operating Agreement/Bylaws" ·
+ *  Minutes → "Meeting Minutes" · Tax Filings → "Tax Filings" ·
+ *  Licenses → "Licenses" · Other → "Contracts". */
+const DOC_SHORT_LABEL: Record<string, string> = { "Formation": "Formation", "Operating Agreement/Bylaws": "Agreements", "Meeting Minutes": "Minutes", "Contracts": "Other", "Tax Filings": "Tax Filings", "Licenses": "Licenses" };
+type DocFilterIcon = "documents" | "agreement" | "minutes" | "receipt" | "license" | "folder";
+const DOC_FILTERS: { label: string; value: DocumentCategory | "all"; icon?: DocFilterIcon }[] = [
+    { label: "All", value: "all" },
+    { label: "Formation", value: "Formation", icon: "documents" },
+    { label: "Agreements", value: "Operating Agreement/Bylaws", icon: "agreement" },
+    { label: "Minutes", value: "Meeting Minutes", icon: "minutes" },
+    { label: "Tax Filings", value: "Tax Filings", icon: "receipt" },
+    { label: "Licenses", value: "Licenses", icon: "license" },
+    { label: "Other", value: "Contracts", icon: "folder" },
+];
 function Documents({ data, open }: {
     data: Workspace;
     open: (m: Modal) => void;
-}) { const [search, setSearch] = useState(""); const filtered = data.documents.filter((d) => `${d.filename} ${d.entity_name} ${d.category}`.toLowerCase().includes(search.toLowerCase())); return <div className="page"><header className="page-head"><div><p className="eyebrow">Secure filing cabinet</p><h1>Documents</h1></div><button className="round-add" aria-label="Upload document" disabled={!data.entities.length} onClick={() => open("document")}><Icon name="plus"/></button></header><label className="search"><span className="sr-only">Search documents</span><input aria-label="Search documents" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files, categories, businesses"/></label>{filtered.length ? <div className="doc-list spacious">{filtered.map((d) => <a className="doc-row" key={d.id} href={d.download_url} target="_blank" rel="noreferrer"><span className="file-stamp">{d.filename.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span><span><strong>{d.filename}</strong><small>{d.entity_name}</small><em>{d.category}</em></span><time>{new Date(d.uploaded_at).toLocaleDateString()}</time></a>)}</div> : <Empty icon="documents" title={search ? "No matching documents" : "The filing cabinet is ready"} body={data.entities.length ? "Upload formation records, agreements, minutes, contracts, tax filings, and licenses." : "Add a business first, then attach its records."} action={data.entities.length && !search ? <button className="primary compact" onClick={() => open("document")}>Upload document</button> : undefined}/>}</div>; }
+}) {
+    const [search, setSearch] = useState("");
+    const [business, setBusiness] = useState("all");
+    const [category, setCategory] = useState<DocumentCategory | "all">("all");
+    const q = search.trim().toLowerCase();
+    const filtered = data.documents.filter((d) => {
+        if (business !== "all" && d.entity_id !== Number(business))
+            return false;
+        if (category !== "all" && d.category !== category)
+            return false;
+        if (q && !`${d.filename} ${d.entity_name} ${d.category} ${DOC_SHORT_LABEL[d.category] ?? ""}`.toLowerCase().includes(q))
+            return false;
+        return true;
+    });
+    const clearFilters = () => { setSearch(""); setBusiness("all"); setCategory("all"); };
+    return <div className="page"><header className="page-head"><div><p className="eyebrow">Secure filing cabinet</p><h1>Documents</h1><p className="page-sub">Store and organize formation records, agreements, minutes, tax filings, and more.</p></div><button className="primary compact doc-upload" disabled={!data.entities.length} onClick={() => open("document")}><Icon name="plus"/>Upload document</button></header><div className="doc-tools"><label className="search doc-search"><span className="sr-only">Search documents</span><input aria-label="Search documents" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files, categories, or businesses..."/></label><select aria-label="Filter documents by business" value={business} onChange={(e) => setBusiness(e.target.value)}><option value="all">All businesses</option>{data.entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select><select aria-label="Filter documents by category" value={category} onChange={(e) => setCategory(e.target.value as DocumentCategory | "all")}><option value="all">All categories</option>{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select></div><div className="doc-chips" role="group" aria-label="Filter documents by category">{DOC_FILTERS.map((f) => <button key={f.label} className={category === f.value ? "active" : ""} aria-pressed={category === f.value} onClick={() => setCategory(f.value)}>{f.icon && <Icon name={f.icon}/>}{f.label}</button>)}</div>{filtered.length ? <div className="doc-list spacious">{filtered.map((d) => <a className="doc-row" key={d.id} href={d.download_url} target="_blank" rel="noreferrer"><span className="file-stamp">{d.filename.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span><span><strong>{d.filename}</strong><small>{d.entity_name}</small><em>{d.category}</em></span><time>{new Date(d.uploaded_at).toLocaleDateString()}</time></a>)}</div> : data.documents.length ? <div className="doc-nomatch"><p>No documents match</p><button className="secondary" onClick={clearFilters}>Clear filters</button></div> : <div className="empty cabinet-empty"><CabinetArt/><h3>The filing cabinet is ready</h3><p>Upload formation records, agreements, minutes, contracts, tax filings, licenses, and more.</p>{data.entities.length > 0 && <button className="primary compact cabinet-upload" onClick={() => open("document")}><Icon name="plus"/>Upload document</button>}<p className="cabinet-note">Files are securely stored and organized by business and category.</p></div>}</div>;
+}
 function Calendar({ data, token, open }: {
     data: Workspace;
     token: string;

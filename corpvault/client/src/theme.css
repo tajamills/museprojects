@@ -239,6 +239,30 @@
 .billing-support>svg{width:18px;height:18px;flex:0 0 auto}
 .billing-support a{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 @media (max-width:680px){.billing-meta{grid-template-columns:1fr}.billing-card{padding:20px}.billing-offer{flex-direction:column;align-items:flex-start;gap:22px;padding:24px}.billing-perks{gap:12px}}
+/* Documents page (2026-10-13, Layla's mockup): the restored filter system —
+   a toolbar row (search + functional business and category selects), a
+   category chip row that is a second view of the SAME category filter the
+   select drives, a plain no-match panel with a clear-filters action, and
+   the zero-document empty state composed around a drawn document
+   illustration with a copper upload badge (the CabinetArt component). */
+.doc-upload{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto}
+.doc-upload svg{width:15px;height:15px}
+.doc-tools{display:flex;gap:10px;flex-wrap:wrap}
+.doc-search{flex:1 1 240px;min-width:0}
+.doc-tools select{border:1px solid color-mix(in srgb,var(--border) 52%,var(--dim) 48%);background:var(--surface);border-radius:12px;padding:11px 12px;font:inherit;font-size:14px;color:var(--text);box-shadow:inset 0 1px 3px rgba(34,30,26,.06);flex:0 0 auto}
+.doc-tools select:focus{border-color:var(--accent);outline:none}
+@media (max-width:680px){.doc-tools select{flex:1 1 140px}}
+.doc-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:14px}
+.doc-chips button{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;background:transparent;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:600;color:var(--dim)}
+.doc-chips button svg{width:15px;height:15px}
+.doc-chips button.active{background:var(--warm-soft);color:var(--text);border-color:color-mix(in srgb,var(--text) 16%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 1px 3px rgba(34,30,26,.10)}
+.doc-nomatch{margin-top:16px;background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(34,30,26,.05),0 10px 24px rgba(34,30,26,.07);padding:30px 24px;text-align:center}
+.doc-nomatch p{margin:0 0 14px;font-size:15px;font-weight:600;color:var(--text)}
+.cabinet-art{width:108px;height:108px;display:block;margin:0 auto}
+.cabinet-empty h3{margin-top:18px}
+.cabinet-upload{display:inline-flex;align-items:center;gap:7px}
+.cabinet-upload svg{width:15px;height:15px}
+.empty .cabinet-note{font-size:12px;margin:16px auto 0}
 /* Businesses page (2026-10-13, Layla's mockup): search + Add business in
    the header, a filter chip row with live counts and a sort select, and
    wide row cards — identity block, a four-column meta grid (Formed / EIN /
