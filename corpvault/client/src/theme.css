@@ -110,7 +110,8 @@
    active pills, empty states as cards with a drawn medallion, stronger
    hierarchy. Kovala's light palette and copper-era accents unchanged. */
 .primary,.secondary{border-radius:999px}
-.field input,.field select,.field textarea,.repeat-row input,.action-row input,.action-row select,.search input{border-radius:12px}
+.field input,.field select,.field textarea,.repeat-row input,.action-row input,.action-row select,.search input{border-radius:12px;border-color:color-mix(in srgb,var(--border) 52%,var(--dim) 48%)}
+.sheet{background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 42%)}
 .form-callout{border-radius:12px}
 .error-note{border-radius:10px}
 .file-drop{border-radius:14px}
