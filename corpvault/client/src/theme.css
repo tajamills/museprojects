@@ -143,3 +143,8 @@
 .bottom-nav button.active{border-radius:12px}
 .auth-panel{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 2px 3px rgba(23,35,61,.06),0 16px 34px rgba(23,35,61,.10);padding:30px 28px}
 @media (max-width:480px){.auth-panel{padding:24px 20px}}
+.overview-attention{margin-top:34px}
+.rollup-row{cursor:pointer;align-items:center}
+.rollup-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rollup-row:hover .attention-main strong{color:var(--accent)}
+.rollup-arrow{flex:0 0 auto;color:var(--accent)}
