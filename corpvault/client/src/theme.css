@@ -157,6 +157,13 @@
 .rollup-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .rollup-row:hover .attention-main strong{color:var(--accent)}
 .rollup-arrow{flex:0 0 auto;color:var(--accent)}
+/* Overview Coming up cap (2026-10-13): the summary list shows only the
+   next 3 open reminders; when more exist, a footer link row in the same
+   drawn-arrow language as "View business" / the rollup rows carries the
+   total and jumps to the Deadlines tab. */
+.coming-up-more{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border-radius:12px;padding:13px 16px;color:var(--accent);font-weight:700;font-size:14px;text-align:left;box-shadow:0 1px 2px rgba(23,35,61,.05),0 8px 20px rgba(23,35,61,.06)}
+.coming-up-more:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.coming-up-more .entity-open-arrow{color:var(--accent)}
 /* Overview rollup collapse (2026-10-13): the Needs attention header is the
    toggle — the section starts collapsed on phone widths so a dozen flags
    read as one summary box instead of a wall to scroll past. */
