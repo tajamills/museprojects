@@ -17,6 +17,12 @@ export const users = pgTable("users", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),
   currentPeriodEnd: timestamp("current_period_end", { mode: "date", withTimezone: true }),
+  currentPeriodStart: timestamp("current_period_start", { mode: "date", withTimezone: true }),
+  /** X (Twitter) posting add-on: the Stripe price ID of the add-on tier
+   *  item on this workspace's subscription (tiers come from the
+   *  STRIPE_X_TIERS env config), or null when no tier is attached.
+   *  Synced from Stripe only. */
+  xAddonTierPriceId: text("x_addon_tier_price_id"),
 });
 
 export const sessions = pgTable(
@@ -139,6 +145,21 @@ export const xMonthlyUsage = pgTable("x_monthly_usage", {
   yearMonth: text("year_month").notNull(),
   postCount: integer("post_count").notNull().default(0),
 }, (t) => [primaryKey({ columns: [t.userId, t.yearMonth] })]);
+
+/**
+ * X add-on usage for the workspace's CURRENT subscription period.
+ * One row per user; periodStart/periodEnd mirror the subscription's
+ * current period. Plain posts and posts with links are counted
+ * separately because X bills them at different rates and each add-on
+ * tier caps them separately (see STRIPE_X_TIERS in billing.ts).
+ */
+export const xAddonUsage = pgTable("x_addon_usage", {
+  userId: integer("user_id").notNull().primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start", { mode: "date", withTimezone: true }).notNull(),
+  periodEnd: timestamp("period_end", { mode: "date", withTimezone: true }).notNull(),
+  postsUsed: integer("posts_used").notNull().default(0),
+  linkPostsUsed: integer("link_posts_used").notNull().default(0),
+});
 
 export const xConnections = pgTable("x_connections", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),

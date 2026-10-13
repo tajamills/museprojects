@@ -52,10 +52,29 @@ type CreatePostRequest = {
   media?: { name: string; mimeType: string; dataBase64: string };
 };
 
+type XAddonTierInfo = {
+  priceId: string;
+  name: string;
+  postsPerMonth: number;
+  linkPostsPerMonth: number;
+};
+type XAddonStatusResult = {
+  configured: boolean;
+  tiers: XAddonTierInfo[];
+  activeTier: string | null;
+  usage: {
+    postsUsed: number;
+    postsCap: number;
+    linkPostsUsed: number;
+    linkPostsCap: number;
+    periodEnd: string | null;
+  };
+};
 type BillingStatusResult = {
   status: string;
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
+  xAddon: XAddonStatusResult;
 };
 type RedirectResult = { url: string };
 
@@ -96,6 +115,8 @@ type ClientApi = {
   createCheckoutSession(args: { sessionToken: string }): Promise<RedirectResult>;
   createPortalSession(args: { sessionToken: string }): Promise<RedirectResult>;
   getBillingStatus(args: { sessionToken: string }): Promise<BillingStatusResult>;
+  setXAddonTier(args: { sessionToken: string; priceId: string }): Promise<{ activeTier: string | null }>;
+  removeXAddon(args: { sessionToken: string }): Promise<{ activeTier: string | null }>;
 };
 
 /** Request args type for a ClientApi method (replaces the SDK's ApiRequest). */

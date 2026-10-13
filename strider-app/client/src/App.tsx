@@ -501,7 +501,7 @@ function InstagramAccountPicker({ token, onMessage }: { token: string; onMessage
   >{accounts.data.accounts.map((account) => <option key={account.igUserId} value={account.igUserId}>@{account.username} · {account.pageName}</option>)}</select></label>;
 }
 
-function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void }) {
+function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, goBilling }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void; xVisible: boolean; xNeedsTier: boolean; goBilling: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
@@ -608,7 +608,7 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
   return <div className="page-stack">
     <div className="page-heading"><h1>Accounts</h1><p>Connect your social accounts. You log in with each platform directly — zepostia never sees your passwords.</p></div>
     <div className="oauth-rule"><strong>Your passwords stay with the platforms</strong><span>Zepostia connects through official OAuth. You log in on Facebook, Google, or X directly — we never see or store passwords.</span></div>
-    <div className="connect-list">{PLATFORM_ORDER.map((platform) => {
+    <div className="connect-list">{PLATFORM_ORDER.filter((platform) => platform !== "x" || xVisible).map((platform) => {
       const meta = PLATFORM_META[platform];
       const setting = settings.find((item) => item.platform === platform);
       const account = accounts.find((item) => item.platform === platform && (demoMode || item.authMode === "oauth"));
@@ -622,11 +622,11 @@ function Accounts({ accounts, settings, token, onMessage }: { accounts: Account[
       const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else if (isTiktok) connectTt.mutate(); else if (isYoutube) connectYt.mutate(); else if (isX) connectX.mutate(); else connect.mutate(platform); };
       const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
       return <article className="connect-row" key={platform}>
-        <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}>{connectLabel}</button></div>}
+        <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{isX && xNeedsTier ? "X posting is an add-on. Add a tier in Settings under Billing, then connect here." : setting?.warning ?? "Official OAuth connection."}</p></div></div>
+        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : isX && xNeedsTier ? <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" onClick={goBilling}>Get the X add-on</button></div> : <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}>{connectLabel}</button></div>}
         {isFacebook && account?.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
         {isInstagram && account?.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
-        <details><summary>If connecting fails</summary><p>{setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
+        <details><summary>If connecting fails</summary><p>{isX && xNeedsTier ? "X connects once your workspace has an X add-on tier — add one in Settings under Billing." : setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
   </div>;
@@ -656,9 +656,10 @@ function Queue({ posts, token, onMessage, embedded }: { posts: Post[]; token: st
   </div>;
 }
 
-function PostPage({ accounts, posts, token, onMessage, goAccounts }: { accounts: Account[]; posts: Post[]; token: string; onMessage: (message: string) => void; goAccounts: () => void }) {
+function PostPage({ accounts, posts, token, onMessage, goAccounts, xVisible }: { accounts: Account[]; posts: Post[]; token: string; onMessage: (message: string) => void; goAccounts: () => void; xVisible: boolean }) {
+  const visibleAccounts = xVisible ? accounts : accounts.filter((account) => account.platform !== "x");
   return <div className="page-stack post-page">
-    <Composer accounts={accounts} token={token} onDone={onMessage} goAccounts={goAccounts} />
+    <Composer accounts={visibleAccounts} token={token} onDone={onMessage} goAccounts={goAccounts} />
     <Queue posts={posts} token={token} onMessage={onMessage} embedded />
   </div>;
 }
@@ -771,6 +772,7 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
 }
 
 function BillingSection({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+  const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: ["billing", token],
     queryFn: () => api.getBillingStatus({ sessionToken: token }),
@@ -790,6 +792,23 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
     onSuccess: (result) => { window.location.href = result.url; },
     onError: (e) => onMessage(friendly(e)),
   });
+  const setTier = useMutation({
+    mutationFn: (priceId: string) => api.setXAddonTier({ sessionToken: token, priceId }),
+    onSuccess: async (result) => {
+      onMessage(result.activeTier ? `X add-on: ${result.activeTier} is now active.` : "X add-on updated.");
+      await queryClient.invalidateQueries({ queryKey: ["billing", token] });
+    },
+    onError: (e) => onMessage(friendly(e)),
+  });
+  const removeAddon = useMutation({
+    mutationFn: () => api.removeXAddon({ sessionToken: token }),
+    onSuccess: async () => {
+      onMessage("X add-on removed.");
+      await queryClient.invalidateQueries({ queryKey: ["billing", token] });
+    },
+    onError: (e) => onMessage(friendly(e)),
+  });
+  const xAddon = statusQuery.data?.xAddon;
   const status = statusQuery.data?.status ?? "none";
   const subscribed = ["trialing", "active", "past_due"].includes(status);
   const label = status === "trialing" ? "Free trial" : status === "active" ? "Active" : status === "past_due" ? "Past due" : status === "canceled" ? "Canceled" : "No subscription";
@@ -803,6 +822,24 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
         ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
         : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
       {!subscribed && <p className="secret-note">14-day free trial — your card is collected at checkout and charged $19.88 on day 15. Checkout is secured by Stripe.</p>}
+      {xAddon?.configured && <div className="x-addon-block">
+        <h3>X (Twitter) posting — Add-on</h3>
+        {xAddon.activeTier
+          ? <p><strong>{xAddon.activeTier}</strong> · {xAddon.usage.postsUsed} of {xAddon.usage.postsCap} posts · {xAddon.usage.linkPostsUsed} of {xAddon.usage.linkPostsCap} link posts this billing period</p>
+          : <p>Not added</p>}
+        {subscribed ? <>
+          <ul className="x-tier-list">{xAddon.tiers.map((tier) => {
+            const current = tier.name === xAddon.activeTier;
+            return <li key={tier.priceId}>
+              <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
+              {current
+                ? <span className="status-pill status-live"><i />Current tier</span>
+                : <button className="secondary-button" disabled={setTier.isPending || removeAddon.isPending} onClick={() => setTier.mutate(tier.priceId)}>{setTier.isPending ? "Working…" : xAddon.activeTier ? `Switch to ${tier.name}` : `Add ${tier.name}`}</button>}
+            </li>;
+          })}</ul>
+          {xAddon.activeTier && <button className="quiet-button" disabled={removeAddon.isPending || setTier.isPending} onClick={() => removeAddon.mutate()}>{removeAddon.isPending ? "Working…" : "Remove add-on"}</button>}
+        </> : <p className="secret-note">Start your subscription first — the add-on attaches to your plan.</p>}
+      </div>}
     </>}
   </section>;
 }
@@ -863,12 +900,12 @@ function AdminResetTool({ token }: { token: string }) {
   </section>;
 }
 
-function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, xVisible, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; xVisible: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><h1>Settings</h1><p>Platform connections, billing, and your account.</p></div>
     <section className="security-manifest"><h2>How credentials work</h2><p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p></section>
-    <section className="settings-list">{settings.map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
+    <section className="settings-list">{settings.filter((setting) => setting.platform !== "x" || xVisible).map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
     <BillingSection token={token} onMessage={onMessage} />
     <section className="profile-block"><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
     <ChangePasswordForm token={token} onMessage={onMessage} />
@@ -877,7 +914,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
 }
 
 
-function HelpPage({ go }: { go: (page: Page) => void }) {
+function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolean }) {
   return <div className="page-stack">
     <div className="page-heading"><h1>Help</h1><p>Everything you need to connect your accounts and start posting. No technical setup required — you just click Connect and log in with each platform.</p></div>
 
@@ -929,14 +966,14 @@ function HelpPage({ go }: { go: (page: Page) => void }) {
           </ol>
           <p className="help-note">Every upload needs a video file and a title. You&apos;re granting the YouTube upload permission only — zepostia can&apos;t read your email or access anything else in your Google account.</p>
         </details>
-        <details className="help-card">
+        {xVisible && <details className="help-card">
           <summary><strong>X</strong><span>Text posts, 280 characters</span></summary>
           <ol>
             <li>On the Accounts page, hit <strong>Connect</strong> next to X.</li>
             <li>X opens its authorization page — log in and approve zepostia.</li>
           </ol>
-          <p className="help-note">Your plan includes up to <strong>60 X posts per month</strong>. The count resets on the 1st — you can see your usage in Settings.</p>
-        </details>
+          <p className="help-note">X posting is an <strong>add-on</strong>: your tier sets how many X posts — and how many posts with links — you can publish each billing period. You can see your tier and usage in Settings under Billing.</p>
+        </details>}
       </div>
     </section>
 
@@ -961,7 +998,7 @@ function HelpPage({ go }: { go: (page: Page) => void }) {
           <tr><td><strong>Instagram</strong></td><td>2,200 characters</td><td>Image or video</td><td>Professional account required</td></tr>
           <tr><td><strong>TikTok</strong></td><td>Caption up to 2,200</td><td>Video only</td><td>60 posts/month included</td></tr>
           <tr><td><strong>YouTube</strong></td><td>Title + description</td><td>Video only</td><td>Uploads to your channel</td></tr>
-          <tr><td><strong>X</strong></td><td>280 characters</td><td>Text (links supported)</td><td>60 posts/month included</td></tr>
+          {xVisible && <tr><td><strong>X</strong></td><td>280 characters</td><td>Text (links supported)</td><td>Add-on — tier limits apply</td></tr>}
         </tbody>
       </table></div>
     </section>
@@ -1011,7 +1048,7 @@ function HelpPage({ go }: { go: (page: Page) => void }) {
         </details>
         <details className="help-card">
           <summary><strong>What counts toward my monthly limits?</strong></summary>
-          <p>Only <strong>successful</strong> posts count. Failed posts don&apos;t use your quota. X and TikTok each include 60 posts per month; the count resets on the 1st. You can see your current usage in Settings.</p>
+          <p>Only <strong>successful</strong> posts count. Failed posts don&apos;t use your quota. TikTok includes 60 posts per month; the count resets on the 1st. X posting is an add-on — its post and link-post limits follow your tier and reset each billing period. You can see your current usage in Settings.</p>
         </details>
         <details className="help-card">
           <summary><strong>Can I post to some platforms but not others?</strong></summary>
@@ -1048,6 +1085,19 @@ export function App() {
     queryFn: () => api.listPlatformSettings({ sessionToken }),
     enabled: Boolean(sessionToken),
   });
+  const billing = useQuery({
+    queryKey: ["billing", sessionToken],
+    queryFn: () => api.getBillingStatus({ sessionToken }),
+    enabled: Boolean(sessionToken),
+    retry: false,
+  });
+  // X appears as a platform only when the add-on is configured
+  // (STRIPE_X_TIERS) or this workspace already has a tier. Server truth
+  // only — when neither holds, no X UI renders anywhere.
+  const xVisible = Boolean(billing.data?.xAddon && (billing.data.xAddon.configured || billing.data.xAddon.activeTier));
+  // Configured but no tier yet: the Accounts X tile shows, but its action
+  // routes to the Billing add-on section instead of an OAuth flow.
+  const xNeedsTier = Boolean(billing.data?.xAddon?.configured && !billing.data.xAddon.activeTier);
 
   useEffect(() => {
     if (workspace.data && !workspace.data.authenticated) {
@@ -1102,10 +1152,10 @@ export function App() {
     </aside>
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={setPage} />}
-      {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} />}
-      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} />}
-      {page === "help" && <HelpPage go={setPage} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} onMessage={setToast} onSignOut={signOut} />}
+      {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => setPage("accounts")} xVisible={xVisible} />}
+      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => setPage("settings")} />}
+      {page === "help" && <HelpPage go={setPage} xVisible={xVisible} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}

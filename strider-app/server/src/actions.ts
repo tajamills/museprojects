@@ -3,7 +3,20 @@ import { z } from "zod";
 import type { AppCtx } from "./ctx.js";
 import type { Db } from "./db.js";
 import * as schema from "./schema.js";
-import { TRIAL_DAYS, baseUrl, getStripe } from "./billing.js";
+import {
+  TRIAL_DAYS,
+  baseUrl,
+  canPostToX,
+  getStripe,
+  getXAddonUsage,
+  isXAddonConfigured,
+  syncSubscription,
+  xAddonSubscriptionItem,
+  xAddonTierForPriceId,
+  xAddonTiers,
+  type BillingPeriod,
+  type XAddonTier,
+} from "./billing.js";
 import {
   buildFacebookAuthUrl,
   decryptToken,
@@ -198,6 +211,47 @@ async function billingUser(ctx: AppCtx, token: string) {
   const row = rows[0];
   if (!row || row.sessions.expiresAt.getTime() <= Date.now()) return null;
   return row.users;
+}
+
+export interface XAddonStatus {
+  configured: boolean;
+  tiers: XAddonTier[];
+  activeTier: string | null;
+  usage: {
+    postsUsed: number;
+    postsCap: number;
+    linkPostsUsed: number;
+    linkPostsCap: number;
+    periodEnd: string | null;
+  };
+}
+
+/**
+ * The X add-on fragment of the billing status, built from server truth
+ * only: the STRIPE_X_TIERS config, the Stripe-synced tier price on the
+ * user row, and this billing period's usage counters. When no tier is
+ * configured the client renders nothing about X at all.
+ */
+async function xAddonStatusFor(ctx: AppCtx, user: NonNullable<Awaited<ReturnType<typeof billingUser>>>): Promise<XAddonStatus> {
+  const tiers = xAddonTiers();
+  const tier = xAddonTierForPriceId(user.xAddonTierPriceId);
+  const period: BillingPeriod | null =
+    user.currentPeriodStart && user.currentPeriodEnd
+      ? { start: user.currentPeriodStart, end: user.currentPeriodEnd }
+      : null;
+  const usage = await getXAddonUsage(ctx.db, user.id, period);
+  return {
+    configured: tiers.length > 0,
+    tiers,
+    activeTier: tier?.name ?? null,
+    usage: {
+      postsUsed: usage.postsUsed,
+      postsCap: tier?.postsPerMonth ?? 0,
+      linkPostsUsed: usage.linkPostsUsed,
+      linkPostsCap: tier?.linkPostsPerMonth ?? 0,
+      periodEnd: user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null,
+    },
+  };
 }
 
 const authResponse = z.object({
@@ -990,6 +1044,24 @@ export const actions: Record<string, ActionDef> = {
       if ((platforms.includes("instagram") || platforms.includes("tiktok")) && !args.media) return { ok: false, message: "Instagram and TikTok require an image or video. Add media or remove those targets.", postId: null };
       if (platforms.includes("youtube") && (!args.media?.mimeType.startsWith("video/") || !args.youtubeTitle?.trim())) return { ok: false, message: "YouTube requires a video and a title. Add both or remove YouTube.", postId: null };
       if (platforms.includes("x") && args.body.length > 280) return { ok: false, message: "X allows 280 characters. Shorten the post or remove X.", postId: null };
+      // X add-on gate: only enforced when tiers are configured
+      // (STRIPE_X_TIERS). Unconfigured deployments keep legacy behavior.
+      if (platforms.includes("x") && isXAddonConfigured()) {
+        const billing = await billingUser(ctx, args.sessionToken);
+        const gate = billing
+          ? await canPostToX(ctx.db, billing, { hasLink: /https?:\/\/|www\./i.test(args.body) })
+          : null;
+        if (!gate?.allowed) {
+          return {
+            ok: false,
+            message:
+              gate?.reason === "cap_reached"
+                ? "You've reached your X add-on tier's limit for this billing period. Remove X, or post again next period."
+                : "X posting is part of the X add-on. Add it in Settings under Billing to post to X.",
+            postId: null,
+          };
+        }
+      }
       if (!args.body.trim() && !args.media) return { ok: false, message: "Add text or media before publishing.", postId: null };
       const scheduledAt = args.publishMode === "scheduled" && args.scheduledAt ? new Date(args.scheduledAt) : null;
       if (args.publishMode === "scheduled" && (!scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now())) return { ok: false, message: "Choose a future date and time for this scheduled post.", postId: null };
@@ -1178,7 +1250,10 @@ export const actions: Record<string, ActionDef> = {
   /** Current subscription state for the signed-in user. */
   getBillingStatus: {
     request: z.object({ sessionToken: z.string().min(1) }),
-    async handler(ctx, args): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null }> {
+    async handler(
+      ctx,
+      args,
+    ): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null; xAddon: XAddonStatus }> {
       const user = await billingUser(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const status = user.subscriptionStatus || "none";
@@ -1188,7 +1263,69 @@ export const actions: Record<string, ActionDef> = {
         // During a trial, Stripe sets current_period_end to the trial's end.
         trialEndsAt: status === "trialing" ? periodEnd : null,
         currentPeriodEnd: periodEnd,
+        xAddon: await xAddonStatusFor(ctx, user),
       };
+    },
+  },
+
+  /**
+   * Add the X (Twitter) posting add-on tier to the workspace's existing
+   * subscription — or switch tiers when a different tier is already
+   * attached (the subscription item's price is swapped). The entitlement
+   * is re-synced from Stripe immediately; the webhook keeps it in sync
+   * afterwards. The tier price IDs come only from STRIPE_X_TIERS.
+   */
+  setXAddonTier: {
+    request: z.object({ sessionToken: z.string().min(1), priceId: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ activeTier: string | null }> {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const tier = xAddonTierForPriceId(args.priceId);
+      if (!tier) throw new Error("That X add-on tier is not available.");
+      if (!["trialing", "active", "past_due"].includes(user.subscriptionStatus) || !user.stripeSubscriptionId) {
+        throw new Error("Start your subscription first — the X add-on attaches to your plan.");
+      }
+      const stripe = getStripe();
+      const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+      const existingItem = xAddonSubscriptionItem(subscription);
+      if (existingItem && existingItem.price?.id !== tier.priceId) {
+        await stripe.subscriptionItems.update(existingItem.id, {
+          price: tier.priceId,
+          proration_behavior: "create_prorations",
+        });
+      } else if (!existingItem) {
+        await stripe.subscriptionItems.create({
+          subscription: subscription.id,
+          price: tier.priceId,
+          proration_behavior: "create_prorations",
+        });
+      }
+      const updated = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+      await syncSubscription(ctx.db, updated);
+      const fresh = await billingUser(ctx, args.sessionToken);
+      return { activeTier: fresh ? xAddonTierForPriceId(fresh.xAddonTierPriceId)?.name ?? null : null };
+    },
+  },
+
+  /**
+   * Remove the X add-on tier item from the workspace's subscription and
+   * re-sync the entitlement from Stripe (it turns off immediately).
+   */
+  removeXAddon: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ activeTier: string | null }> {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      if (!user.stripeSubscriptionId) throw new Error("No subscription found.");
+      const stripe = getStripe();
+      const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+      const item = xAddonSubscriptionItem(subscription);
+      if (item) {
+        await stripe.subscriptionItems.del(item.id, { proration_behavior: "create_prorations" });
+        const updated = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        await syncSubscription(ctx.db, updated);
+      }
+      return { activeTier: null };
     },
   },
 };

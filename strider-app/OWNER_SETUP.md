@@ -57,6 +57,48 @@ All keys go into the zepostia service on Railway: **Variables** tab.
 4. Note: Google OAuth verification takes weeks. Default quota is 10,000 units/day;
    each upload costs ~1,600 units (≈6 uploads/day across all customers).
 
+## 5. X posting add-on (Stripe tiers) — gates X posting
+
+X posting is **never** included in the $19.88/month base plan. It is a
+separate paid add-on because X's API is pay-per-use: every post a customer
+publishes bills **your** X developer account (~$0.015 per plain post,
+**$0.20 per post containing a link**). The add-on is sold in capped tiers —
+plain posts and link posts are counted separately, mirroring X's two
+rates — and posting hard-stops at the tier cap, so the maximum X cost per
+customer is known in advance.
+
+One-time setup (Stripe dashboard):
+
+1. Create **one product**: **X Posting Add-on**.
+2. Under that product, create **one recurring monthly price per tier**
+   (e.g. $15, $30, $100 — your call; see the pricing guidance below).
+3. Copy each price ID (`price_…`) into Railway as **one variable**,
+   `STRIPE_X_TIERS` — a JSON array mapping each price ID to its tier name
+   and monthly allowances:
+
+   ```json
+   [{"priceId":"price_…","name":"Starter","postsPerMonth":100,"linkPostsPerMonth":25},{"priceId":"price_…","name":"Growth","postsPerMonth":300,"linkPostsPerMonth":75},{"priceId":"price_…","name":"Pro","postsPerMonth":1000,"linkPostsPerMonth":250}]
+   ```
+
+4. That's it. Once `STRIPE_X_TIERS` is set and Railway redeploys, the
+   add-on appears automatically in each customer's **Settings → Billing**
+   with the tier list, their current tier, and their usage vs cap.
+   Customers add, switch, or remove a tier there; the change is applied
+   to their existing Stripe subscription and synced back by the Stripe
+   webhook. If `STRIPE_X_TIERS` is unset, the add-on is not offered
+   anywhere in the app and X stays hidden as a platform.
+
+**Pricing guidance:** each tier's price should cover X's raw cost for its
+**full** allowance plus your markup: `posts × $0.015 + link posts × $0.20`.
+Worked examples: 100 posts / 25 link posts → max raw cost **$6.50**;
+300 / 75 → **$19.50**; 1,000 / 250 → **$65.00**. Because posting stops at
+the cap, a customer can never cost you more than their tier's full-
+allowance raw cost.
+
+The add-on entitlement gates the X posting feature: a workspace can only
+post to X while its subscription carries a tier, and only up to that
+tier's caps for the current billing period.
+
 ## Railway variables — full list
 
 | Variable | Platform |
@@ -66,6 +108,7 @@ All keys go into the zepostia service on Railway: **Variables** tab.
 | `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | TikTok |
 | `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` | YouTube |
 | `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` / `STRIPE_WEBHOOK_SECRET` | Billing |
+| `STRIPE_X_TIERS` (JSON array — see §5) | X posting add-on tiers |
 | `X_MONTHLY_POST_CAP` (default 60) | X usage cap override |
 | `TIKTOK_MONTHLY_POST_CAP` (default 60) | TikTok usage cap override |
 
