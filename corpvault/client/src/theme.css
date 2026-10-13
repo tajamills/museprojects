@@ -104,3 +104,41 @@
 .details-list>div:last-child{border-bottom:0}
 .details-list dt{color:var(--dim);font-size:12.5px}
 .details-list dd{margin:0;font-size:13.5px;font-weight:600;text-align:right}
+/* Design system sweep (2026-10-13) — the entity attention language carried
+   app-wide: raised rounded cards (18px) with layered soft shadows and a
+   top-light face, pill buttons and chips, recessed trays with raised
+   active pills, empty states as cards with a drawn medallion, stronger
+   hierarchy. Kovala's light palette and copper-era accents unchanged. */
+.primary,.secondary{border-radius:999px}
+.field input,.field select,.field textarea,.repeat-row input,.action-row input,.action-row select,.search input{border-radius:12px}
+.form-callout{border-radius:12px}
+.error-note{border-radius:10px}
+.file-drop{border-radius:14px}
+.deadline{border-radius:18px}
+.deadline:before{left:5px;border-radius:2px}
+.minutes-card{border-radius:18px}
+.date-block{border-radius:10px}
+.file-stamp{border-radius:9px}
+.due-chip{border-radius:999px;padding:4px 9px}
+.focus-deadline{border-radius:18px}
+.sheet{border:1px solid var(--border)}
+.segmented{border-radius:14px;padding:4px;border:1px solid var(--border);background:color-mix(in srgb,var(--navy-soft) 80%,#cfd9e4 20%);box-shadow:inset 0 2px 5px rgba(23,35,61,.16),inset 0 -1px 0 rgba(255,255,255,.45)}
+.segmented button{border-radius:10px}
+.segmented button.active{box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(23,35,61,.18),0 6px 14px rgba(23,35,61,.10)}
+.pulse{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(23,35,61,.05),0 10px 24px rgba(23,35,61,.07);padding:6px 16px}
+.pulse div:first-child{padding-left:8px}
+.focus-clear{border:1px solid var(--border);border-top:4px solid var(--accent);border-radius:18px;box-shadow:0 1px 2px rgba(23,35,61,.05),0 10px 24px rgba(23,35,61,.07)}
+.doc-list{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(23,35,61,.05),0 10px 24px rgba(23,35,61,.07);padding:4px 18px}
+.doc-list .doc-row:last-child{border-bottom:0}
+.doc-list.spacious{border-radius:18px;background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%)}
+.notice{margin-top:18px;background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(23,35,61,.05),0 8px 20px rgba(23,35,61,.06);padding:16px 18px}
+.notice p{margin:0;font-size:13.5px;line-height:1.55;color:var(--dim)}
+.empty{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(23,35,61,.05),0 10px 24px rgba(23,35,61,.07);padding:44px 24px;margin-top:14px}
+.empty-art{width:72px;height:72px;margin:0 auto;border-radius:50%;display:grid;place-items:center;color:var(--accent);background:linear-gradient(180deg,color-mix(in srgb,var(--navy-soft) 55%,#ffffff 45%),var(--navy-soft));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 4px rgba(23,35,61,.08),0 4px 10px rgba(23,35,61,.12)}
+.empty-art svg{width:34px;height:34px}
+.empty h3{margin-top:16px}
+.desktop-rail button{border-radius:12px;color:color-mix(in srgb,var(--text) 74%,var(--dim) 26%);font-weight:600}
+.bottom-nav button{color:color-mix(in srgb,var(--text) 68%,var(--dim) 32%);font-weight:600}
+.bottom-nav button.active{border-radius:12px}
+.auth-panel{background:var(--surface);background-image:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,#ffffff 14%) 0%,var(--surface) 58%);border:1px solid var(--border);border-radius:18px;box-shadow:0 2px 3px rgba(23,35,61,.06),0 16px 34px rgba(23,35,61,.10);padding:30px 28px}
+@media (max-width:480px){.auth-panel{padding:24px 20px}}
