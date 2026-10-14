@@ -753,7 +753,17 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .connect-card-main { flex: 1 1 auto; min-width: 0; }
 .connect-card-main h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
 .connect-card-main p { color: var(--dim); line-height: 1.5; margin: 0; font-size: 13px; }
-.connect-handle { display: flex; align-items: center; gap: 7px; margin: 0 0 3px; font-size: 14px; color: var(--text) !important; }
+.connect-handle { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; color: var(--text) !important; }
+.connect-status-col { display: grid; gap: 5px; justify-items: start; }
+.kebab-wrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.kebab-btn { width: 34px; height: 40px; display: grid; place-items: center; border: none; background: transparent; color: var(--dim); border-radius: 8px; cursor: pointer; padding: 0; }
+.kebab-btn:hover { background: rgba(127, 127, 127, .14); color: var(--text); }
+.kebab-btn svg { width: 18px; height: 18px; display: block; }
+.kebab-backdrop { position: fixed; inset: 0; z-index: 29; border: none; background: transparent; padding: 0; cursor: default; }
+.kebab-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 176px; display: grid; gap: 2px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+.kebab-menu button { text-align: left; padding: 9px 10px; border: none; border-radius: 7px; background: none; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.kebab-menu button:hover:not(:disabled) { background: rgba(127, 127, 127, .14); }
+.kebab-menu button:disabled { opacity: .55; cursor: default; }
 .handle-ext { display: inline-grid; place-items: center; color: var(--dim); }
 .handle-ext svg { width: 13px; height: 13px; display: block; }
 .connect-note { margin-top: 6px !important; font-size: 12px !important; }

@@ -55,6 +55,7 @@ const IconTrash = () => <StrokeIcon><polyline points="3 6 5 6 21 6" /><path d="M
 const IconEye = () => <StrokeIcon><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></StrokeIcon>;
 const IconEyeOff = () => <StrokeIcon><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></StrokeIcon>;
 const IconDoc = () => <StrokeIcon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></StrokeIcon>;
+const IconKebab = () => <StrokeIcon><circle cx="12" cy="5" r="1.7" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.7" fill="currentColor" stroke="none" /></StrokeIcon>;
 /* Empty-state illustrations — same stroke family, drawn larger and lighter. */
 const IconEmptyPosts = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 9h8" /><path d="M8 13h5" /><path d="M16.8 15.2 13 19h5v-5l-1.2 1.2z" /></StrokeIcon>;
 const IconEmptyChannels = () => <StrokeIcon><path d="M10 14a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 5.43" /><path d="M14 10a5 5 0 0 0-7.07 0L4.1 12.83a5 5 0 0 0 7.07 7.07l1.33-1.33" /></StrokeIcon>;
@@ -81,8 +82,8 @@ const PLATFORM_BLURB: Record<Platform, string> = {
   facebook: "Share posts, images and videos to your Facebook Page.",
   instagram: "Publish photos, videos and Reels to your professional account.",
   tiktok: "Share videos to your TikTok account.",
-  youtube: "Share videos to your YouTube channel.",
-  x: "Share posts to your X account.",
+  youtube: "Upload and publish videos to your YouTube channel.",
+  x: "Post text, images, and links to your X account.",
 };
 
 const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
@@ -644,11 +645,12 @@ function InstagramAccountPicker({ token, onMessage }: { token: string; onMessage
   >{accounts.data.accounts.map((account) => <option key={account.igUserId} value={account.igUserId}>@{account.username} · {account.pageName}</option>)}</select></label>;
 }
 
-function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, goBilling, goHelp }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void; xVisible: boolean; xNeedsTier: boolean; goBilling: () => void; goHelp: () => void }) {
+function Accounts({ accounts, token, onMessage, xVisible, xNeedsTier, goBilling, goHelp }: { accounts: Account[]; token: string; onMessage: (message: string) => void; xVisible: boolean; xNeedsTier: boolean; goBilling: () => void; goHelp: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
   const [manageOpen, setManageOpen] = useState<Platform | null>(null);
+  const [menuOpen, setMenuOpen] = useState<Platform | null>(null);
   // OAuth popup flow: Connect opens the platform auth page in a popup.
   // The popup posts a "zepostia-oauth" message on completion and closes
   // itself; we refresh the connection list without a full page reload.
@@ -752,11 +754,10 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
   return <div className="page-stack">
     <div className="page-heading-row">
       <div className="page-heading"><h1>Accounts</h1><p>Connect your social media accounts to publish content from Zepostia.</p></div>
-      <button className="help-pill" onClick={goHelp}><span className="help-pill-icon"><IconHelp /></span>Having trouble connecting?</button>
+      <button className="help-pill" onClick={goHelp}><span className="help-pill-icon"><IconHelp /></span>Need help connecting?</button>
     </div>
     <div className="connect-list">{PLATFORM_ORDER.filter((platform) => platform !== "x" || xVisible).map((platform) => {
       const meta = PLATFORM_META[platform];
-      const setting = settings.find((item) => item.platform === platform);
       const account = accountForPlatform(accounts, platform, demoMode);
       const needsReconnect = account && account.status !== "connected";
       const isFacebook = platform === "facebook";
@@ -768,17 +769,23 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
       const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else if (isTiktok) connectTt.mutate(); else if (isYoutube) connectYt.mutate(); else if (isX) connectX.mutate(); else connect.mutate(platform); };
       const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
       const managing = manageOpen === platform;
+      const menuing = menuOpen === platform;
       return <article className="connect-row" key={platform}>
         <div className="connect-card-top">
           <PlatformBadge platform={platform} large />
           <div className="connect-card-main">
-            <div className="connect-name-row"><h2>{meta.label}{isX && xNeedsTier && <span className="status-pill status-accent addon-pill"><IconBolt />Requires add-on</span>}</h2></div>
-            {account && <p className="connect-handle"><strong>{account.handle}</strong><span className="handle-ext"><IconExternal /></span>{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</p>}
-            <p>{isX && xNeedsTier ? "X posting is an add-on. Add a tier on the Billing page, then connect here." : PLATFORM_BLURB[platform]}</p>
-            {setting?.warning && !(isX && xNeedsTier) && <p className="connect-note">{setting.warning}</p>}
+            <h2>{meta.label}</h2>
+            <p>{PLATFORM_BLURB[platform]}</p>
           </div>
           <div className="connect-card-side">
-            {account ? <span className="connect-pills"><StatusPill status={account.status} />{isTiktok && account.status === "connected" && <span className="status-pill status-accent"><IconBolt />Publishing enabled</span>}</span> : <span className="status-pill status-muted"><i />Not connected</span>}
+            <div className="connect-status-col">
+              <span className="connect-pills">
+                {account ? <StatusPill status={account.status} /> : <span className="status-pill status-muted"><i />Not connected</span>}
+                {isTiktok && account?.status === "connected" && <span className="status-pill status-accent"><IconBolt />Publishing enabled</span>}
+                {isX && xNeedsTier && <span className="status-pill status-accent addon-pill"><IconBolt />Requires add-on</span>}
+              </span>
+              {account && <p className="connect-handle"><strong>{account.handle}</strong><span className="handle-ext"><IconExternal /></span></p>}
+            </div>
             {account
               ? needsReconnect
                 ? <button className="warning-button" onClick={startConnect}>Reconnect</button>
@@ -786,6 +793,17 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
               : isX && xNeedsTier
                 ? <button className="secondary-button" onClick={goBilling}>Get the X add-on</button>
                 : <button className="primary-button connect-btn" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}><span className="btn-link-icon"><IconLink /></span>{connectLabel}</button>}
+            <span className="kebab-wrap">
+              <button className="kebab-btn" aria-label={`${meta.label} options`} aria-expanded={menuing} onClick={() => setMenuOpen(menuing ? null : platform)}><IconKebab /></button>
+              {menuing && <>
+                <button className="kebab-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(null)} />
+                <span className="kebab-menu" role="menu">
+                  {account && needsReconnect && <button role="menuitem" onClick={() => { setMenuOpen(null); startConnect(); }}>Reconnect</button>}
+                  {!account && <button role="menuitem" onClick={() => { setMenuOpen(null); goHelp(); }}>Connection help</button>}
+                  {account && <button role="menuitem" className="danger-text" disabled={disconnect.isPending} onClick={() => { setMenuOpen(null); disconnect.mutate(account.id); }}>Disconnect</button>}
+                </span>
+              </>}
+            </span>
           </div>
         </div>
         {account && managing && !needsReconnect && <div className="connect-manage">
@@ -793,12 +811,11 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
           {isInstagram && account.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
           <button className="danger-text" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect this account</button>
         </div>}
-        <details><summary><span className="summary-chev lead"><IconChevron /></span>If connecting fails</summary><p>{isX && xNeedsTier ? "X connects once your workspace has an X add-on tier — add one on the Billing page." : setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
     <button className="accounts-help-banner" onClick={goHelp}>
       <span className="banner-book"><IconBook /></span>
-      <span className="banner-text"><strong>Need help connecting your accounts?</strong><span>View step-by-step guides for each platform.</span></span>
+      <span className="banner-text"><strong>Need help connecting your accounts?</strong></span>
       <span className="banner-link">View help center<span className="handle-ext"><IconExternal /></span></span>
     </button>
   </div>;
@@ -1889,7 +1906,7 @@ export function App() {
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={go} xVisible={xVisible} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => go("accounts")} xVisible={xVisible} />}
-      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} goHelp={() => go("help")} />}
+      {page === "accounts" && <Accounts accounts={data.accounts} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} goHelp={() => go("help")} />}
       {page === "billing" && <BillingPage token={sessionToken} onMessage={setToast} go={go} />}
       {page === "help" && <HelpPage go={go} xVisible={xVisible} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} go={go} />}
