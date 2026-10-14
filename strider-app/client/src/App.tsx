@@ -742,7 +742,7 @@ function TikTokPlatformCard({ isAdmin, tiktokConfigured }: { isAdmin: boolean; t
   </details>;
 }
 
-function XPlatformCard({ isAdmin, xConfigured, xPostsUsed, xPostsCap }: { isAdmin: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number }) {
+function XPlatformCard({ isAdmin, xConfigured }: { isAdmin: boolean; xConfigured: boolean }) {
   const steps = [
     "Create an X app in the X Developer Portal with OAuth 2.0 enabled.",
     "Add https://zepostia.com/oauth/x/callback as the Callback URI / Redirect URL in the app's OAuth 2.0 settings.",
@@ -756,7 +756,6 @@ function XPlatformCard({ isAdmin, xConfigured, xPostsUsed, xPostsCap }: { isAdmi
       {isAdmin && <p className="secret-note">Owner X app: {xConfigured ? "configured" : "not configured — set X_CLIENT_ID and X_CLIENT_SECRET on the server"}.</p>}
       {isAdmin && <p className="secret-note">Heads up: X charges per tweet on new developer accounts (pay-per-use, roughly $0.015 per post, more for posts with links). Every customer tweet bills your X account — fund credits in the X Developer Console before real posting.</p>}
       {!isAdmin && <p className="secret-note">Connect with X on the Accounts page — no setup needed.</p>}
-      <p className="secret-note">X posts this month: {xPostsUsed} of {xPostsCap}. Resets on the 1st.</p>
     </div>
   </details>;
 }
@@ -797,7 +796,7 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
     return <YoutubePlatformCard isAdmin={isAdmin} youtubeConfigured={youtubeConfigured} />;
   }
   if (setting.platform === "x") {
-    return <XPlatformCard isAdmin={isAdmin} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} />;
+    return <XPlatformCard isAdmin={isAdmin} xConfigured={xConfigured} />;
   }
   return <details className="settings-card" open>
     <summary><span><PlatformBadge platform={setting.platform} /><strong>{setting.label}</strong></span><span>Set up credentials</span></summary>
@@ -854,13 +853,17 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   const label = status === "trialing" ? "Free trial" : status === "active" ? "Active" : status === "past_due" ? "Past due" : status === "canceled" ? "Canceled" : "No subscription";
   const trialEnd = statusQuery.data?.trialEndsAt ? new Date(statusQuery.data.trialEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
-  return <section className="profile-block" aria-label="Billing">
-    <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime. <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></p></div>
-    {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
-      <p><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
-      {subscribed
-        ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
-        : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
+  return <section className="billing-block" aria-label="Billing">
+    <div className="billing-plan-row">
+      <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime. <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></p></div>
+      {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
+        <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
+        {subscribed
+          ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
+          : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
+      </>}
+    </div>
+    {!statusQuery.isPending && !statusQuery.isError && <>
       {!subscribed && <p className="secret-note">14-day free trial — your card is collected at checkout and charged $19.88 on day 15. Checkout is secured by Stripe.</p>}
       {xAddon?.configured && <div className="x-addon-block">
         <h3>X (Twitter) posting — Add-on</h3>
@@ -881,6 +884,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
         </> : <p className="secret-note">Start your subscription first — the add-on attaches to your plan.</p>}
       </div>}
     </>}
+    <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
   </section>;
 }
 
@@ -1107,6 +1111,13 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
       <h2>Legal</h2>
       <div className="help-article">
         <p><a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
+      </div>
+    </section>
+
+    <section className="help-section">
+      <h2>Still need help?</h2>
+      <div className="help-article">
+        <p>Contact support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a> and we&apos;ll get back to you.</p>
       </div>
     </section>
   </div>;
