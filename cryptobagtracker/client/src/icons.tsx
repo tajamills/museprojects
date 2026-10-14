@@ -28,6 +28,27 @@ function Icon({ size = 20, className, children }: IconProps & { children: ReactN
   );
 }
 
+/* ---------- Brand mark (matches favicon.svg) ---------- */
+
+export function LogoMark({ size = 34 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="#07110f" />
+      <path d="M25.5 25v-3.5a6.5 6.5 0 0 1 13 0V25" fill="none" stroke="#52e6a5" strokeWidth={4} strokeLinecap="round" />
+      <path d="M19.5 25h25l-2.3 24.4a6 6 0 0 1-6 5.1H27.8a6 6 0 0 1-6-5.1Z" fill="#52e6a5" />
+      <rect x="25.6" y="39.5" width="3.6" height="6.5" rx="1.4" fill="#07110f" />
+      <rect x="30.2" y="36" width="3.6" height="10" rx="1.4" fill="#07110f" />
+      <rect x="34.8" y="32.5" width="3.6" height="13.5" rx="1.4" fill="#07110f" />
+    </svg>
+  );
+}
+
 /* ---------- Navigation / UI icons ---------- */
 
 export function DashboardIcon(props: IconProps) {
@@ -196,6 +217,17 @@ export function ClockIcon(props: IconProps) {
     <Icon {...props}>
       <circle cx="12" cy="12" r="8.4" />
       <path d="M12 7.6V12l3.1 2" />
+    </Icon>
+  );
+}
+
+export function RouteIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5.8" cy="18.2" r="2.3" />
+      <circle cx="18.2" cy="5.8" r="2.3" />
+      <path d="M5.8 15.9c0-5.4 9.9-5.1 11.9-7.9" strokeDasharray="0.1 3.4" />
+      <path d="M15.2 6.9l2.3 1.2 1-2.4" />
     </Icon>
   );
 }

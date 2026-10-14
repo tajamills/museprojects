@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import {
-  ArrowRightIcon, BellIcon, CardIcon, CloseIcon, DashboardIcon, EmptyArt,
-  PlusIcon, ShareIcon, SwapIcon, TaxIcon, TxTypeIcon, WalletIcon,
+  ArrowRightIcon, BellIcon, CardIcon, ChartIcon, CloseIcon, DashboardIcon, EmptyArt,
+  LogoMark, PlusIcon, RouteIcon, ShareIcon, SwapIcon, TaxIcon, TxTypeIcon, WalletIcon,
   type EmptyArtKind,
 } from "./icons";
 
@@ -26,8 +26,66 @@ function Empty({ title, body, art = "ledger" }: { title: string; body: string; a
   return <div className="empty"><EmptyArt kind={art} /><h3>{title}</h3><p>{body}</p></div>;
 }
 
-function Landing({ onAuth, onTerms, referral }: { onAuth: (mode: AuthMode) => void; onTerms: () => void; referral: string }) {
+function SiteNav({ current, onHome, onServices, onAuth }: { current: "home" | "services"; onHome: () => void; onServices: () => void; onAuth: (mode: AuthMode) => void }) {
+  return <header className="site-nav">
+    <a className="brand" href="/" onClick={(e) => { e.preventDefault(); onHome(); }}><LogoMark size={34} /><span>CryptoBagTracker</span></a>
+    <nav>
+      {current === "services"
+        ? <a className="nav-link" href="/" onClick={(e) => { e.preventDefault(); onHome(); }}>Home</a>
+        : <a className="nav-link" href="/services" onClick={(e) => { e.preventDefault(); onServices(); }}>Services</a>}
+      <button className="quiet" onClick={() => onAuth("login")}>Sign in</button>
+      <button className="primary" onClick={() => onAuth("signup")}>Start free trial</button>
+    </nav>
+  </header>;
+}
+
+function Services({ onAuth, onHome, onServices, onTerms, referral }: { onAuth: (mode: AuthMode) => void; onHome: () => void; onServices: () => void; onTerms: () => void; referral: string }) {
+  return <div className="landing services">
+    <SiteNav current="services" onHome={onHome} onServices={onServices} onAuth={onAuth} />
+    <main>
+      <section className="services-hero">
+        <p className="overline">SERVICES</p>
+        <h1>What you get with CryptoBagTracker.</h1>
+        <p className="lede">One account for your whole crypto life: portfolio tracking, exchange sync, price alerts, and tax records — across 14 chains, in a single ledger.</p>
+      </section>
+      <section className="feature-grid" aria-label="Features">
+        <article className="feature-card"><span className="fic"><ChartIcon size={24} /></span><h3>Wallet analyzer &amp; portfolio tracking</h3><p>Point CryptoBagTracker at your wallet addresses on any of 14 chains — BTC, ETH, SOL, XRP, XLM, ADA, AVAX, DOT, POL, BSC, ARB, OP, BASE, and LTC — and see every balance, your total value, and one unified activity ledger.</p></article>
+        <article className="feature-card"><span className="fic"><SwapIcon size={24} /></span><h3>Exchange sync</h3><p>Connect Coinbase, Kraken, or Uphold with a read-only API key and sync your trades, deposits, and withdrawals into the same ledger. Keys are encrypted at rest and only ever used to read your history.</p></article>
+        <article className="feature-card"><span className="fic"><BellIcon size={24} /></span><h3>Price alerts</h3><p>Name a price above or below the market and get notified by Telegram, text message (SMS), or push when it hits. Every delivered alert is kept in your alert history.</p></article>
+        <article className="feature-card"><span className="fic"><TaxIcon size={24} /></span><h3>Tax reporting</h3><p>Every disposal is matched to its tax lots with FIFO, LIFO, or HIFO — your choice. Staking and airdrop income is tracked as ordinary income, and you can export IRS Form 8949, a Schedule D summary, and a full CSV of your records.</p></article>
+        <article className="feature-card"><span className="fic"><RouteIcon size={24} /></span><h3>Chain-of-custody tracing</h3><p>Moves between wallets you own are recorded as transfers, not sales: no gain or loss, and the original cost basis and holding period travel with the coins. The custody trail shows where every lot has been.</p></article>
+        <article className="feature-card"><span className="fic"><ShareIcon size={24} /></span><h3>Affiliate program</h3><p>Every account gets a referral link. Share it and earn $4.44 for each completed signup it brings in — payouts are issued via Stripe or Zelle.</p></article>
+      </section>
+      <section className="services-block">
+        <p className="overline">HOW IT WORKS</p>
+        <h2 className="section-h">Three steps, then it keeps the books.</h2>
+        <div className="steps-grid">
+          <article className="step-card"><span>01</span><h3>Connect</h3><p>Add your wallet addresses and connect your exchanges with read-only API keys. Mark the wallets you own so moves between them are treated as transfers.</p></article>
+          <article className="step-card"><span>02</span><h3>Record</h3><p>Syncs and the transactions you add build one chronological ledger. Buys create tax lots; sells and trades are matched against them with your chosen cost-basis method.</p></article>
+          <article className="step-card"><span>03</span><h3>Stay ahead</h3><p>Set price alerts on the assets you watch, and pull your Form 8949, Schedule D, or CSV export whenever tax time — or your accountant — asks.</p></article>
+        </div>
+      </section>
+      <section className="price-block"><div><p className="overline">ONE PLAN. THE WHOLE PRODUCT.</p><h2>Premium</h2><p>Every service on this page is included — no tiers, no add-ons. Start without a card; billing begins only after your seven-day trial.</p></div><div className="price"><strong>$8.88</strong><span>/ month</span><button className="primary" onClick={() => onAuth("signup")}>{referral ? `Start with referral ${referral}` : "Start free"}</button></div></section>
+      <section className="services-block">
+        <p className="overline">QUESTIONS</p>
+        <h2 className="section-h">Before you start.</h2>
+        <div className="faq-list">
+          <article className="faq-item"><h3>Do I need a card to try it?</h3><p>No. Your 7-day free trial starts with no card required. If you add a payment method and stay, billing begins on day 8 at $8.88/month. Cancel anytime.</p></article>
+          <article className="faq-item"><h3>Which chains and exchanges are supported?</h3><p>Wallets on 14 chains: BTC, ETH, SOL, XRP, XLM, ADA, AVAX, DOT, POL, BSC, ARB, OP, BASE, and LTC. Exchange sync covers Coinbase, Kraken, and Uphold, using read-only API keys.</p></article>
+          <article className="faq-item"><h3>I move coins between my own wallets. Is that a taxable sale?</h3><p>Not here. When both wallets are marked as yours, the move is recorded as a transfer — no gain or loss is realized, and the lot keeps its original cost basis and holding period.</p></article>
+          <article className="faq-item"><h3>Does CryptoBagTracker file my taxes?</h3><p>No. It organizes your records and generates working exports — Form 8949, Schedule D, and CSV. Review every export with a qualified tax professional before filing.</p></article>
+          <article className="faq-item"><h3>How does the affiliate program pay?</h3><p>Each completed signup through your referral link earns you exactly $4.44. Add your payout information in the app and earnings are issued via Stripe or Zelle.</p></article>
+        </div>
+      </section>
+      <section className="cta-final"><h2>Follow every coin. Keep every lot.</h2><p>Start your 7-day free trial — no card required.</p><div className="hero-actions"><button className="primary" onClick={() => onAuth("signup")}>Start 7-day free trial</button><button className="quiet" onClick={() => onAuth("login")}>Sign in</button></div></section>
+    </main>
+    <footer><span>© 2026 CryptoBagTracker. All rights reserved.</span><a href="mailto:info@cryptobagtracker.io">info@cryptobagtracker.io</a><button onClick={onHome}>Home</button><button onClick={onTerms}>Terms of Service</button></footer>
+  </div>;
+}
+
+function Landing({ onAuth, onTerms, onServices, onHome, referral }: { onAuth: (mode: AuthMode) => void; onTerms: () => void; onServices: () => void; onHome: () => void; referral: string }) {
   return <div className="landing">
+    <SiteNav current="home" onHome={onHome} onServices={onServices} onAuth={onAuth} />
     <main>
       <section className="hero">
         <div className="hero-copy">
@@ -47,7 +105,7 @@ function Landing({ onAuth, onTerms, referral }: { onAuth: (mode: AuthMode) => vo
       <section className="price-block"><div><p className="overline">ONE PLAN. THE WHOLE PRODUCT.</p><h2>Premium</h2><p>Start without a card. Billing begins only after your seven-day trial.</p></div><div className="price"><strong>$8.88</strong><span>/ month</span><button className="primary" onClick={() => onAuth("signup")}>{referral ? `Start with referral ${referral}` : "Start free"}</button></div></section>
       <section className="legal-callout"><h2>Built for records, not filing advice.</h2><p>CryptoBagTracker organizes activity and generates working tax summaries. Review every export with a qualified professional before filing.</p></section>
     </main>
-    <footer><span>© 2026 CryptoBagTracker. All rights reserved.</span><a href="mailto:info@cryptobagtracker.io">info@cryptobagtracker.io</a><button onClick={onTerms}>Terms of Service</button></footer>
+    <footer><span>© 2026 CryptoBagTracker. All rights reserved.</span><a href="mailto:info@cryptobagtracker.io">info@cryptobagtracker.io</a><button onClick={onServices}>Services</button><button onClick={onTerms}>Terms of Service</button></footer>
   </div>;
 }
 
@@ -130,7 +188,7 @@ function ChangePassword({ token, onTokenRefresh }: { token: string; onTokenRefre
 function Billing({ token, onTokenRefresh }: { token: string; onTokenRefresh: (t: string) => void }) {
   const [notice,setNotice]=useState("");
   const statusQuery=useQuery({queryKey:["billing",token],queryFn:()=>api.getBillingStatus({token}),retry:false});
-  const friendly=(e:unknown)=>{const msg=e instanceof Error?e.message:"Could not continue.";return /not configured/i.test(msg)?"Billing isn't connected yet — your 7-day trial is free. Check back soon.":msg;};
+  const friendly=(e:unknown)=>{const msg=e instanceof Error?e.message:"Could not continue.";return /not configured/i.test(msg)?"Billing isn't connected yet — your 7-day trial is free, and nothing is charged during it.":msg;};
   const checkout=useMutation({mutationFn:()=>api.createCheckoutSession({token}),onSuccess:(r)=>{window.location.href=r.url;},onError:(e)=>setNotice(friendly(e))});
   const portal=useMutation({mutationFn:()=>api.createPortalSession({token}),onSuccess:(r)=>{window.location.href=r.url;},onError:(e)=>setNotice(friendly(e))});
   const status=(statusQuery.data as any)?.status??"none"; const trialEndsAt=(statusQuery.data as any)?.trialEndsAt as string|null;
@@ -163,10 +221,15 @@ function Shell({ token, logout, onTokenRefresh }: { token: string; logout: () =>
 
 export function App() {
   const [token,setToken]=useState(()=>localStorage.getItem("cbt_session")||""); const [auth,setAuth]=useState<AuthMode|null>(null); const [showTerms,setShowTerms]=useState(false);
+  const [showServices,setShowServices]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/services");
   const referral=useMemo(()=>new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase()||"",[]);
   useEffect(()=>{if(referral&&!token)setAuth("signup");},[referral,token]);
+  useEffect(()=>{const sync=()=>setShowServices(window.location.pathname.replace(/\/+$/,"")==="/services");window.addEventListener("popstate",sync);return ()=>window.removeEventListener("popstate",sync);},[]);
+  const goServices=()=>{window.history.pushState(null,"","/services");setShowServices(true);window.scrollTo(0,0);};
+  const goHome=()=>{window.history.pushState(null,"","/");setShowServices(false);window.scrollTo(0,0);};
   if(showTerms) return <Terms back={()=>setShowTerms(false)}/>;
+  if(showServices) return <Services referral={referral} onAuth={(m)=>{goHome();setAuth(m);}} onHome={goHome} onServices={goServices} onTerms={()=>setShowTerms(true)}/>;
   if(token) return <Shell token={token} logout={()=>{localStorage.removeItem("cbt_session");setToken("");}} onTokenRefresh={(t)=>{localStorage.setItem("cbt_session",t);setToken(t);}}/>;
   if(auth) return <AuthPanel initialMode={auth} referral={referral} onClose={()=>setAuth(null)} onDone={setToken} showTerms={()=>setShowTerms(true)}/>;
-  return <Landing referral={referral} onAuth={setAuth} onTerms={()=>setShowTerms(true)}/>;
+  return <Landing referral={referral} onAuth={setAuth} onTerms={()=>setShowTerms(true)} onServices={goServices} onHome={goHome}/>;
 }
