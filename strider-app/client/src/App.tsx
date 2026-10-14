@@ -1006,6 +1006,10 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   return <section className="billing-block" aria-label="Billing">
     <div className="billing-card">
+      <svg className="billing-splash" viewBox="0 0 200 300" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M200 0v300h-96c14-52-6-78-2-118 4-46 44-64 48-108 3-30-8-56-26-74z" fill="#C9BFF5" opacity=".5" />
+        <path d="M200 64v236h-44c8-40-6-62-3-96 3-38 30-54 34-88 2-22-2-40-10-52z" fill="#A78BFA" opacity=".3" />
+      </svg>
       <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
       <div className="billing-card-main">
         <p className="billing-eyebrow">Current plan</p>
@@ -1014,18 +1018,12 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
           <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · First charge ${trialEnd}` : null}{renews ? ` · Renews ${renews}` : null}</p>
           {!subscribed && xAddon?.configured && xAddon.tiers.length > 0 && <div className="x-checkout-picker">
             <p className="x-checkout-picker-title">Add X posting now? It bills from day one.</p>
-            <ul className="x-tier-list x-picker-list">
-              <li className={checkoutTier === null ? "selected" : undefined} onClick={() => setCheckoutTier(null)}>
-                <label>
-                  <input type="radio" name="x-checkout-tier" checked={checkoutTier === null} onChange={() => setCheckoutTier(null)} />
-                  <span><strong>No X add-on</strong> — base plan only</span>
-                </label>
+            <ul className="x-tier-list x-picker-list" role="radiogroup" aria-label="X add-on tier">
+              <li className={checkoutTier === null ? "selected" : undefined} role="radio" aria-checked={checkoutTier === null} tabIndex={0} onClick={() => setCheckoutTier(null)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCheckoutTier(null); } }}>
+                <span><strong>No X add-on</strong> — base plan only</span>
               </li>
-              {xAddon.tiers.map((tier) => <li key={tier.priceId} className={checkoutTier === tier.priceId ? "selected" : undefined} onClick={() => setCheckoutTier(tier.priceId)}>
-                <label>
-                  <input type="radio" name="x-checkout-tier" checked={checkoutTier === tier.priceId} onChange={() => setCheckoutTier(tier.priceId)} />
-                  <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
-                </label>
+              {xAddon.tiers.map((tier) => <li key={tier.priceId} className={checkoutTier === tier.priceId ? "selected" : undefined} role="radio" aria-checked={checkoutTier === tier.priceId} tabIndex={0} onClick={() => setCheckoutTier(tier.priceId)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCheckoutTier(tier.priceId); } }}>
+                <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
                 {tier.amountCents != null && <span className="x-tier-price">${(tier.amountCents / 100).toFixed(2).replace(/\.00$/, "")} / month</span>}
               </li>)}
             </ul>
