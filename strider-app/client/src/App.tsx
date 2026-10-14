@@ -36,6 +36,10 @@ const IconCheck = () => <StrokeIcon><polyline points="20 6 9 17 4 12" /></Stroke
 const IconCard = () => <StrokeIcon><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></StrokeIcon>;
 const IconBolt = () => <StrokeIcon><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></StrokeIcon>;
 const IconClose = () => <StrokeIcon><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></StrokeIcon>;
+const IconClock = () => <StrokeIcon><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></StrokeIcon>;
+const IconHistory = () => <StrokeIcon><path d="M3 3v6h6" /><path d="M3.51 9a9 9 0 1 1-.49 5" /><polyline points="12 8 12 12 15.5 14" /></StrokeIcon>;
+const IconPlay = () => <StrokeIcon><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16" /></StrokeIcon>;
+const IconShield = () => <StrokeIcon><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 11.5 11 13.5 15 9.5" /></StrokeIcon>;
 const IconChevron = () => <StrokeIcon><polyline points="6 9 12 15 18 9" /></StrokeIcon>;
 /* Empty-state illustrations — same stroke family, drawn larger and lighter. */
 const IconEmptyPosts = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 9h8" /><path d="M8 13h5" /><path d="M16.8 15.2 13 19h5v-5l-1.2 1.2z" /></StrokeIcon>;
@@ -162,6 +166,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
   const busy = demo.isPending || signup.isPending || login.isPending;
   const [authOpen, setAuthOpen] = useState<null | "login" | "signup">(null);
   const openAuth = (next: "login" | "signup") => { setMode(next); setMessage(""); setAuthOpen(next); };
+  // Public pages (e.g. /services) send visitors here as /?auth=signup or
+  // /?auth=login — open the matching auth view on arrival.
+  useEffect(() => {
+    const auth = new URLSearchParams(window.location.search).get("auth");
+    if (auth === "login" || auth === "signup") openAuth(auth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!authOpen) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAuthOpen(null); };
@@ -174,6 +185,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <header className="landing-header">
         <div className="landing-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
         <nav className="landing-nav" aria-label="Primary">
+          <a href="/services">Services</a>
           <a href="#how-it-works">Product</a>
           <a href="#pricing">Pricing</a>
         </nav>
@@ -271,7 +283,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
       <footer className="landing-footer">
         <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
         <p>&copy; 2026 zepostia. All rights reserved.</p>
-        <nav aria-label="Footer"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+        <nav aria-label="Footer"><a href="/services">Services</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
       </footer>
       {authOpen && <div className="auth-modal" role="dialog" aria-modal="true" aria-label="zepostia account access">
         <div className="auth-modal-backdrop" onClick={() => setAuthOpen(null)} />
@@ -1171,9 +1183,253 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
   </div>;
 }
 
+/**
+ * Public /services page — the "what exactly do I get" explainer for
+ * logged-out visitors, in the Accounts page pattern: every platform and
+ * feature is a full card with a drawn icon tile on the left, a bold name
+ * and one-line description, a status pill, and any action pinned right.
+ * Only capabilities that are live today are stated.
+ */
+function ServicesPage() {
+  const platformRows: Array<{ platform: Platform; blurb: string; note?: string; pill: string; pillClass: string; action?: { label: string; href: string } }> = [
+    {
+      platform: "facebook",
+      blurb: "Post text, images, and videos to the Facebook Pages you manage.",
+      pill: "Included in plan",
+      pillClass: "status-good",
+    },
+    {
+      platform: "instagram",
+      blurb: "Publish photos, videos, and Reels to your professional account.",
+      note: "Instagram requires a professional (creator or business) account linked to a Facebook Page — that's Instagram's rule, and the Help page walks you through it.",
+      pill: "Included in plan",
+      pillClass: "status-good",
+    },
+    {
+      platform: "tiktok",
+      blurb: "Post videos straight from the composer — no separate upload in the TikTok app.",
+      note: "TikTok makes new apps post privately until the app passes TikTok's audit. The zepostia app is in review, so for now TikTok posts start out private; everything else about posting works as normal.",
+      pill: "Included · video only",
+      pillClass: "status-good",
+    },
+    {
+      platform: "youtube",
+      blurb: "Upload videos to your channel, with the title and description written here.",
+      note: "YouTube posts are video only — every upload needs a video file and a title.",
+      pill: "Included · video only",
+      pillClass: "status-good",
+    },
+    {
+      platform: "x",
+      blurb: "Post to X from the same composer — text and links, up to 280 characters.",
+      note: "X posting is a paid add-on, not part of the base plan. Pick a tier at checkout, or add one later from the Billing page.",
+      pill: "Paid add-on",
+      pillClass: "status-accent",
+      action: { label: "See the tiers", href: "#pricing" },
+    },
+  ];
+  const featureCards: Array<{ Icon: ComponentType; title: string; body: ReactNode }> = [
+    {
+      Icon: IconCompose,
+      title: "One composer",
+      body: "Write your post once, attach an image or video, and preview how it lands on each platform before it goes out. Zepostia fits the same post to each platform's rules — like X's 280 characters — so nothing is rejected for format.",
+    },
+    {
+      Icon: IconClock,
+      title: "Scheduling",
+      body: "Publish right away, or pick a date and time. Scheduled posts wait in your queue, and you can cancel any of them before they go out.",
+    },
+    {
+      Icon: IconHistory,
+      title: "Queue & history",
+      body: "Every post is tracked in one list: what's waiting, what published, and what failed — with the reason — for each platform it was sent to. No more checking five apps to see what actually went out.",
+    },
+    {
+      Icon: IconPlay,
+      title: "One-minute tour",
+      body: "The Help page opens with a one-minute video walkthrough: connect your accounts, write a post, and publish. It's the whole product, start to finish.",
+    },
+    {
+      Icon: IconShield,
+      title: "Your passwords stay yours",
+      body: "You sign in on each platform's own website and approve zepostia there. Zepostia stores an encrypted access token — never your password — and uses it only to publish the posts you create.",
+    },
+    {
+      Icon: IconHelp,
+      title: "Real support",
+      body: <>The Help page covers setup, troubleshooting, and FAQs. Still stuck? Email support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a> and we&apos;ll get back to you.</>,
+    },
+  ];
+  const faqs: Array<{ q: string; a: ReactNode }> = [
+    {
+      q: "What's included in the $19.88/month plan?",
+      a: "Posting to Facebook Pages, Instagram professional accounts, TikTok, and YouTube; the composer with per-platform previews; scheduling; and your full post queue and history. X posting is the only extra — it's a paid add-on, in the tiers above.",
+    },
+    {
+      q: "How does the X add-on work?",
+      a: "X charges for API access per post, so X posting runs on its own tier with monthly caps. Plain posts and posts containing links are counted separately — a link post costs X more, so it has its own allowance. When you reach your cap, posting to X pauses until the next billing period; you are never charged per post beyond the tier price. Pick a tier at checkout, or add, switch, or remove one later on the Billing page. Tiers bill from day one — they don't join the base plan's free trial.",
+    },
+    {
+      q: "Why did my TikTok video post privately?",
+      a: "TikTok makes new apps post privately until the app passes TikTok's audit. Zepostia's TikTok app is currently in review, so videos posted through zepostia land as private for now. Once the audit completes, TikTok posts publish the normal way — nothing about your account or your videos changes.",
+    },
+    {
+      q: "How does the 14-day free trial work?",
+      a: "You get the full plan for 14 days. Your card is charged $19.88 on day 15, then monthly after that. Cancel any time before day 15 and you pay nothing for the plan. If you add an X tier, the tier bills from day one — X usage costs real money from the first post, so tiers are never part of the free trial.",
+    },
+    {
+      q: "Do you need my social media passwords?",
+      a: "No. You log in on each platform's own website — facebook.com, google.com, tiktok.com, x.com — and approve zepostia there. Zepostia receives a limited access token that only allows posting; it never sees or stores your password, and you can disconnect any account at any time.",
+    },
+  ];
+  return (
+    <div className="landing-shell">
+      <SafeAreaTopScrim backgroundColor="var(--bg)" />
+      <header className="landing-header">
+        <div className="landing-brand"><a href="/" className="brand-home"><BrandMark className="brand-mark" /><strong>zepostia</strong></a></div>
+        <nav className="landing-nav" aria-label="Primary">
+          <a href="/services" aria-current="page">Services</a>
+          <a href="/#how-it-works">Product</a>
+          <a href="/#pricing">Pricing</a>
+        </nav>
+        <div className="landing-actions">
+          <a className="quiet-button" href="/?auth=login">Log in</a>
+          <a className="primary-button" href="/?auth=signup">Get Started</a>
+        </div>
+      </header>
+      <main className="landing-main services-main">
+        <section className="svc-hero">
+          <span className="hero-badge">Services</span>
+          <h1>What zepostia does for you.</h1>
+          <p>Zepostia is a posting workspace for your social accounts: connect them once, then write a post a single time and publish it to all of them — right now, or scheduled for later.</p>
+          <div className="hero-ctas">
+            <a className="primary-button hero-cta" href="/?auth=signup">Get Started</a>
+            <a className="secondary-button hero-cta" href="#pricing">See pricing</a>
+          </div>
+        </section>
+
+        <section className="svc-section" aria-label="Platforms">
+          <div className="svc-heading"><h2>Post where your audience already is</h2><p>Four platforms are in the plan. X joins them as an add-on. Every connection uses the platform&apos;s own login.</p></div>
+          <div className="connect-list">
+            {platformRows.map((row) => (
+              <article className="connect-row" key={row.platform}>
+                <div className="connect-main">
+                  <PlatformBadge platform={row.platform} />
+                  <div>
+                    <h2>{PLATFORM_META[row.platform].label}</h2>
+                    <p>{row.blurb}</p>
+                    {row.note && <p className="svc-note">{row.note}</p>}
+                  </div>
+                </div>
+                <div className="connect-state">
+                  <span className={`status-pill ${row.pillClass}`}><i />{row.pill}</span>
+                  {row.action && <a className="secondary-button" href={row.action.href}>{row.action.label}</a>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="svc-section" aria-label="Features">
+          <div className="svc-heading"><h2>What you get</h2><p>One workspace instead of five apps, five logins, and five chances to forget to post.</p></div>
+          <div className="svc-feature-grid">
+            {featureCards.map((card) => (
+              <article className="svc-feature-card" key={card.title}>
+                <span className="svc-feature-icon"><card.Icon /></span>
+                <div><h3>{card.title}</h3><p>{card.body}</p></div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="how-section" id="how-it-works">
+          <h2>How it works</h2>
+          <p>Three steps. No developer setup, no juggling logins.</p>
+          <div className="steps-grid">
+            <div className="step-card">
+              <span className="step-num">1</span>
+              <h3>Connect your accounts</h3>
+              <p>Link each social account once with its official login. Zepostia never sees your passwords.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">2</span>
+              <h3>Write once</h3>
+              <p>Compose a single post. Zepostia adapts it to each platform&apos;s rules before it goes out.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">3</span>
+              <h3>Schedule &amp; post</h3>
+              <p>Publish right away or queue it for later. Your posts go out on time, every time.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="svc-section" id="pricing" aria-label="Pricing">
+          <div className="svc-heading"><h2>One plan. One add-on.</h2><p>Start with the plan — every platform above except X is in it. Add X posting only if you want it.</p></div>
+          <div className="billing-block svc-pricing">
+            <div className="billing-card">
+              <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
+              <div className="billing-card-main">
+                <h2>Zepostia plan</h2>
+                <p className="billing-price">$19.88/month <small>billed monthly</small></p>
+                <p className="billing-trial">14-day free trial — your card is charged $19.88 on day 15. Cancel anytime.</p>
+                <a className="primary-button" href="/?auth=signup">Start free trial</a>
+              </div>
+              <ul className="billing-perks">
+                <li><span className="trust-check"><IconCheck /></span>Facebook, Instagram, TikTok &amp; YouTube</li>
+                <li><span className="trust-check"><IconCheck /></span>Scheduling and post history</li>
+                <li><span className="trust-check"><IconCheck /></span>Cancel anytime</li>
+              </ul>
+            </div>
+            <div className="x-addon-card">
+              <div className="billing-card-icon" aria-hidden="true"><IconBolt /></div>
+              <div className="x-addon-main">
+                <h3>X (Twitter) posting — Add-on</h3>
+                <p>X charges per post, so X posting runs on its own tier with monthly caps. Plain posts and posts with links count separately, and posting pauses at the cap — you never get a surprise bill.</p>
+                <ul className="x-tier-list">
+                  <li><span><strong>Tier 1</strong> — 100 posts · 25 link posts / month</span><strong>$15/month</strong></li>
+                  <li><span><strong>Tier 2</strong> — 300 posts · 75 link posts / month</span><strong>$30/month</strong></li>
+                  <li><span><strong>Tier 3</strong> — 1,000 posts · 250 link posts / month</span><strong>$100/month</strong></li>
+                </ul>
+                <p className="x-addon-line">Pick a tier at checkout, or add one any time later on the Billing page. Tiers bill from day one — they are never part of the free trial.</p>
+              </div>
+            </div>
+            <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
+          </div>
+        </section>
+
+        <section className="svc-section" aria-label="Frequently asked questions">
+          <div className="svc-heading"><h2>Frequently asked questions</h2></div>
+          <div className="help-cards svc-faq">
+            {faqs.map((faq) => (
+              <details className="help-card" key={faq.q}>
+                <summary><strong>{faq.q}</strong><span className="summary-chev"><IconChevron /></span></summary>
+                <p>{faq.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section className="svc-cta">
+          <h2>Write once. Post everywhere.</h2>
+          <p>Connect your first account in minutes — your first 14 days are free.</p>
+          <a className="primary-button hero-cta" href="/?auth=signup">Get Started</a>
+          <p className="svc-support">Questions first? Contact support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
+        </section>
+      </main>
+      <footer className="landing-footer">
+        <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
+        <p>&copy; 2026 zepostia. All rights reserved.</p>
+        <nav aria-label="Footer"><a href="/services">Services</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+      </footer>
+    </div>
+  );
+}
+
 export function App() {
   const pathname = window.location.pathname;
   const demoMode = useServerDemoMode();
+  if (pathname === "/services") return <ServicesPage />;
   if (pathname === "/terms") return <TermsPage />;
   if (pathname === "/privacy") return <PrivacyPage />;
   if (pathname === "/reset") return <ResetPasswordPage />;
