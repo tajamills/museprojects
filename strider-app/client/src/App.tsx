@@ -1908,7 +1908,7 @@ export function App() {
   const signOut = () => { localStorage.removeItem("marketing-app-session"); setSessionToken(""); setPage("dashboard"); window.history.replaceState({}, "", "/"); };
 
   if (!sessionToken) return <AuthScreen onAuthenticated={authenticate} />;
-  if (workspace.isPending || settings.isPending) return <div className="loading-screen"><SafeAreaTopScrim backgroundColor="var(--bg)" /><span className="loading-mark">///</span><p>Opening control room…</p></div>;
+  if (workspace.isPending || settings.isPending) return <div className="loading-screen"><SafeAreaTopScrim backgroundColor="var(--bg)" /><BrandMark className="brand-mark" /><p>Opening control room…</p></div>;
   if (workspace.error || !workspace.data?.authenticated) return <div className="loading-screen"><p>We could not open this workspace.</p><button className="secondary-button" onClick={signOut}>Return to sign in</button></div>;
 
   const data = workspace.data;
@@ -1917,11 +1917,11 @@ export function App() {
   return <div className="app-shell">
     <SafeAreaTopScrim backgroundColor="var(--bg)" />
     <header className="mobile-header">
-      <strong className="mobile-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></strong>
+      <strong className="mobile-brand"><BrandMark className="brand-mark" /><span className="brand-word">zepostia</span></strong>
       <div className="mobile-status">{demoMode && <><span className="live-dot" /><span>Demo</span></>}<ThemeToggle theme={theme} onToggle={toggleTheme} /><button aria-label="Sign out" title="Sign out" onClick={signOut}><IconLogout /></button><button aria-label="Open settings" onClick={() => go("settings")}><IconGear /></button></div>
     </header>
     <aside className="side-rail">
-      <div className="rail-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
+      <div className="rail-brand"><BrandMark className="brand-mark" /><span className="brand-word">zepostia</span></div>
       {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
       <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => go(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
       <div className="rail-user">
