@@ -34,6 +34,7 @@ const IconShare = () => <StrokeIcon><circle cx="18" cy="5" r="3" /><circle cx="6
 const IconImage = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></StrokeIcon>;
 const IconCheck = () => <StrokeIcon><polyline points="20 6 9 17 4 12" /></StrokeIcon>;
 const IconCard = () => <StrokeIcon><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></StrokeIcon>;
+const IconBolt = () => <StrokeIcon><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></StrokeIcon>;
 const IconClose = () => <StrokeIcon><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></StrokeIcon>;
 const IconChevron = () => <StrokeIcon><polyline points="6 9 12 15 18 9" /></StrokeIcon>;
 /* Empty-state illustrations — same stroke family, drawn larger and lighter. */
@@ -863,22 +864,33 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
   const trialEnd = statusQuery.data?.trialEndsAt ? new Date(statusQuery.data.trialEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const renews = status === "active" && statusQuery.data?.currentPeriodEnd ? new Date(statusQuery.data.currentPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   return <section className="billing-block" aria-label="Billing">
-    <div className="billing-plan-row">
-      <div><h2>Plan</h2><p>$19.88/month, billed monthly. Cancel anytime. <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></p></div>
-      {statusQuery.isPending ? <p>Loading…</p> : statusQuery.isError ? <p>Could not load billing status.</p> : <>
-        <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
-        {subscribed
-          ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
-          : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
-      </>}
+    <div className="billing-card">
+      <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
+      <div className="billing-card-main">
+        <h2>Plan</h2>
+        <p className="billing-price">$19.88/month <small>billed monthly · <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></small></p>
+        {statusQuery.isPending ? <p className="billing-status">Loading…</p> : statusQuery.isError ? <p className="billing-status">Could not load billing status.</p> : <>
+          <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
+          {subscribed
+            ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
+            : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
+          {!subscribed && <p className="billing-trial">14-day free trial — your card is charged $19.88 on day 15. Cancel anytime.</p>}
+        </>}
+      </div>
+      <ul className="billing-perks">
+        <li><span className="trust-check"><IconCheck /></span>Post to every connected platform</li>
+        <li><span className="trust-check"><IconCheck /></span>Scheduling and post history</li>
+        <li><span className="trust-check"><IconCheck /></span>Cancel anytime</li>
+      </ul>
     </div>
-    {!statusQuery.isPending && !statusQuery.isError && <>
-      {!subscribed && <p className="secret-note">14-day free trial — your card is collected at checkout and charged $19.88 on day 15. Checkout is secured by Stripe.</p>}
-      {xAddon?.configured && <div className="x-addon-block">
+    {!statusQuery.isPending && !statusQuery.isError && xAddon?.configured && <div className="x-addon-card">
+      <div className="billing-card-icon" aria-hidden="true"><IconBolt /></div>
+      <div className="x-addon-main">
         <h3>X (Twitter) posting — Add-on</h3>
         {xAddon.activeTier
           ? <p><strong>{xAddon.activeTier}</strong> · {xAddon.usage.postsUsed} of {xAddon.usage.postsCap} posts · {xAddon.usage.linkPostsUsed} of {xAddon.usage.linkPostsCap} link posts this billing period</p>
           : <p>Not added</p>}
+        {subscribed && !xAddon.activeTier && <p className="x-addon-line">Posting to X is a paid add-on. Pick a tier to turn it on.</p>}
         {subscribed ? <>
           <ul className="x-tier-list">{xAddon.tiers.map((tier) => {
             const current = tier.name === xAddon.activeTier;
@@ -890,9 +902,9 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
             </li>;
           })}</ul>
           {xAddon.activeTier && <button className="quiet-button" disabled={removeAddon.isPending || setTier.isPending} onClick={() => removeAddon.mutate()}>{removeAddon.isPending ? "Working…" : "Remove add-on"}</button>}
-        </> : <p className="secret-note">Start your subscription first — the add-on attaches to your plan.</p>}
-      </div>}
-    </>}
+        </> : <p className="x-addon-line">Start your subscription first — the add-on attaches to your plan.</p>}
+      </div>
+    </div>}
     <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
   </section>;
 }
