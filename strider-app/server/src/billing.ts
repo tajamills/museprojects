@@ -309,6 +309,82 @@ export async function canPostToX(
   return { allowed: true, tier, usage };
 }
 
+/**
+ * Signed net amount (in cents) owed when switching tiers mid-period:
+ * the new tier's price for the time REMAINING in the current period,
+ * minus the unused part of the old tier's price for that same time —
+ * each leg prorated by the second and rounded like a Stripe proration
+ * line. Positive = the customer owes; negative = the customer is owed
+ * a credit. The owner's rule: a tier switch bills IMMEDIATELY, net of
+ * the fee already used — never parked onto a future invoice.
+ */
+export function tierSwitchNetCents(args: {
+  oldAmountCents: number;
+  newAmountCents: number;
+  periodStartSec: number;
+  periodEndSec: number;
+  nowSec: number;
+}): number {
+  const total = args.periodEndSec - args.periodStartSec;
+  if (total <= 0) return 0;
+  const remaining = Math.min(Math.max(args.periodEndSec - args.nowSec, 0), total);
+  const fraction = remaining / total;
+  const newCoverage = Math.round(args.newAmountCents * fraction);
+  const unusedOld = Math.round(args.oldAmountCents * fraction);
+  return newCoverage - unusedOld;
+}
+
+/**
+ * Settle a tier switch's net amount RIGHT NOW (see tierSwitchNetCents):
+ * a positive net becomes a standalone invoice on the customer that is
+ * finalized and charged immediately — the switch's one and only extra
+ * invoice, never a proration parked onto the next renewal — and a
+ * negative net becomes a customer balance credit. If the immediate
+ * charge fails, the invoice is voided and the error propagates so the
+ * caller can revert the switch: no switch without settlement.
+ */
+export async function settleTierSwitchNet(
+  stripe: Stripe,
+  customerId: string,
+  netCents: number,
+  currency: string,
+  description: string,
+): Promise<"charged" | "credited" | "none"> {
+  if (netCents > 0) {
+    await stripe.invoiceItems.create({
+      customer: customerId,
+      amount: netCents,
+      currency,
+      description,
+    });
+    const invoice = await stripe.invoices.create({
+      customer: customerId,
+      auto_advance: false,
+      description,
+    });
+    try {
+      const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+      const paid = await stripe.invoices.pay(finalized.id);
+      if (paid.status !== "paid") {
+        throw new Error("The switch charge did not complete.");
+      }
+    } catch (err) {
+      await stripe.invoices.voidInvoice(invoice.id).catch(() => undefined);
+      throw err;
+    }
+    return "charged";
+  }
+  if (netCents < 0) {
+    await stripe.customers.createBalanceTransaction(customerId, {
+      amount: netCents,
+      currency,
+      description,
+    });
+    return "credited";
+  }
+  return "none";
+}
+
 /** Stripe client, or a user-facing error when billing is not configured. */
 export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;

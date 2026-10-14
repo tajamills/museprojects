@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import type Stripe from "stripe";
 import { z } from "zod";
 import type { AppCtx } from "./ctx.js";
 import type { Db } from "./db.js";
@@ -14,8 +15,10 @@ import {
   isXAddonConfigured,
   isXAddonSubscription,
   reconcileSubscriptionFromStripe,
+  settleTierSwitchNet,
   subscriptionDefaultPaymentMethod,
   syncBillingForCustomer,
+  tierSwitchNetCents,
   xAddonSubscriptionItem,
   xAddonTierForPriceId,
   xAddonTiers,
@@ -1512,15 +1515,26 @@ export const actions: Record<string, ActionDef> = {
    * the same operation). The tier lives on its OWN Stripe subscription
    * so it bills from day one even while the base plan is still
    * trialing: adding creates that subscription with no trial (the
-   * first invoice charges immediately); switching an ACTIVE add-on
-   * swaps its item price with prorations, while switching the
-   * checkout-prepaid subscription replaces it outright (same prepaid
-   * window end) so Stripe can't stack a proration charge for the
-   * prepaid month on top of the new tier's first period charge. A
-   * tier still riding on the base subscription (legacy representation)
-   * is moved over. The entitlement is re-synced from Stripe
-   * immediately; the webhook keeps it in sync afterwards. The tier
-   * price IDs come only from STRIPE_X_TIERS.
+   * first invoice charges immediately).
+   *
+   * Switching (the owner's rule): a switch bills IMMEDIATELY, net of
+   * the fee already used. The net — the new tier's price for the time
+   * left in the current window, minus the unused part of the old
+   * tier's price for that same time — is settled on the spot (a
+   * charge now, or a balance credit on a downgrade); it is NEVER left
+   * as a Stripe proration parked onto the next invoice, where it
+   * would stack on top of the renewal (the $185-estimate incident).
+   * An active add-on switches by swapping its item price with
+   * proration_behavior "none" (Stripe computes nothing) plus our own
+   * immediate net settlement. The checkout-prepaid subscription is
+   * replaced outright — same prepaid window end — for the same
+   * reason, with the net for the rest of the prepaid window settled
+   * in the same operation. If the settlement charge fails, the switch
+   * is reverted and the customer is told plainly. A tier still riding
+   * on the base subscription (legacy representation) is moved over.
+   * The entitlement is re-synced from Stripe immediately; the webhook
+   * keeps it in sync afterwards. The tier price IDs come only from
+   * STRIPE_X_TIERS.
    */
   setXAddonTier: {
     request: z.object({ sessionToken: z.string().min(1), priceId: z.string().min(1) }),
@@ -1551,54 +1565,132 @@ export const actions: Record<string, ActionDef> = {
       // still live, else the first live one; every other live add-on
       // subscription is canceled in this same operation, so two tiers
       // can never be live — or bill — at the same time.
-      const addon =
+      let addon =
         liveAddons.find((s) => s.id === user.stripeXAddonSubscriptionId) ?? liveAddons[0] ?? null;
       for (const extra of liveAddons) {
         if (addon && extra.id === addon.id) continue;
         await stripe.subscriptions.cancel(extra.id).catch(() => undefined);
       }
+      let createFresh = !addon;
       if (addon) {
         const item = xAddonSubscriptionItem(addon);
         if (item && item.price?.id !== tier.priceId) {
-          if (addon.status === "trialing" && addon.trial_end && addon.trial_end > Math.floor(Date.now() / 1000)) {
+          // A switch. The net is computed from the item's OWN current
+          // period — for the checkout-prepaid subscription that period
+          // IS the prepaid window — and settled immediately (see the
+          // doc comment above): the new tier covers the time left,
+          // minus the unused part of what the old tier already took
+          // for that same time.
+          const oldPrice = item.price;
+          const newPrice = await stripe.prices.retrieve(tier.priceId);
+          if (!oldPrice || oldPrice.unit_amount == null || newPrice.unit_amount == null) {
+            throw new Error("That X add-on tier is not available.");
+          }
+          const nowSec = Math.floor(Date.now() / 1000);
+          const periodStartSec = item.current_period_start ?? nowSec;
+          const periodEndSec = item.current_period_end ?? nowSec;
+          const netCents = tierSwitchNetCents({
+            oldAmountCents: oldPrice.unit_amount,
+            newAmountCents: newPrice.unit_amount,
+            periodStartSec,
+            periodEndSec,
+            nowSec,
+          });
+          const settleDescription = `X add-on tier switch to ${tier.name}`;
+          const switchFailed = new Error(
+            "Your card couldn't be charged for the tier switch. Update your payment method, then try again.",
+          );
+          if (addon.status === "trialing" && addon.trial_end && addon.trial_end > nowSec) {
             // The survivor is the checkout-prepaid subscription: its
             // "trial" is the tier's first month, already paid for on
-            // the Checkout page. Swapping its item in place would make
-            // Stripe prorate the swap across that prepaid window ON
-            // TOP of the first real period charge — a stacked double
-            // charge for the same month (the $185-estimate incident).
-            // Replace it instead: cancel it and create the new tier's
-            // subscription with the same prepaid window end. Still one
-            // subscription, still one tier, and the first invoice at
-            // the window's end is exactly the new tier's price.
+            // the Checkout page. Replace it outright — cancel it and
+            // create the new tier's subscription ending at the same
+            // prepaid window end — then settle the net for the rest of
+            // the window NOW. Still one subscription, still one tier,
+            // and the first invoice at the window's end is exactly
+            // the new tier's price, once. (Swapping in place and
+            // letting Stripe prorate is what stacked a second full
+            // month onto that invoice in the $185-estimate incident.)
             const prepaidEnd = addon.trial_end;
-            await stripe.subscriptions.cancel(addon.id);
             const paymentMethod = await subscriptionDefaultPaymentMethod(stripe, base);
-            await stripe.subscriptions.create({
-              customer: customerId,
-              items: [{ price: tier.priceId }],
-              trial_end: prepaidEnd,
-              ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
-              metadata: {
-                [X_ADDON_SUBSCRIPTION_METADATA]: "1",
-                userId: String(user.id),
-                tierPriceId: tier.priceId,
-              },
-            });
+            const addonMetadata = {
+              [X_ADDON_SUBSCRIPTION_METADATA]: "1",
+              userId: String(user.id),
+              tierPriceId: tier.priceId,
+            };
+            // Best-effort restore of the pre-switch state: the old
+            // tier's subscription, same prepaid window end.
+            const restoreOld = async () => {
+              await stripe.subscriptions
+                .create({
+                  customer: customerId,
+                  items: [{ price: oldPrice.id }],
+                  trial_end: prepaidEnd,
+                  ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
+                  metadata: { ...addonMetadata, tierPriceId: oldPrice.id },
+                })
+                .catch(() => undefined);
+            };
+            await stripe.subscriptions.cancel(addon.id);
+            let replacement: Stripe.Subscription;
+            try {
+              replacement = await stripe.subscriptions.create({
+                customer: customerId,
+                items: [{ price: tier.priceId }],
+                // A window that has effectively ended bills its first
+                // period immediately instead — that charge IS the
+                // next regular invoice arriving, and the net for the
+                // remaining sliver of the old window is ~zero anyway.
+                ...(prepaidEnd > nowSec + 300 ? { trial_end: prepaidEnd } : {}),
+                ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
+                metadata: addonMetadata,
+              });
+            } catch {
+              await restoreOld();
+              throw switchFailed;
+            }
+            if (replacement.status === "incomplete") {
+              await stripe.subscriptions.cancel(replacement.id).catch(() => undefined);
+              await restoreOld();
+              throw switchFailed;
+            }
+            try {
+              await settleTierSwitchNet(stripe, customerId, netCents, newPrice.currency, settleDescription);
+            } catch {
+              await stripe.subscriptions.cancel(replacement.id).catch(() => undefined);
+              await restoreOld();
+              throw switchFailed;
+            }
           } else {
+            // Active add-on: swap the price with Stripe prorations
+            // OFF (proration_behavior "none") and settle the same net
+            // ourselves, immediately — the next regular invoice is
+            // then exactly the new tier's price, with nothing parked
+            // on it.
             await stripe.subscriptionItems.update(item.id, {
               price: tier.priceId,
-              proration_behavior: "create_prorations",
+              proration_behavior: "none",
             });
+            try {
+              await settleTierSwitchNet(stripe, customerId, netCents, newPrice.currency, settleDescription);
+            } catch {
+              await stripe.subscriptionItems
+                .update(item.id, { price: oldPrice.id, proration_behavior: "none" })
+                .catch(() => undefined);
+              throw switchFailed;
+            }
           }
         } else if (!item) {
-          await stripe.subscriptionItems.create({
-            subscription: addon.id,
-            price: tier.priceId,
-            proration_behavior: "create_prorations",
-          });
+          // A live add-on subscription carrying no configured tier
+          // item (its price left STRIPE_X_TIERS): effectively a fresh
+          // activation, not a switch. Cancel it and fall through to
+          // the fresh-create path below, which charges the new tier's
+          // first month immediately — one subscription throughout.
+          await stripe.subscriptions.cancel(addon.id).catch(() => undefined);
+          createFresh = true;
         }
-      } else {
+      }
+      if (createFresh) {
         const paymentMethod = await subscriptionDefaultPaymentMethod(stripe, base);
         const created = await stripe.subscriptions.create({
           customer: customerId,
