@@ -429,7 +429,11 @@ input[type="password"]::placeholder {
    edge; the old flat block had no surface at all, so dark mode read as loose
    text on the page background. */
 .billing-block { display: grid; gap: 20px; align-content: start; }
-.billing-card, .x-addon-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 24px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px 28px; }
+.billing-card, .x-addon-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); padding: 24px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px 28px; }
+@media (prefers-color-scheme: dark) {
+  /* Full box edge must read unmistakably against the dark page background. */
+  .billing-card, .x-addon-card { border-color: var(--border-strong); }
+}
 .billing-card-icon { flex: 0 0 auto; width: 96px; height: 96px; border-radius: 24px; background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; }
 .billing-card-icon svg { width: 46px; height: 46px; display: block; }
 .billing-card-main { flex: 1 1 280px; min-width: 0; display: grid; gap: 8px; justify-items: start; align-content: start; }
