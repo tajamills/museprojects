@@ -524,6 +524,17 @@ input[type="password"]::placeholder {
      (overflow: hidden on .billing-card), behind the content (z-index). */
   .billing-splash { width: 118px; }
   .billing-history-card { padding: 18px; }
+  /* Billing History header stacks: icon + title on the first row (the
+     titles wrapper becomes display:contents so the description can take
+     its own full-width row), then "View all invoices" on its own
+     left-aligned row — nothing shares a row it can be squeezed by.
+     Scoped to the history card; Settings section heads are untouched. */
+  .billing-history-card .settings-section-head { display: grid; grid-template-columns: 44px minmax(0, 1fr); grid-template-areas: "icon title" "desc desc" "link link"; column-gap: 14px; row-gap: 6px; align-items: center; }
+  .billing-history-card .settings-section-icon { grid-area: icon; }
+  .billing-history-card .settings-section-titles { display: contents; }
+  .billing-history-card .settings-section-titles h3 { grid-area: title; white-space: nowrap; margin: 0; }
+  .billing-history-card .settings-section-titles p { grid-area: desc; }
+  .billing-history-card .billing-history-all { grid-area: link; margin-left: 0; justify-self: start; margin-top: 4px; }
   .x-addon-main { flex-basis: 100%; }
 }
 @media (max-width: 720px) and (prefers-color-scheme: dark) { .billing-splash { opacity: .25; } }
