@@ -11,7 +11,7 @@ type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder";
+    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder" | "flag";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
@@ -31,6 +31,7 @@ function Icon({ name }: {
         receipt: <><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21V3Z"/><path d="M9.5 8h5m-5 4h5"/></>,
         license: <><circle cx="12" cy="9.5" r="5.5"/><path d="m9.5 9.6 1.8 1.8 3.2-3.5M9.6 14.3 8.2 21l3.8-2.3L15.8 21l-1.4-6.7"/></>,
         folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>,
+        flag: <><path d="M6 21.5v-17"/><path d="M6 5h11.5l-2.8 3.7 2.8 3.8H6Z"/></>,
     };
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -70,10 +71,14 @@ function PrimaryButton({ children, busy }: {
     children: ReactNode;
     busy?: boolean;
 }) { return <button className="primary" type="submit" disabled={busy}>{busy ? "Saving…" : children}</button>; }
-function Auth({ onAuth }: {
+function Auth({ onAuth, defaultMode = "signin" }: {
     onAuth: (token: string, email: string) => void;
+    /** Public CTAs (the services page) link to /?signup=1 so prospects land
+     *  on the create-workspace side of the switch; a plain visit still
+     *  defaults to sign in. */
+    defaultMode?: "signin" | "signup";
 }) {
-    const [mode, setMode] = useState<"signin" | "signup">("signin");
+    const [mode, setMode] = useState<"signin" | "signup">(defaultMode);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -83,7 +88,13 @@ function Auth({ onAuth }: {
     <Field label="Password"><input type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={mode === "signup" ? 8 : 1} required/></Field>
     {mode === "signup" && <p className="field-note">Use at least 8 characters.</p>}{error && <p className="error-note" role="alert">{error}</p>}
     <PrimaryButton busy={mutation.isPending}>{mode === "signup" ? "Create workspace" : "Sign in"}</PrimaryButton>
-  </form></section></main>;
+  </form><p className="auth-services">New to kovala? <a href="/services">See what it includes<span className="entity-open-arrow" aria-hidden="true"/></a></p></section><PublicFooter/></main>;
+}
+/** The public footer shared by the sign-in surface and the services page:
+ *  brand, the public-page links, and the support contact. It is the only
+ *  footer the public site has, and the services page hangs off it. */
+function PublicFooter() {
+    return <footer className="public-footer"><p className="public-footer-brand"><BrandMark/><strong>kovala</strong></p><nav aria-label="Public pages"><a href="/services">Services</a><a href="/">Sign in</a><a href="/?signup=1">Create workspace</a></nav><p className="public-footer-note">Questions? Contact our <a href="mailto:support@kovala.io">support team</a>.</p></footer>;
 }
 function EntityForm({ token, onDone, entity, focusField }: {
     token: string;
@@ -341,7 +352,61 @@ function Billing({ token }: {
     {hasBillingAccount && <button className="billing-invoices" disabled={portal.isPending} onClick={() => portal.mutate()}><Icon name="documents"/>View invoices<span className="entity-open-arrow" aria-hidden="true"/></button>}
     </>}</section>}</div>;
 }
+/** The public services page (/services) — the "what exactly do I get"
+ *  explainer a logged-out visitor can read before creating a workspace.
+ *  Copy rule: only features that are live today, stated plainly — the
+ *  entity records, the deadline calendar, the needs-attention checks, the
+ *  document cabinet, minutes, and Stripe-managed billing, at the real
+ *  price ($199.88/year, no free trial). Composed to the Billing page's
+ *  standard: warm palette, 18px cards, drawn icons, serif headlines. */
+const SVC_FEATURES: {
+    icon: "entities" | "calendar" | "flag" | "folder" | "minutes" | "billing";
+    title: string;
+    body: string;
+}[] = [
+    { icon: "entities", title: "Every business, one record", body: "Add each LLC or corporation you run. Its formation date and state, registered agent, and EIN stay on its record — the EIN shown masked, never in the open." },
+    { icon: "calendar", title: "Deadlines, tracked for you", body: "State annual filings and registered-agent renewals sit on one calendar: Wyoming reports come due in the business's anniversary month, Georgia registrations renew January 1 to April 1, and agent renewals follow the date you set." },
+    { icon: "flag", title: "Needs attention, up front", body: "Kovala checks every business and flags what is missing — an EIN, a registered agent, a renewal date, formation documents, or the operating agreement — each with a one-tap way to add or upload it." },
+    { icon: "folder", title: "A filing cabinet for the paperwork", body: "Formation records, operating agreements, minutes, contracts, tax filings, and licenses, stored securely and organized by business and category — no digging through drives or email." },
+    { icon: "minutes", title: "Minutes that stay on record", body: "Record annual and special meetings with attendees, agenda, decisions, and action items. The record stays with the business, ready when a bank or partner asks." },
+    { icon: "billing", title: "One subscription, managed in Stripe", body: "A single annual plan covers your workspace. Checkout, receipts, and payment details are handled securely through Stripe, and you can cancel anytime." },
+];
+const SVC_STEPS: {
+    title: string;
+    body: string;
+}[] = [
+    { title: "Create your workspace", body: "Sign up with an email and password. Your records stay private to your workspace." },
+    { title: "Add your businesses", body: "Enter each company's formation details and registered agent, add its EIN, and upload its formation documents and operating agreement." },
+    { title: "Let kovala keep watch", body: "Your overview leads with what needs attention and what is coming up, so filings and renewals stay on your radar all year." },
+];
+const SVC_FAQ: {
+    q: string;
+    a: string;
+}[] = [
+    { q: "Is there a free trial?", a: "No. Kovala is $199.88 per year, charged when you subscribe — one plan with every feature, no tiers to sort through." },
+    { q: "Can I track more than one business?", a: "Yes — add every LLC or corporation you run. Each keeps its own record, deadlines, documents, and minutes, and the overview rolls up what needs attention across all of them." },
+    { q: "Does kovala file my annual reports for me?", a: "No. Kovala tracks the dates, keeps the records together, and flags what is missing — you, your registered agent, or your accountant still makes the filing itself." },
+    { q: "How are my renewal dates worked out?", a: "From each business's formation date and state: Wyoming annual reports come due on the first of the anniversary month, and Georgia registrations renew in the January 1 – April 1 window. Registered-agent renewals use the date you set on the business's record." },
+    { q: "How do I change my card or cancel?", a: "From the Billing tab in your workspace. Payment details are managed securely through Stripe — kovala does not store your card number — and you can cancel anytime." },
+];
+function ServicesPage() {
+    return <div className="svc-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="svc-topbar"><a className="auth-brand svc-brand" href="/" aria-label="kovala — back to sign in"><BrandMark/><strong>kovala</strong></a><nav className="svc-topnav" aria-label="Account"><a className="svc-signin" href="/">Sign in</a><a className="primary compact svc-topcta" href="/?signup=1">Create workspace</a></nav></header>
+    <section className="svc-hero"><p className="eyebrow">Services</p><h1>every business you run, in one place.</h1><p className="svc-lede">Kovala is the back-office record keeper for owners running one or more LLCs: formation records, deadlines, documents, and meeting minutes for each business — with a standing list of anything that is missing or due.</p></section>
+    <section className="svc-section" aria-label="What kovala includes"><div className="svc-grid">{SVC_FEATURES.map((f) => <article className="panel-card svc-card" key={f.title}><div className="svc-card-head"><span className="svc-icon-bubble"><Icon name={f.icon}/></span><h3>{f.title}</h3></div><p>{f.body}</p></article>)}</div></section>
+    <section className="svc-section" aria-label="How it works"><h2 className="svc-h2">how it works</h2><div className="svc-steps">{SVC_STEPS.map((s, i) => <article className="panel-card svc-step" key={s.title}><span className="svc-step-num" aria-hidden="true">{i + 1}</span><h3>{s.title}</h3><p>{s.body}</p></article>)}</div></section>
+    <section className="svc-section" aria-label="Price"><h2 className="svc-h2">one plan, one price</h2><section className="panel-card billing-card billing-offer svc-price"><span className="billing-hero-bubble"><Icon name="billing"/></span><div className="billing-offer-main"><h3 className="billing-offer-title">kovala plan</h3><p className="quiet billing-offer-status">$199.88/year · No free trial</p><a className="billing-subscribe svc-cta-anchor" href="/?signup=1">Create your workspace</a><p className="field-note billing-note">Checkout is secured by Stripe. Your card is charged $199.88 when you subscribe, then once a year.</p></div><ul className="billing-perks"><li><span className="perk-badge"><Icon name="check"/></span>Access to all features</li><li><span className="perk-badge"><Icon name="check"/></span>Priority support</li><li><span className="perk-badge"><Icon name="check"/></span>Cancel anytime</li></ul></section><p className="billing-support"><Icon name="info"/><span>Questions about billing? Contact our <a href="mailto:support@kovala.io">support team</a>.</span></p></section>
+    <section className="svc-section" aria-label="Questions"><h2 className="svc-h2">questions</h2><div className="svc-faq">{SVC_FAQ.map((item) => <div className="svc-faq-item" key={item.q}><h3>{item.q}</h3><p>{item.a}</p></div>)}</div></section>
+    <section className="panel-card svc-cta-card"><h2>ready when you are.</h2><p>Create a workspace and add your first business — the record keeping starts the same day.</p><div className="svc-cta-row"><a className="primary svc-cta-anchor" href="/?signup=1">Create your workspace</a><span className="svc-cta-signin">Already have a workspace? <a href="/">Sign in</a></span></div></section>
+    <PublicFooter/></div>;
+}
 export function App() {
+    // Public route: /services is readable logged out (the server's catch-all
+    // serves this SPA for every path). It renders before any hook runs, and
+    // the path cannot change without a full page load, so the early return
+    // is stable across renders. Every other path keeps the existing
+    // state-based tab routing.
+    if (typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/services")
+        return <ServicesPage/>;
     const [token, setToken] = useState(() => localStorage.getItem("bizkeep_token") ?? "");
     const [email, setEmail] = useState(() => localStorage.getItem("bizkeep_email") ?? "");
     const [tab, setTab] = useState<Tab>("overview");
@@ -373,7 +438,7 @@ export function App() {
         return <ReminderForm token={token} entities={data.entities} onDone={done}/>; if (modal === "document")
         return <DocumentForm token={token} entities={data.entities} onDone={done} presetEntityId={docPreset?.entityId} presetCategory={docPreset?.category}/>; return <MeetingForm token={token} entities={data.entities} onDone={done}/>; }, [modal, data, token, docPreset]);
     if (!token)
-        return <Auth onAuth={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); setToken(next); setEmail(nextEmail); }}/>;
+        return <Auth defaultMode={typeof window !== "undefined" && new URLSearchParams(window.location.search).has("signup") ? "signup" : "signin"} onAuth={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); setToken(next); setEmail(nextEmail); }}/>;
     if (workspace.isPending)
         return <div className="loading"><span></span><p>Opening your records…</p></div>;
     if (workspace.isError || !data)
