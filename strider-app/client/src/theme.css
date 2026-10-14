@@ -771,14 +771,14 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .help-pill-icon { display: grid; place-items: center; color: var(--dim); }
 .help-pill-icon svg { width: 16px; height: 16px; display: block; }
 .platform-badge.is-large { width: 52px; height: 52px; border-radius: 12px; }
-.connect-row { display: block; padding: 22px; }
+.connect-row { display: block; padding: 22px; position: relative; }
 .connect-card-top { display: flex; gap: 16px; align-items: flex-start; }
 .connect-card-main { flex: 1 1 auto; min-width: 0; }
 .connect-card-main h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
 .connect-card-main p { color: var(--dim); line-height: 1.5; margin: 0; font-size: 13px; }
 .connect-handle { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; color: var(--text) !important; }
 .connect-status-col { display: grid; gap: 5px; justify-items: start; }
-.kebab-wrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.kebab-wrap { position: relative; flex: 0 0 auto; display: inline-flex; align-self: center; }
 .kebab-btn { width: 34px; height: 40px; display: grid; place-items: center; border: none; background: transparent; color: var(--dim); border-radius: 8px; cursor: pointer; padding: 0; }
 .kebab-btn:hover { background: rgba(127, 127, 127, .14); color: var(--text); }
 .kebab-btn svg { width: 18px; height: 18px; display: block; }
@@ -798,9 +798,25 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .connect-manage { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
 .connect-manage .page-picker { margin-top: 0; }
 .connect-row details { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 16px; }
-@media (max-width: 700px) {
+@media (max-width: 720px) {
+  /* Accounts cards stack on phones: header row (tile · name/blurb · kebab
+     pinned to the card's top-right corner), then the status column on its
+     own full-width row, then the action button full-width beneath it — no
+     button ever shares a row it can be squeezed by. */
   .connect-card-top { flex-wrap: wrap; }
-  .connect-card-side { margin-left: 0; width: 100%; justify-content: space-between; }
+  .connect-card-main { padding-right: 42px; }
+  .kebab-wrap { position: absolute; top: 14px; right: 14px; align-self: auto; }
+  .connect-card-side { margin-left: 0; width: 100%; flex-direction: column; align-items: stretch; gap: 12px; }
+  .connect-card-side > .primary-button,
+  .connect-card-side > .secondary-button,
+  .connect-card-side > .warning-button { width: 100%; min-height: 44px; justify-content: center; white-space: nowrap; }
+  /* Help banner: icon + heading share the first row (heading takes the
+     full remaining width); the link drops to its own left-aligned row
+     beneath instead of squeezing the heading into a narrow column. */
+  .accounts-help-banner { display: grid; grid-template-columns: 46px minmax(0, 1fr); grid-template-areas: "book text" ". link"; column-gap: 16px; row-gap: 8px; align-items: center; padding: 18px 20px; }
+  .banner-book { grid-area: book; }
+  .banner-text { grid-area: text; }
+  .banner-link { grid-area: link; justify-self: start; }
 }
 .accounts-help-banner { width: 100%; display: flex; align-items: center; gap: 16px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 20px 22px; cursor: pointer; color: var(--text); }
 .accounts-help-banner:hover { border-color: var(--border-strong); }

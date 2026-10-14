@@ -793,18 +793,18 @@ function Accounts({ accounts, token, onMessage, xVisible, xNeedsTier, goBilling,
               : isX && xNeedsTier
                 ? <button className="secondary-button" onClick={goBilling}>Get the X add-on</button>
                 : <button className="primary-button connect-btn" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}><span className="btn-link-icon"><IconLink /></span>{connectLabel}</button>}
-            <span className="kebab-wrap">
-              <button className="kebab-btn" aria-label={`${meta.label} options`} aria-expanded={menuing} onClick={() => setMenuOpen(menuing ? null : platform)}><IconKebab /></button>
-              {menuing && <>
-                <button className="kebab-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(null)} />
-                <span className="kebab-menu" role="menu">
-                  {account && needsReconnect && <button role="menuitem" onClick={() => { setMenuOpen(null); startConnect(); }}>Reconnect</button>}
-                  {!account && <button role="menuitem" onClick={() => { setMenuOpen(null); goHelp(); }}>Connection help</button>}
-                  {account && <button role="menuitem" className="danger-text" disabled={disconnect.isPending} onClick={() => { setMenuOpen(null); disconnect.mutate(account.id); }}>Disconnect</button>}
-                </span>
-              </>}
-            </span>
           </div>
+          <span className="kebab-wrap">
+            <button className="kebab-btn" aria-label={`${meta.label} options`} aria-expanded={menuing} onClick={() => setMenuOpen(menuing ? null : platform)}><IconKebab /></button>
+            {menuing && <>
+              <button className="kebab-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(null)} />
+              <span className="kebab-menu" role="menu">
+                {account && needsReconnect && <button role="menuitem" onClick={() => { setMenuOpen(null); startConnect(); }}>Reconnect</button>}
+                {!account && <button role="menuitem" onClick={() => { setMenuOpen(null); goHelp(); }}>Connection help</button>}
+                {account && <button role="menuitem" className="danger-text" disabled={disconnect.isPending} onClick={() => { setMenuOpen(null); disconnect.mutate(account.id); }}>Disconnect</button>}
+              </span>
+            </>}
+          </span>
         </div>
         {account && managing && !needsReconnect && <div className="connect-manage">
           {isFacebook && account.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
