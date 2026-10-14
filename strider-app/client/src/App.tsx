@@ -586,8 +586,8 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
           <div className={`platform-preview preview-${preview}`}>
             <div className="preview-account"><PlatformBadge platform={preview} /><div><strong>{connected.find((account) => account.platform === preview)?.handle ?? PLATFORM_META[preview].label}</strong><small>Sponsored nowhere · {demoMode ? "demo preview" : "preview"}</small></div></div>
             {preview === "youtube" && <h3>{title || "Your video title"}</h3>}
-            {file && objectUrl ? file.type.startsWith("video/") ? <video src={objectUrl} controls preload="metadata" /> : <img src={objectUrl} alt="Selected upload preview" /> : <div className="preview-media-empty"><span className="preview-media-icon"><IconImage /></span>{preview === "instagram" || preview === "tiktok" || preview === "youtube" ? "Media required" : "Media preview"}</div>}
-            <p>{preview === "x" ? body.slice(0, 280) : body || "Your post will appear here."}</p>
+            {file && objectUrl ? file.type.startsWith("video/") ? <video src={objectUrl} controls preload="metadata" /> : <img src={objectUrl} alt="Selected upload preview" /> : <div className="preview-media-empty"><span className="preview-media-icon"><IconImage /></span>Your post will appear here.</div>}
+            {body && <p>{preview === "x" ? body.slice(0, 280) : body}</p>}
             <div className="preview-chrome"><span><IconHeart /></span><span><IconComment /></span><span><IconShare /></span></div>
           </div>
         </aside>
@@ -984,7 +984,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
       <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
       <div className="billing-card-main">
         <p className="billing-eyebrow">Current plan</p>
-        <p className="billing-price">$19.88 / month <span className="billed-pill">Billed monthly</span> <small><a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></small></p>
+        <p className="billing-price">$19.88 / month <span className="billed-pill">Billed monthly</span></p>
         {statusQuery.isPending ? <p className="billing-status">Loading…</p> : statusQuery.isError ? <p className="billing-status">Could not load billing status.</p> : <>
           <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · First charge ${trialEnd}` : null}{renews ? ` · Renews ${renews}` : null}</p>
           {!subscribed && xAddon?.configured && xAddon.tiers.length > 0 && <div className="x-checkout-picker">
@@ -1045,7 +1045,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
       </div>
     </div>}
     <BillingHistoryCard token={token} subscribed={subscribed} onViewAll={() => portal.mutate()} viewAllPending={portal.isPending} />
-    <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
+    <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>. · <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></p>
   </section>;
 }
 
