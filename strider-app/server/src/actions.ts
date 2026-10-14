@@ -1348,7 +1348,14 @@ export const actions: Record<string, ActionDef> = {
   listBillingInvoices: {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args) {
-      const user = await billingUser(ctx, args.sessionToken);
+      // Synced like every other billing read: the raw row's Stripe
+      // customer ID can lag the reconciled one, and invoices listed
+      // against a stale customer silently miss real charges (a paid
+      // checkout invoice once vanished from this list that way). The
+      // list itself is customer-wide — every invoice the customer has,
+      // whichever subscription or checkout produced it, newest first,
+      // drafts skipped.
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) return { ok: false, message: "Your session expired. Sign in again.", invoices: [] as Array<{ id: string; date: string; description: string; amountCents: number; currency: string; status: string; hostedInvoiceUrl: string | null }> };
       if (!user.stripeCustomerId || !process.env.STRIPE_SECRET_KEY) {
         return { ok: true, message: "No invoices yet.", invoices: [] as Array<{ id: string; date: string; description: string; amountCents: number; currency: string; status: string; hostedInvoiceUrl: string | null }> };
@@ -1499,11 +1506,17 @@ export const actions: Record<string, ActionDef> = {
   },
 
   /**
-   * Add an X (Twitter) posting add-on tier — or switch tiers. The tier
-   * lives on its OWN Stripe subscription so it bills from day one even
-   * while the base plan is still trialing: adding creates that
-   * subscription with no trial (the first invoice charges
-   * immediately), switching swaps its item price with prorations. A
+   * Add an X (Twitter) posting add-on tier — or switch tiers. One
+   * customer, one tier: activating a tier REPLACES whatever tier was
+   * there before (any other live add-on subscription is canceled in
+   * the same operation). The tier lives on its OWN Stripe subscription
+   * so it bills from day one even while the base plan is still
+   * trialing: adding creates that subscription with no trial (the
+   * first invoice charges immediately); switching an ACTIVE add-on
+   * swaps its item price with prorations, while switching the
+   * checkout-prepaid subscription replaces it outright (same prepaid
+   * window end) so Stripe can't stack a proration charge for the
+   * prepaid month on top of the new tier's first period charge. A
    * tier still riding on the base subscription (legacy representation)
    * is moved over. The entitlement is re-synced from Stripe
    * immediately; the webhook keeps it in sync afterwards. The tier
@@ -1530,16 +1543,54 @@ export const actions: Record<string, ActionDef> = {
         await stripe.subscriptionItems.del(legacyItem.id, { proration_behavior: "create_prorations" });
       }
       const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
-      const addon = subs.find(
+      const liveAddons = subs.filter(
         (s) => isXAddonSubscription(s) && ["trialing", "active", "past_due"].includes(s.status),
       );
+      // Strict replace: at most ONE live add-on subscription per
+      // customer, ever. The survivor is the recorded add-on when it's
+      // still live, else the first live one; every other live add-on
+      // subscription is canceled in this same operation, so two tiers
+      // can never be live — or bill — at the same time.
+      const addon =
+        liveAddons.find((s) => s.id === user.stripeXAddonSubscriptionId) ?? liveAddons[0] ?? null;
+      for (const extra of liveAddons) {
+        if (addon && extra.id === addon.id) continue;
+        await stripe.subscriptions.cancel(extra.id).catch(() => undefined);
+      }
       if (addon) {
         const item = xAddonSubscriptionItem(addon);
         if (item && item.price?.id !== tier.priceId) {
-          await stripe.subscriptionItems.update(item.id, {
-            price: tier.priceId,
-            proration_behavior: "create_prorations",
-          });
+          if (addon.status === "trialing" && addon.trial_end && addon.trial_end > Math.floor(Date.now() / 1000)) {
+            // The survivor is the checkout-prepaid subscription: its
+            // "trial" is the tier's first month, already paid for on
+            // the Checkout page. Swapping its item in place would make
+            // Stripe prorate the swap across that prepaid window ON
+            // TOP of the first real period charge — a stacked double
+            // charge for the same month (the $185-estimate incident).
+            // Replace it instead: cancel it and create the new tier's
+            // subscription with the same prepaid window end. Still one
+            // subscription, still one tier, and the first invoice at
+            // the window's end is exactly the new tier's price.
+            const prepaidEnd = addon.trial_end;
+            await stripe.subscriptions.cancel(addon.id);
+            const paymentMethod = await subscriptionDefaultPaymentMethod(stripe, base);
+            await stripe.subscriptions.create({
+              customer: customerId,
+              items: [{ price: tier.priceId }],
+              trial_end: prepaidEnd,
+              ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
+              metadata: {
+                [X_ADDON_SUBSCRIPTION_METADATA]: "1",
+                userId: String(user.id),
+                tierPriceId: tier.priceId,
+              },
+            });
+          } else {
+            await stripe.subscriptionItems.update(item.id, {
+              price: tier.priceId,
+              proration_behavior: "create_prorations",
+            });
+          }
         } else if (!item) {
           await stripe.subscriptionItems.create({
             subscription: addon.id,
@@ -1586,10 +1637,13 @@ export const actions: Record<string, ActionDef> = {
       const stripe = getStripe();
       const customerId = user.stripeCustomerId;
       const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
-      const addon = subs.find(
+      // Cancel EVERY live add-on subscription, not just the first one
+      // found — a removal must never strand an earlier tier
+      // subscription still billing in the background.
+      const addons = subs.filter(
         (s) => isXAddonSubscription(s) && ["trialing", "active", "past_due"].includes(s.status),
       );
-      if (addon) {
+      for (const addon of addons) {
         await stripe.subscriptions.cancel(addon.id);
       }
       if (user.stripeSubscriptionId) {
