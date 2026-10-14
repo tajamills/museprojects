@@ -41,6 +41,14 @@ const IconHistory = () => <StrokeIcon><path d="M3 3v6h6" /><path d="M3.51 9a9 9 
 const IconPlay = () => <StrokeIcon><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16" /></StrokeIcon>;
 const IconShield = () => <StrokeIcon><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 11.5 11 13.5 15 9.5" /></StrokeIcon>;
 const IconChevron = () => <StrokeIcon><polyline points="6 9 12 15 18 9" /></StrokeIcon>;
+const IconLink = () => <StrokeIcon><path d="M10 14a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 5.43" /><path d="M14 10a5 5 0 0 0-7.07 0L4.1 12.83a5 5 0 0 0 7.07 7.07l1.33-1.33" /></StrokeIcon>;
+const IconSend = () => <StrokeIcon><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></StrokeIcon>;
+const IconSearch = () => <StrokeIcon><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></StrokeIcon>;
+const IconArrowRight = () => <StrokeIcon><line x1="4" y1="12" x2="20" y2="12" /><polyline points="13 5 20 12 13 19" /></StrokeIcon>;
+const IconBook = () => <StrokeIcon><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z" /><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z" /></StrokeIcon>;
+const IconMail = () => <StrokeIcon><rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,6 12,13 2,6" /></StrokeIcon>;
+const IconExternal = () => <StrokeIcon><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></StrokeIcon>;
+const IconPlaySolid = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><polygon points="7 4 20 12 7 20" /></svg>;
 /* Empty-state illustrations — same stroke family, drawn larger and lighter. */
 const IconEmptyPosts = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 9h8" /><path d="M8 13h5" /><path d="M16.8 15.2 13 19h5v-5l-1.2 1.2z" /></StrokeIcon>;
 const IconEmptyChannels = () => <StrokeIcon><path d="M10 14a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 5.43" /><path d="M14 10a5 5 0 0 0-7.07 0L4.1 12.83a5 5 0 0 0 7.07 7.07l1.33-1.33" /></StrokeIcon>;
@@ -60,6 +68,15 @@ const PLATFORM_META: Record<Platform, { label: string; Icon: ComponentType; clas
   tiktok: { label: "TikTok", Icon: IconTikTok, className: "platform-tiktok" },
   youtube: { label: "YouTube", Icon: IconYoutube, className: "platform-youtube" },
   x: { label: "X", Icon: IconX, className: "platform-x" },
+};
+
+/** One-line product description per platform, shown on the Accounts cards. */
+const PLATFORM_BLURB: Record<Platform, string> = {
+  facebook: "Share posts, images and videos to your Facebook Page.",
+  instagram: "Publish photos, videos and Reels to your professional account.",
+  tiktok: "Share videos to your TikTok account.",
+  youtube: "Share videos to your YouTube channel.",
+  x: "Share posts to your X account.",
 };
 
 const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
@@ -120,10 +137,10 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
-function PlatformBadge({ platform, small = false }: { platform: Platform; small?: boolean }) {
+function PlatformBadge({ platform, small = false, large = false }: { platform: Platform; small?: boolean; large?: boolean }) {
   const meta = PLATFORM_META[platform];
   const Icon = meta.Icon;
-  return <span className={`platform-badge ${meta.className} ${small ? "is-small" : ""}`} role="img" aria-label={meta.label}><Icon /></span>;
+  return <span className={`platform-badge ${meta.className} ${small ? "is-small" : ""} ${large ? "is-large" : ""}`} role="img" aria-label={meta.label}><Icon /></span>;
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -375,24 +392,34 @@ function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; pos
   const channels = channelAccounts(accounts, demoMode).filter((account) => account.platform !== "x" || xVisible);
   const connected = channels.filter((account) => account.status === "connected").length;
   const pending = posts.filter((post) => post.status === "pending").length;
+  const published = posts.filter((post) => post.status === "published").length;
   const needsAttention = channels.filter((account) => account.status !== "connected");
   return <div className="page-stack">
-    <section className="dash-hero">
-      <div><h1>{connected === 0 ? "Connect your first channel" : connected === 1 ? "1 channel connected" : `${connected} channels connected`}</h1><p>{connected === 0 ? "Connect your social accounts to start publishing." : "Write once, publish everywhere."}</p></div>
-      <button className="primary-button" onClick={() => go(connected === 0 ? "accounts" : "post")}>{connected === 0 ? "Connect channels" : "Create post"}</button>
-    </section>
+    <div className="page-heading-row">
+      <div className="page-heading"><h1>Overview</h1><p>Manage your posts and track your content performance.</p></div>
+      <button className="primary-button" onClick={() => go("post")}><span className="btn-plus" aria-hidden="true">+</span>Create post</button>
+    </div>
+
+    {connected > 0 ? <section className="connected-band">
+      <span className="band-bolt"><IconBolt /></span>
+      <div className="band-text"><strong>{connected === 1 ? "1 channel connected" : `${connected} channels connected`}</strong><span>Write once, publish everywhere.</span></div>
+      <button className="secondary-button band-action" onClick={() => go("accounts")}>Manage accounts<span className="btn-arrow"><IconArrowRight /></span></button>
+    </section> : <section className="dash-hero">
+      <div><h1>Connect your first channel</h1><p>Connect your social accounts to start publishing.</p></div>
+      <button className="primary-button" onClick={() => go("accounts")}>Connect channels</button>
+    </section>}
 
     {needsAttention.length > 0 && <section className="attention-band"><strong>{needsAttention.length} account{needsAttention.length === 1 ? "" : "s"} need attention</strong><span>Reconnect before publishing. The app will not fail silently.</span><button onClick={() => go("accounts")}>Review</button></section>}
 
-    <section className="metric-strip" aria-label="Workspace summary">
-      <div><strong>{connected}<small>/ 5</small></strong><span>connected</span></div>
-      <div><strong>{pending}</strong><span>queued</span></div>
-      <div><strong>{posts.filter((post) => post.status === "published").length}</strong><span>published</span></div>
+    <section className="stat-tiles" aria-label="Workspace summary">
+      <div className="stat-tile"><span className="stat-bubble tint-green"><IconLink /></span><div><strong>{connected}<small>/5</small></strong><span>connected</span></div></div>
+      <div className="stat-tile"><span className="stat-bubble tint-slate"><IconClock /></span><div><strong>{pending}</strong><span>queued</span></div></div>
+      <div className="stat-tile"><span className="stat-bubble tint-accent"><IconSend /></span><div><strong>{published}</strong><span>published</span></div></div>
     </section>
 
     <section className="content-section">
-      <div className="section-heading"><div><h2>Recent posts</h2></div><button className="text-button" onClick={() => go("post")}>Open posts</button></div>
-      {posts.length === 0 ? <EmptyState Icon={IconEmptyPosts} title="No posts yet" body={demoMode ? "Your first demo publish or scheduled post will appear here." : "Your first publish or scheduled post will appear here."} action={<button className="secondary-button" onClick={() => go("post")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
+      <div className="section-heading"><div><h2>Recent posts</h2></div><button className="text-button arrow-link" onClick={() => go("post")}>Open posts<span className="btn-arrow"><IconArrowRight /></span></button></div>
+      {posts.length === 0 ? <EmptyState Icon={IconEmptyPosts} title="No posts yet" body="Your first publish or scheduled post will appear here." action={<button className="secondary-button" onClick={() => go("post")}>Open composer</button>} /> : <PostList posts={posts.slice(0, 5)} />}
     </section>
   </div>;
 }
@@ -400,11 +427,14 @@ function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; pos
 function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: { posts: Post[]; onCancel?: (id: number) => void; onCancelBump?: (id: number) => void; onAdvanceBump?: (id: number) => void; cancelling?: boolean }) {
   const demoMode = useServerDemoMode();
   return <div className="post-list">{posts.map((post) => <article className="post-row" key={post.id}>
+    <div className="post-main">
     <div className="post-topline"><StatusPill status={post.status} /><time>{post.publishMode === "scheduled" ? formatDate(post.scheduledAt) : formatDate(post.createdAt)}</time></div>
     {post.youtubeTitle && <h3>{post.youtubeTitle}</h3>}
     <p>{post.body || <span className="dim-text">Media-only post</span>}</p>
     {post.mediaName && <div className="media-chip"><IconImage />{post.mediaName}</div>}
     <div className="target-row">{post.targets.map((target, index) => <span key={`${post.id}-${target.platform}-${index}`} title={`${PLATFORM_META[target.platform].label}: ${target.status}`}><PlatformBadge platform={target.platform} small /><i className={`target-dot target-${target.status}`} /></span>)}</div>
+    </div>
+    {post.mediaUrl && <div className="post-thumb" aria-hidden="true">{post.mediaType?.startsWith("video") ? <video src={post.mediaUrl} preload="metadata" muted playsInline /> : <img src={post.mediaUrl} alt="" loading="lazy" />}</div>}
     {post.bumpComments.length > 0 && <details className="bump-plan">
       <summary><span><i className={post.bumpEnabled ? "pulse-dot" : ""} />24-hour bump plan</span><strong>{post.bumpComments.filter((comment) => comment.status === "published").length}/{post.bumpComments.length} sent</strong><span className="summary-chev"><IconChevron /></span></summary>
       <ol>{post.bumpComments.map((comment) => <li key={comment.id} className={`bump-${comment.status}`}><span>{comment.status === "published" ? "Sent" : comment.status === "cancelled" ? "Stopped" : formatDate(comment.scheduledAt)}</span><p>{comment.body}</p></li>)}</ol>
@@ -429,8 +459,6 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
   const [scheduledAt, setScheduledAt] = useState("");
   const [preview, setPreview] = useState<Platform>(connected[0]?.platform ?? "facebook");
   const [message, setMessage] = useState("");
-  const [bumpEnabled, setBumpEnabled] = useState(false);
-  const [bumpComments, setBumpComments] = useState(["", "", "", ""]);
   const objectUrl = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
   useEffect(() => () => { if (objectUrl) URL.revokeObjectURL(objectUrl); }, [objectUrl]);
 
@@ -441,7 +469,6 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
     (selectedPlatforms.includes("instagram") || selectedPlatforms.includes("tiktok")) && !file ? "Instagram and TikTok require media." : null,
     selectedPlatforms.includes("youtube") && (!file?.type.startsWith("video/") || !title.trim()) ? "YouTube requires a video and title." : null,
     mode === "scheduled" && !scheduledAt ? "Choose a date and time." : null,
-    bumpEnabled && bumpComments.some((comment) => !comment.trim()) ? "Write all four follow-up comments, or turn off the 24-hour bump plan." : null,
   ].filter(Boolean) as string[];
 
   const publish = useMutation({
@@ -454,14 +481,13 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
         accountIds: selected,
         publishMode: mode,
         scheduledAt: mode === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
-        bumpComments: bumpEnabled ? bumpComments.map((comment) => comment.trim()) : undefined,
         media: encoded && file ? { name: file.name, mimeType: encoded.mimeType, dataBase64: encoded.dataBase64 } : undefined,
       });
     },
     onSuccess: async (result) => {
       setMessage(result.message);
       if (result.ok) {
-        setBody(""); setTitle(""); setSelected([]); setFile(null); setScheduledAt(""); setMode("now"); setBumpEnabled(false); setBumpComments(["", "", "", ""]);
+        setBody(""); setTitle(""); setSelected([]); setFile(null); setScheduledAt(""); setMode("now");
         await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
         onDone(result.message);
       }
@@ -479,38 +505,37 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
             <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} placeholder="What do you want to publish?" />
           </label>
           {selectedPlatforms.includes("youtube") && <label className="field-label">YouTube title <span>{title.length}/100</span><input value={title} maxLength={100} onChange={(event) => setTitle(event.target.value)} placeholder="Required for YouTube" /></label>}
-          <label className="upload-zone">Media
+          <label className="upload-zone">
             <input aria-label="Upload image or video" type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            <span className="upload-icon"><IconImage /></span>
+            <strong>Media</strong>
             <span>{file ? file.name : "Choose image or video · max 12 MB"}</span>
           </label>
           <fieldset className="target-fieldset"><legend>Publish to</legend><div className="target-options">{connected.map((account) => <label key={account.id} className={selected.includes(account.id) ? "target-option active" : "target-option"}>
             <input type="checkbox" checked={selected.includes(account.id)} onChange={() => toggle(account.id)} />
             <PlatformBadge platform={account.platform} /><span><strong>{PLATFORM_META[account.platform].label}</strong><small>{account.handle}</small></span>
           </label>)}</div></fieldset>
-          <div className="timing-switch" role="group" aria-label="Publishing time"><button className={mode === "now" ? "active" : ""} onClick={() => setMode("now")}>Post now</button><button className={mode === "scheduled" ? "active" : ""} onClick={() => setMode("scheduled")}>Schedule</button></div>
           {mode === "scheduled" && <label className="field-label">Publish date and time<input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></label>}
-          <section className={bumpEnabled ? "bump-builder is-active" : "bump-builder"}>
-            <label className="bump-toggle">
-              <span><strong>Keep this post moving for 24 hours</strong><small>Stagger four comments at +1h, +6h, +12h, and +23h.</small></span>
-              <input type="checkbox" checked={bumpEnabled} onChange={(event) => setBumpEnabled(event.target.checked)} aria-label="Enable 24-hour comment bump plan" />
-            </label>
-            {bumpEnabled && <div className="bump-fields">
-              {bumpComments.map((comment, index) => {
-                const hour = [1, 6, 12, 23][index] ?? 23;
-                return <label key={hour}>Comment {index + 1} <span>+{hour}h</span><textarea rows={2} maxLength={500} value={comment} onChange={(event) => setBumpComments((current) => current.map((value, commentIndex) => commentIndex === index ? event.target.value : value))} placeholder={index === 0 ? "Start the conversation…" : "Add a fresh angle…"} /></label>;
-              })}
-              <p>Times run from the original publish time. Each comment is saved separately so the remaining sequence can be stopped without removing the post.</p>
-            </div>}
-          </section>
           {requirements.length > 0 && <div className="requirements" role="status">{requirements.map((item) => <p key={item}>{item}</p>)}</div>}
           {message && <p className="form-message" role="status">{message}</p>}
-          <button className="primary-button wide" disabled={publish.isPending || selected.length === 0 || requirements.length > 0} onClick={() => publish.mutate()}>{publish.isPending ? "Preparing…" : mode === "now" ? `Publish to ${selected.length || 0}` : `Add ${selected.length || 0} to queue`}</button>
-          {demoMode ? <p className="demo-action-note">Demo mode simulates the final official API response and never contacts an external account.</p> : <p className="demo-action-note">Publishing activates once your platform credentials are connected in Settings.</p>}
+          <div className="compose-actions">
+            {mode === "now" ? <>
+              <button className="primary-button" disabled={publish.isPending || selected.length === 0 || requirements.length > 0} onClick={() => publish.mutate()}>{publish.isPending ? "Preparing…" : "Post now"}</button>
+              <button className="secondary-button" disabled={publish.isPending} onClick={() => setMode("scheduled")}>Schedule</button>
+            </> : <>
+              <button className="primary-button" disabled={publish.isPending || selected.length === 0 || requirements.length > 0} onClick={() => publish.mutate()}>{publish.isPending ? "Preparing…" : "Add to queue"}</button>
+              <button className="secondary-button" disabled={publish.isPending} onClick={() => setMode("now")}>Post now instead</button>
+            </>}
+          </div>
+          {demoMode ? <p className="demo-action-note">Demo mode simulates the final official API response and never contacts an external account.</p> : <p className="demo-action-note">Posts go out through the accounts connected on the Accounts page.</p>}
         </div>
         </div>
 
         <aside className="preview-panel">
-          <div className="preview-tabs" role="tablist" aria-label="Platform preview">{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <button key={platform} className={preview === platform ? "active" : ""} onClick={() => setPreview(platform)} role="tab" aria-selected={preview === platform}><PlatformBadge platform={platform} small /></button>)}</div>
+          <div className="preview-topbar">
+            <div className="preview-tabs" role="tablist" aria-label="Platform preview">{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <button key={platform} className={preview === platform ? "active" : ""} onClick={() => setPreview(platform)} role="tab" aria-selected={preview === platform}><PlatformBadge platform={platform} small /></button>)}</div>
+            <label className="preview-switcher"><span className="sr-only">Preview platform</span><select value={preview} onChange={(event) => setPreview(event.target.value as Platform)}>{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <option key={platform} value={platform}>{PLATFORM_META[platform].label}</option>)}</select></label>
+          </div>
           <div className={`platform-preview preview-${preview}`}>
             <div className="preview-account"><PlatformBadge platform={preview} /><div><strong>{connected.find((account) => account.platform === preview)?.handle ?? PLATFORM_META[preview].label}</strong><small>Sponsored nowhere · {demoMode ? "demo preview" : "preview"}</small></div></div>
             {preview === "youtube" && <h3>{title || "Your video title"}</h3>}
@@ -564,10 +589,11 @@ function InstagramAccountPicker({ token, onMessage }: { token: string; onMessage
   >{accounts.data.accounts.map((account) => <option key={account.igUserId} value={account.igUserId}>@{account.username} · {account.pageName}</option>)}</select></label>;
 }
 
-function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, goBilling }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void; xVisible: boolean; xNeedsTier: boolean; goBilling: () => void }) {
+function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, goBilling, goHelp }: { accounts: Account[]; settings: PlatformSetting[]; token: string; onMessage: (message: string) => void; xVisible: boolean; xNeedsTier: boolean; goBilling: () => void; goHelp: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
   const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
+  const [manageOpen, setManageOpen] = useState<Platform | null>(null);
   // OAuth popup flow: Connect opens the platform auth page in a popup.
   // The popup posts a "zepostia-oauth" message on completion and closes
   // itself; we refresh the connection list without a full page reload.
@@ -669,8 +695,10 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
     onSuccess: async (result) => { onMessage(result.message); await queryClient.invalidateQueries({ queryKey: ["workspace", token] }); },
   });
   return <div className="page-stack">
-    <div className="page-heading"><h1>Accounts</h1><p>Connect your social accounts. You log in with each platform directly — zepostia never sees your passwords.</p></div>
-    <div className="oauth-rule"><strong>Your passwords stay with the platforms</strong><span>Zepostia connects through official OAuth. You log in on Facebook, Google, or X directly — we never see or store passwords.</span></div>
+    <div className="page-heading-row">
+      <div className="page-heading"><h1>Accounts</h1><p>Connect your social media accounts to publish content from Zepostia.</p></div>
+      <button className="help-pill" onClick={goHelp}><span className="help-pill-icon"><IconHelp /></span>Having trouble connecting?</button>
+    </div>
     <div className="connect-list">{PLATFORM_ORDER.filter((platform) => platform !== "x" || xVisible).map((platform) => {
       const meta = PLATFORM_META[platform];
       const setting = settings.find((item) => item.platform === platform);
@@ -684,14 +712,40 @@ function Accounts({ accounts, settings, token, onMessage, xVisible, xNeedsTier, 
       const connectBusy = busyPlatform === platform;
       const startConnect = () => { setBusyPlatform(platform); if (isFacebook) connectFb.mutate(); else if (isInstagram) connectIg.mutate(); else if (isTiktok) connectTt.mutate(); else if (isYoutube) connectYt.mutate(); else if (isX) connectX.mutate(); else connect.mutate(platform); };
       const connectLabel = connectBusy ? "Connecting…" : demoMode ? "Run demo OAuth" : "Connect";
+      const managing = manageOpen === platform;
       return <article className="connect-row" key={platform}>
-        <div className="connect-main"><PlatformBadge platform={platform} /><div><h2>{meta.label}</h2><p>{isX && xNeedsTier ? "X posting is an add-on. Add a tier on the Billing page, then connect here." : setting?.warning ?? "Official OAuth connection."}</p></div></div>
-        {account ? <div className="connect-state"><div><strong>{account.handle}</strong><StatusPill status={account.status} />{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</div>{needsReconnect ? <button className="warning-button" onClick={startConnect}>Reconnect</button> : <button className="quiet-button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect</button>}</div> : isX && xNeedsTier ? <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" onClick={goBilling}>Get the X add-on</button></div> : <div className="connect-state"><span className="status-pill status-muted"><i />Not connected</span><button className="secondary-button" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}>{connectLabel}</button></div>}
-        {isFacebook && account?.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
-        {isInstagram && account?.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
+        <div className="connect-card-top">
+          <PlatformBadge platform={platform} large />
+          <div className="connect-card-main">
+            <div className="connect-name-row"><h2>{meta.label}{isX && xNeedsTier && <span className="status-pill status-accent addon-pill"><IconBolt />Requires add-on</span>}</h2></div>
+            {account && <p className="connect-handle"><strong>{account.handle}</strong><span className="handle-ext"><IconExternal /></span>{account.authMode === "oauth" && <span className="auth-mode-tag">live</span>}</p>}
+            <p>{isX && xNeedsTier ? "X posting is an add-on. Add a tier on the Billing page, then connect here." : PLATFORM_BLURB[platform]}</p>
+            {setting?.warning && !(isX && xNeedsTier) && <p className="connect-note">{setting.warning}</p>}
+          </div>
+          <div className="connect-card-side">
+            {account ? <span className="connect-pills"><StatusPill status={account.status} />{isTiktok && account.status === "connected" && <span className="status-pill status-accent"><IconBolt />Publishing enabled</span>}</span> : <span className="status-pill status-muted"><i />Not connected</span>}
+            {account
+              ? needsReconnect
+                ? <button className="warning-button" onClick={startConnect}>Reconnect</button>
+                : <button className="secondary-button" aria-expanded={managing} onClick={() => setManageOpen(managing ? null : platform)}>Manage</button>
+              : isX && xNeedsTier
+                ? <button className="secondary-button" onClick={goBilling}>Get the X add-on</button>
+                : <button className="primary-button connect-btn" disabled={connect.isPending || connectFb.isPending || connectIg.isPending || connectTt.isPending || connectYt.isPending || connectX.isPending} onClick={startConnect}><span className="btn-link-icon"><IconLink /></span>{connectLabel}</button>}
+          </div>
+        </div>
+        {account && managing && !needsReconnect && <div className="connect-manage">
+          {isFacebook && account.authMode === "oauth" && <FacebookPagePicker token={token} onMessage={onMessage} />}
+          {isInstagram && account.authMode === "oauth" && <InstagramAccountPicker token={token} onMessage={onMessage} />}
+          <button className="danger-text" disabled={disconnect.isPending} onClick={() => disconnect.mutate(account.id)}>Disconnect this account</button>
+        </div>}
         <details><summary><span className="summary-chev lead"><IconChevron /></span>If connecting fails</summary><p>{isX && xNeedsTier ? "X connects once your workspace has an X add-on tier — add one on the Billing page." : setting?.failureHint ?? "Review the platform setup in Settings and try again."}</p></details>
       </article>;
     })}</div>
+    <button className="accounts-help-banner" onClick={goHelp}>
+      <span className="banner-book"><IconBook /></span>
+      <span className="banner-text"><strong>Need help connecting your accounts?</strong><span>View step-by-step guides for each platform.</span></span>
+      <span className="banner-link">View help center<span className="handle-ext"><IconExternal /></span></span>
+    </button>
   </div>;
 }
 
@@ -758,9 +812,8 @@ function TikTokPlatformCard({ isAdmin, tiktokConfigured }: { isAdmin: boolean; t
     <summary><span><PlatformBadge platform="tiktok" /><strong>TikTok</strong></span><span>No setup needed</span><span className="summary-chev"><IconChevron /></span></summary>
     <div className="settings-body">
       {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
-      <p className="secret-note">TikTok posts video only. New TikTok apps post privately until the app passes TikTok's audit.</p>
+      <p className="secret-note">TikTok posts video only. New TikTok apps post privately until the app passes TikTok's audit. Connect with TikTok on the Accounts page — no setup needed.</p>
       {isAdmin && <p className="secret-note">Owner TikTok app: {tiktokConfigured ? "configured" : "not configured — set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET on the server"}.</p>}
-      {!isAdmin && <p className="secret-note">Connect with TikTok on the Accounts page — no setup needed.</p>}
     </div>
   </details>;
 }
@@ -793,9 +846,8 @@ function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean;
     <summary><span><PlatformBadge platform="youtube" /><strong>YouTube</strong></span><span>No setup needed</span><span className="summary-chev"><IconChevron /></span></summary>
     <div className="settings-body">
       {isAdmin && <div className="go-live-list">{steps.map((step, i) => <p key={i}><b>{i + 1}</b><span>{step}</span></p>)}</div>}
-      <p className="secret-note">YouTube posts video only — every upload needs a video file and a title. Uploads use ~1,600 API quota units each (10,000/day free).</p>
+      <p className="secret-note">YouTube posts video only — every upload needs a video file and a title. Uploads use ~1,000 API quota units each (10,000/day free). Connect with YouTube on the Accounts page — no setup needed.</p>
       {isAdmin && <p className="secret-note">Owner YouTube app: {youtubeConfigured ? "configured" : "not configured — set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on the server"}.</p>}
-      {!isAdmin && <p className="secret-note">Connect with YouTube on the Accounts page — no setup needed.</p>}
     </div>
   </details>;
 }
@@ -1010,85 +1062,212 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
   const isAdmin = user.role === "admin";
   return <div className="page-stack">
     <div className="page-heading"><h1>Settings</h1><p>Platform connections and your account.</p></div>
-    <section className="security-manifest"><h2>How credentials work</h2><p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p></section>
+    <section className="security-manifest"><span className="manifest-icon"><IconGear /></span><div><h2>How credentials work</h2><p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p></div></section>
     <section className="settings-list">{settings.filter((setting) => setting.platform !== "x" || xVisible).map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
-    <section className="profile-block"><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
+    <section className="profile-block"><span className="profile-avatar" aria-hidden="true">{user.displayName.trim().charAt(0).toUpperCase() || "Z"}</span><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
     <ChangePasswordForm token={token} onMessage={onMessage} />
     {isAdmin && <AdminResetTool token={token} />}
   </div>;
 }
 
 
+type HelpCardDef = { id: string; title: string; sub?: string; search: string; defaultOpen?: boolean; body: ReactNode };
+
 function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [query, setQuery] = useState("");
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const q = query.trim().toLowerCase();
+  const matches = (text: string) => !q || text.toLowerCase().includes(q);
+  const isOpen = (card: HelpCardDef) => openMap[card.id] ?? Boolean(card.defaultOpen);
+  const toggleCard = (card: HelpCardDef) => setOpenMap((current) => ({ ...current, [card.id]: !isOpen(card) }));
+  const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const openSectionCards = (ids: string[]) => setOpenMap((current) => { const next = { ...current }; ids.forEach((id) => { next[id] = true; }); return next; });
+
+  const platformCards: HelpCardDef[] = [
+    {
+      id: "connect-facebook", title: "Facebook", sub: "Post to your Pages", defaultOpen: true,
+      search: "facebook connect pages post login approve account connection",
+      body: <>
+        <ol>
+          <li>On the Accounts page, hit <strong>Connect</strong> next to Facebook.</li>
+          <li>Facebook opens its login page — log in and approve zepostia.</li>
+          <li>Choose which of your Facebook <strong>Pages</strong> zepostia can post to.</li>
+        </ol>
+        <p className="help-note">Zepostia posts to Pages you manage, not personal profiles. You&apos;re granting permission to publish posts on your behalf — you can revoke it any time in your Facebook settings.</p>
+      </>,
+    },
+    {
+      id: "connect-instagram", title: "Instagram", sub: "Requires a professional account",
+      search: "instagram connect professional account creator business facebook page link account connection",
+      body: <>
+        <p>Instagram only allows third-party posting for <strong>professional accounts</strong> (creator or business). Before connecting:</p>
+        <ol>
+          <li>In the Instagram app, switch your account to professional: Settings → Account type and tools → Switch to professional account.</li>
+          <li>Link it to one of your Facebook Pages: in the Instagram app, go to Settings → Account → Sharing to other apps, or link it from your Facebook Page&apos;s settings.</li>
+          <li>Back on the Accounts page, hit <strong>Connect</strong> next to Instagram and approve zepostia.</li>
+        </ol>
+        <p className="help-note">Personal Instagram accounts can&apos;t be connected — this is Instagram&apos;s rule, not ours.</p>
+      </>,
+    },
+    {
+      id: "connect-tiktok", title: "TikTok", sub: "Video posts",
+      search: "tiktok connect video private audit account connection",
+      body: <>
+        <ol>
+          <li>On the Accounts page, hit <strong>Connect</strong> next to TikTok.</li>
+          <li>TikTok opens its login page — log in and authorize zepostia to upload videos.</li>
+        </ol>
+        <p className="help-note">TikTok posts are video only. New apps publish privately until TikTok approves them — if your video lands as private, that&apos;s why.</p>
+      </>,
+    },
+    {
+      id: "connect-youtube", title: "YouTube", sub: "Video uploads to your channel",
+      search: "youtube connect google channel upload video account connection",
+      body: <>
+        <ol>
+          <li>On the Accounts page, hit <strong>Connect</strong> next to YouTube.</li>
+          <li>Google opens its sign-in page — sign in and grant zepostia permission to upload videos.</li>
+          <li>Pick the channel you want zepostia to upload to.</li>
+        </ol>
+        <p className="help-note">Every upload needs a video file and a title. You&apos;re granting the YouTube upload permission only — zepostia can&apos;t read your email or access anything else in your Google account.</p>
+      </>,
+    },
+    ...(xVisible ? [{
+      id: "connect-x", title: "X", sub: "Text posts, 280 characters",
+      search: "x twitter connect add-on tier account connection",
+      body: <>
+        <ol>
+          <li>On the Accounts page, hit <strong>Connect</strong> next to X.</li>
+          <li>X opens its authorization page — log in and approve zepostia.</li>
+        </ol>
+        <p className="help-note">X posting is an <strong>add-on</strong>: your tier sets how many X posts — and how many posts with links — you can publish each billing period. You can see your tier and usage on the Billing page.</p>
+      </>,
+    } as HelpCardDef] : []),
+  ];
+
+  const troubleCards: HelpCardDef[] = [
+    {
+      id: "trouble-expired", title: "My connection expired", sub: "Reconnect in one click",
+      search: "connection expired reconnect password change revoked account connection",
+      body: <p>Platforms occasionally revoke access (usually after a password change or a long idle period). On the Accounts page, the account will show a warning — hit <strong>Reconnect</strong> and approve zepostia again. Your scheduled posts will resume.</p>,
+    },
+    {
+      id: "trouble-failed", title: "A post failed", sub: "Check the reason",
+      search: "post failed reason media type too long error creating a post publish",
+      body: <>
+        <p>Open the Post page and look at your queued and past posts — failed posts show the reason. Common causes:</p>
+        <ul>
+          <li>The account&apos;s connection expired — reconnect it on the Accounts page.</li>
+          <li>The media type isn&apos;t supported (e.g. text-only to TikTok, which needs video).</li>
+          <li>The text is too long for the platform (X&apos;s 280-character limit).</li>
+        </ul>
+        <p>Fix the issue and repost.</p>
+      </>,
+    },
+    {
+      id: "trouble-instagram", title: "Instagram won't connect", sub: "Check the requirements",
+      search: "instagram won't connect professional account facebook page requirements account connection",
+      body: <p>Instagram requires a <strong>professional account</strong> linked to a <strong>Facebook Page</strong>. If either is missing, the connection fails. Switch to professional in the Instagram app, link a Page, then try connecting again.</p>,
+    },
+    {
+      id: "trouble-scheduled", title: "A scheduled post didn't go out", sub: "Check the queue",
+      search: "scheduled post didn't go out queue pending scheduling",
+      body: <p>Check the Post page — if the post shows as failed, the reason is listed there. If it&apos;s still pending past its scheduled time, make sure the account is still connected on the Accounts page.</p>,
+    },
+  ];
+
+  const faqCards: Array<HelpCardDef & { Icon: ComponentType }> = [
+    {
+      id: "faq-developer", title: "Do I need a developer account with any platform?", Icon: IconGear,
+      search: "developer account platform setup technical",
+      body: <p>No. You just click Connect and log in with the platform. All the technical setup is handled by zepostia.</p>,
+    },
+    {
+      id: "faq-passwords", title: "Does zepostia see or store my passwords?", Icon: IconShield,
+      search: "passwords see store security login token",
+      body: <p>No. You log in on each platform&apos;s own website (facebook.com, google.com, x.com, tiktok.com) — zepostia never sees your password. The platforms give zepostia a limited access token that only allows posting.</p>,
+    },
+    {
+      id: "faq-disconnect", title: "Can I disconnect an account?", Icon: IconLink,
+      search: "disconnect account remove revoke access",
+      body: <p>Yes, any time. On the Accounts page, hit <strong>Disconnect</strong> next to the account. You can also revoke zepostia&apos;s access directly in each platform&apos;s settings.</p>,
+    },
+    {
+      id: "faq-limits", title: "What counts toward my monthly limits?", Icon: IconHistory,
+      search: "monthly limits usage count billing plan tier posts link posts reset",
+      body: <p>Only <strong>successful</strong> posts count. Failed posts don&apos;t use your quota. TikTok includes 60 posts per month; the count resets on the 1st. X posting is an add-on — its post and link-post limits follow your tier and reset each billing period. You can see your current usage on the Billing page.</p>,
+    },
+    {
+      id: "faq-some", title: "Can I post to some platforms but not others?", Icon: IconCompose,
+      search: "post some platforms choose accounts per post",
+      body: <p>Yes. Every post lets you choose exactly which connected accounts it goes to. Connect everything once, then pick per post.</p>,
+    },
+  ];
+  const allFaqOpen = faqCards.every((card) => isOpen(card));
+  const toggleAllFaq = () => setOpenMap((current) => { const next = { ...current }; faqCards.forEach((card) => { next[card.id] = !allFaqOpen; }); return next; });
+
+  const categories: Array<{ Icon: ComponentType; tint: string; title: string; line: string; target: string; openIds: string[] }> = [
+    { Icon: IconUsers, tint: "tint-accent", title: "Account connection", line: "Learn how to connect and manage your social accounts.", target: "help-connecting", openIds: ["connect-facebook"] },
+    { Icon: IconCompose, tint: "tint-slate", title: "Creating a post", line: "Write, add media, and publish to multiple platforms.", target: "help-posting", openIds: [] },
+    { Icon: IconClock, tint: "tint-warm", title: "Scheduling", line: "Set up scheduled posts and manage your queue.", target: "help-troubleshooting", openIds: ["trouble-scheduled"] },
+    { Icon: IconHistory, tint: "tint-green", title: "Billing & limits", line: "Understand your plan, usage limits, and billing.", target: "help-faq", openIds: ["faq-limits"] },
+  ];
+
+  const renderCard = (card: HelpCardDef) => matches(`${card.title} ${card.sub ?? ""} ${card.search}`) ? (
+    <details className="help-card" key={card.id} open={isOpen(card)} onToggle={(event) => { const open = (event.currentTarget as HTMLDetailsElement).open; setOpenMap((current) => (current[card.id] === open ? current : { ...current, [card.id]: open })); }}>
+      <summary><strong>{card.title}</strong>{card.sub && <span>{card.sub}</span>}<span className="summary-chev"><IconChevron /></span></summary>
+      {card.body}
+    </details>
+  ) : null;
+  const sectionVisible = (cards: HelpCardDef[]) => !q || cards.some((card) => matches(`${card.title} ${card.sub ?? ""} ${card.search}`));
+
   return <div className="page-stack">
     <div className="page-heading"><h1>Help</h1><p>Everything you need to connect your accounts and start posting. No technical setup required — you just click Connect and log in with each platform.</p></div>
 
-    <section className="help-section">
-      <h2>Watch the tour</h2>
-      <p className="help-subline">A one-minute walkthrough: connect your accounts, write a post, and publish.</p>
-      <video className="help-video" controls preload="none" poster="/getting-started-poster.png" src="/getting-started-tutorial.mp4" />
+    <section className="tour-card">
+      <div className="tour-left">
+        <span className="tour-eyebrow"><span className="tour-eyebrow-icon"><IconPlaySolid /></span>GET STARTED</span>
+        <h2>Watch the tour</h2>
+        <p>A one-minute walkthrough: connect your accounts, write a post, and publish.</p>
+        <button className="primary-button" onClick={() => { videoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); void videoRef.current?.play().catch(() => undefined); }}><span className="btn-play"><IconPlaySolid /></span>Play video (1:11)</button>
+      </div>
+      <video ref={videoRef} className="help-video" controls preload="none" poster="/getting-started-poster.png" src="/getting-started-tutorial.mp4" />
     </section>
 
-    <section className="help-section">
+    <section className="help-plain">
+      <div className="help-section-head">
+        <div><h2>Common issues</h2><p>Get quick solutions to the most common questions.</p></div>
+        <label className="help-search"><span className="help-search-icon"><IconSearch /></span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search for help articles…" aria-label="Search for help articles" /></label>
+      </div>
+      <div className="issue-grid">
+        {categories.map((category) => (
+          <button className="issue-card" key={category.title} onClick={() => { openSectionCards(category.openIds); scrollToId(category.target); }}>
+            <span className={`issue-icon ${category.tint}`}><category.Icon /></span>
+            <span className="issue-text"><strong>{category.title}</strong><span>{category.line}</span></span>
+            <span className="issue-arrow"><IconArrowRight /></span>
+          </button>
+        ))}
+      </div>
+    </section>
+
+    {matches("getting started create your account connect your accounts write your first post sign up plan") && <section className="help-section">
       <h2>Getting started</h2>
       <div className="help-steps">
         <div className="help-step"><span>1</span><div><strong>Create your account</strong><p>Sign up for zepostia and pick the $19.88/month plan. Your first 14 days are free.</p></div></div>
         <div className="help-step"><span>2</span><div><strong>Connect your accounts</strong><p>Go to the <button className="text-button" onClick={() => go("accounts")}>Accounts page</button> and hit <strong>Connect</strong> next to each platform. You&apos;ll be taken to that platform&apos;s own login page — log in and approve zepostia. That&apos;s the whole setup.</p></div></div>
         <div className="help-step"><span>3</span><div><strong>Write your first post</strong><p>Open the <button className="text-button" onClick={() => go("post")}>Post page</button>, write your message, pick which connected accounts to publish to, and hit <strong>Post now</strong> — or pick a date and time to schedule it.</p></div></div>
       </div>
-    </section>
+    </section>}
 
-    <section className="help-section">
+    {sectionVisible(platformCards) && <section className="help-section" id="help-connecting">
       <h2>Connecting each platform</h2>
       <div className="help-cards">
-        <details className="help-card" open>
-          <summary><strong>Facebook</strong><span>Post to your Pages</span><span className="summary-chev"><IconChevron /></span></summary>
-          <ol>
-            <li>On the Accounts page, hit <strong>Connect</strong> next to Facebook.</li>
-            <li>Facebook opens its login page — log in and approve zepostia.</li>
-            <li>Choose which of your Facebook <strong>Pages</strong> zepostia can post to.</li>
-          </ol>
-          <p className="help-note">Zepostia posts to Pages you manage, not personal profiles. You&apos;re granting permission to publish posts on your behalf — you can revoke it any time in your Facebook settings.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>Instagram</strong><span>Requires a professional account</span><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Instagram only allows third-party posting for <strong>professional accounts</strong> (creator or business). Before connecting:</p>
-          <ol>
-            <li>In the Instagram app, switch your account to professional: Settings → Account type and tools → Switch to professional account.</li>
-            <li>Link it to one of your Facebook Pages: in the Instagram app, go to Settings → Account → Sharing to other apps, or link it from your Facebook Page&apos;s settings.</li>
-            <li>Back on the Accounts page, hit <strong>Connect</strong> next to Instagram and approve zepostia.</li>
-          </ol>
-          <p className="help-note">Personal Instagram accounts can&apos;t be connected — this is Instagram&apos;s rule, not ours.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>TikTok</strong><span>Video posts</span><span className="summary-chev"><IconChevron /></span></summary>
-          <ol>
-            <li>On the Accounts page, hit <strong>Connect</strong> next to TikTok.</li>
-            <li>TikTok opens its login page — log in and authorize zepostia to upload videos.</li>
-          </ol>
-          <p className="help-note">TikTok posts are video only. New apps publish privately until TikTok approves them — if your video lands as private, that&apos;s why.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>YouTube</strong><span>Video uploads to your channel</span><span className="summary-chev"><IconChevron /></span></summary>
-          <ol>
-            <li>On the Accounts page, hit <strong>Connect</strong> next to YouTube.</li>
-            <li>Google opens its sign-in page — sign in and grant zepostia permission to upload videos.</li>
-            <li>Pick the channel you want zepostia to upload to.</li>
-          </ol>
-          <p className="help-note">Every upload needs a video file and a title. You&apos;re granting the YouTube upload permission only — zepostia can&apos;t read your email or access anything else in your Google account.</p>
-        </details>
-        {xVisible && <details className="help-card">
-          <summary><strong>X</strong><span>Text posts, 280 characters</span><span className="summary-chev"><IconChevron /></span></summary>
-          <ol>
-            <li>On the Accounts page, hit <strong>Connect</strong> next to X.</li>
-            <li>X opens its authorization page — log in and approve zepostia.</li>
-          </ol>
-          <p className="help-note">X posting is an <strong>add-on</strong>: your tier sets how many X posts — and how many posts with links — you can publish each billing period. You can see your tier and usage on the Billing page.</p>
-        </details>}
+        {platformCards.map((card) => renderCard(card))}
       </div>
-    </section>
+    </section>}
 
-    <section className="help-section">
+    {matches("posting write message post now schedule queue queued past posts creating a post publish") && <section className="help-section" id="help-posting">
       <h2>Posting</h2>
       <div className="help-article">
         <p>Write your message once on the <button className="text-button" onClick={() => go("post")}>Post page</button>, then choose which of your connected accounts it goes to. Each platform gets a version that fits its rules.</p>
@@ -1098,9 +1277,9 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
           <li><strong>Queued and past posts</strong> on the Post page shows everything: what&apos;s waiting, what published, and what failed (with the reason).</li>
         </ul>
       </div>
-    </section>
+    </section>}
 
-    <section className="help-section">
+    {matches("platform supports text limit media notes facebook instagram tiktok youtube") && <section className="help-section">
       <h2>What each platform supports</h2>
       <div className="help-table-wrap"><table className="help-table">
         <thead><tr><th>Platform</th><th>Text limit</th><th>Media</th><th>Notes</th></tr></thead>
@@ -1112,75 +1291,43 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
           {xVisible && <tr><td><strong>X</strong></td><td>280 characters</td><td>Text (links supported)</td><td>Add-on — tier limits apply</td></tr>}
         </tbody>
       </table></div>
-    </section>
+    </section>}
 
-    <section className="help-section">
+    {sectionVisible(troubleCards) && <section className="help-section" id="help-troubleshooting">
       <h2>Troubleshooting</h2>
       <div className="help-cards">
-        <details className="help-card">
-          <summary><strong>My connection expired</strong><span>Reconnect in one click</span><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Platforms occasionally revoke access (usually after a password change or a long idle period). On the Accounts page, the account will show a warning — hit <strong>Reconnect</strong> and approve zepostia again. Your scheduled posts will resume.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>A post failed</strong><span>Check the reason</span><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Open the Post page and look at your queued and past posts — failed posts show the reason. Common causes:</p>
-          <ul>
-            <li>The account&apos;s connection expired — reconnect it on the Accounts page.</li>
-            <li>The media type isn&apos;t supported (e.g. text-only to TikTok, which needs video).</li>
-            <li>The text is too long for the platform (X&apos;s 280-character limit).</li>
-          </ul>
-          <p>Fix the issue and repost.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>Instagram won&apos;t connect</strong><span>Check the requirements</span><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Instagram requires a <strong>professional account</strong> linked to a <strong>Facebook Page</strong>. If either is missing, the connection fails. Switch to professional in the Instagram app, link a Page, then try connecting again.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>A scheduled post didn&apos;t go out</strong><span>Check the queue</span><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Check the Post page — if the post shows as failed, the reason is listed there. If it&apos;s still pending past its scheduled time, make sure the account is still connected on the Accounts page.</p>
-        </details>
+        {troubleCards.map((card) => renderCard(card))}
       </div>
-    </section>
+    </section>}
 
-    <section className="help-section">
-      <h2>Frequently asked questions</h2>
-      <div className="help-cards">
-        <details className="help-card">
-          <summary><strong>Do I need a developer account with any platform?</strong><span className="summary-chev"><IconChevron /></span></summary>
-          <p>No. You just click Connect and log in with the platform. All the technical setup is handled by zepostia.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>Does zepostia see or store my passwords?</strong><span className="summary-chev"><IconChevron /></span></summary>
-          <p>No. You log in on each platform&apos;s own website (facebook.com, google.com, x.com, tiktok.com) — zepostia never sees your password. The platforms give zepostia a limited access token that only allows posting.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>Can I disconnect an account?</strong><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Yes, any time. On the Accounts page, hit <strong>Disconnect</strong> next to the account. You can also revoke zepostia&apos;s access directly in each platform&apos;s settings.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>What counts toward my monthly limits?</strong><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Only <strong>successful</strong> posts count. Failed posts don&apos;t use your quota. TikTok includes 60 posts per month; the count resets on the 1st. X posting is an add-on — its post and link-post limits follow your tier and reset each billing period. You can see your current usage on the Billing page.</p>
-        </details>
-        <details className="help-card">
-          <summary><strong>Can I post to some platforms but not others?</strong><span className="summary-chev"><IconChevron /></span></summary>
-          <p>Yes. Every post lets you choose exactly which connected accounts it goes to. Connect everything once, then pick per post.</p>
-        </details>
+    {sectionVisible(faqCards) && <section className="help-plain" id="help-faq">
+      <div className="help-section-head">
+        <div><h2>Frequently asked questions</h2><p>Find answers to common questions about zepostia.</p></div>
+        <button className="text-button expand-all" onClick={toggleAllFaq}>{allFaqOpen ? "Collapse all −" : "Expand all +"}</button>
       </div>
-    </section>
+      <div className="faq-grid">
+        {faqCards.map((card) => matches(`${card.title} ${card.search}`) ? (
+          <details className="help-card faq-card" key={card.id} open={isOpen(card)} onToggle={(event) => { const open = (event.currentTarget as HTMLDetailsElement).open; setOpenMap((current) => (current[card.id] === open ? current : { ...current, [card.id]: open })); }}>
+            <summary><span className="faq-icon"><card.Icon /></span><strong>{card.title}</strong><span className="summary-chev"><IconChevron /></span></summary>
+            {card.body}
+          </details>
+        ) : null)}
+      </div>
+    </section>}
 
-    <section className="help-section">
-      <h2>Legal</h2>
-      <div className="help-article">
-        <p><a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> &middot; <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
-      </div>
-    </section>
+    {q && !sectionVisible(platformCards) && !sectionVisible(troubleCards) && !sectionVisible(faqCards) && <p className="help-noresults">No help articles match &ldquo;{query}&rdquo;. Try a shorter search — or contact support below.</p>}
 
-    <section className="help-section">
-      <h2>Still need help?</h2>
-      <div className="help-article">
-        <p>Contact support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a> and we&apos;ll get back to you.</p>
-      </div>
-    </section>
+    <div className="help-bottom-row">
+      <section className="help-mini-card">
+        <span className="mini-card-icon"><IconBook /></span>
+        <div><h3>Legal</h3><p>Read our terms of service and privacy policy.</p><p className="mini-links"><a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a><a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p></div>
+      </section>
+      <section className="help-mini-card">
+        <span className="mini-card-icon"><IconComment /></span>
+        <div><h3>Still need help?</h3><p>Can&apos;t find what you&apos;re looking for? Contact our support team.</p></div>
+      </section>
+      <a className="primary-button contact-support-btn" href="mailto:zepostia@cryptobagtracker.io"><span className="btn-mail"><IconMail /></span>Contact support</a>
+    </div>
   </div>;
 }
 
@@ -1534,12 +1681,15 @@ export function App() {
       <div className="rail-brand"><BrandMark className="brand-mark" />zepostia<span aria-hidden="true">///</span></div>
       {demoMode && <div className="mode-stamp"><span className="live-dot" /><strong>DEMO</strong><small>official APIs only</small></div>}
       <nav aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => go(item.id)}><span className="nav-icon"><item.Icon /></span>{item.label}</button>)}</nav>
-      <div className="rail-user"><strong>{user.displayName}</strong><small>{user.email}</small><button className="rail-signout" onClick={signOut}><IconLogout /><span>Sign out</span></button></div>
+      <div className="rail-user">
+        <div className="rail-user-card"><span className="rail-avatar" aria-hidden="true">{user.displayName.trim().charAt(0).toUpperCase() || "Z"}</span><span className="rail-user-text"><strong>{user.displayName}</strong><small>{user.email}</small></span></div>
+        <button className="rail-signout" onClick={signOut}><IconLogout /><span>Sign out</span></button>
+      </div>
     </aside>
     <main className="main-canvas">
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={go} xVisible={xVisible} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => go("accounts")} xVisible={xVisible} />}
-      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} />}
+      {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} goHelp={() => go("help")} />}
       {page === "billing" && <BillingPage token={sessionToken} onMessage={setToast} />}
       {page === "help" && <HelpPage go={go} xVisible={xVisible} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} />}
