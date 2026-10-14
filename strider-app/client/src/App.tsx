@@ -199,7 +199,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           <div className="hero-copy">
             <span className="hero-badge">Social media, simplified</span>
             <h1>One post.<br /><em>Every channel.</em></h1>
-            <p>Write once, post everywhere. Connect your Facebook, Instagram, TikTok, YouTube, and X accounts, then compose and schedule from one place.</p>
+            <p>Write once, post everywhere. Connect your Facebook, Instagram, TikTok, and YouTube accounts &mdash; plus X with an add-on &mdash; then compose and schedule from one place.</p>
             <div className="hero-ctas">
               <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
               <a className="secondary-button hero-cta" href="#how-it-works">See how it works</a>
@@ -272,10 +272,11 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           </div>
         </section>
         <section className="pricing-section" id="pricing">
-          <h2>One plan, everything included</h2>
+          <h2>One plan, one price</h2>
           <div className="pricing-card">
             <div className="price">$19.88<small> / month</small></div>
-            <p>All five channels. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
+            <p>All four channels: Facebook, Instagram, TikTok, YouTube. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
+            <p>X posting available as a paid add-on &mdash; see <a href="/services">Services</a>.</p>
             <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
           </div>
         </section>
