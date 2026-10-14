@@ -491,13 +491,16 @@ input[type="password"]::placeholder {
    treatment (no border). --surface-2 flips with the theme, so dark mode
    gets the same lifted-strip effect. Scoped to .billing-page so the
    public Services pricing list keeps its boxed rows. */
-.billing-page .x-addon-card .x-tier-list { gap: 8px; margin-top: 18px; }
-.billing-page .x-addon-card .x-tier-list li { background: var(--surface-2); border: 0; border-radius: 12px; padding: 13px 16px; }
+.billing-page .x-addon-card .x-tier-list { gap: 5px; margin-top: 18px; }
+.billing-page .x-addon-card .x-tier-list li { background: var(--surface-2); border: 0; border-radius: 12px; padding: 9px 16px; }
 /* Checkout picker rows on the Billing page get the same gray strip: the
    base row fill already uses --surface-2, so only the visible border
    goes (transparent) and the radius matches. The selected row's accent
-   border + tinted fill from the picker rules below still sit on top. */
-.billing-page .x-picker-list li { border-color: transparent; border-radius: 12px; }
+   border + tinted fill from the picker rules below still sit on top.
+   Vertical rhythm matches the add-on card: 5px between rows, trimmed
+   row padding, so the tiers read as one compact group. */
+.billing-page .x-picker-list { gap: 5px; }
+.billing-page .x-picker-list li { border-color: transparent; border-radius: 12px; padding-top: 8px; padding-bottom: 8px; }
 /* At-checkout tier picker (inside the Plan card, pre-subscription):
    selectable tier rows with None as the default. */
 .x-checkout-picker { display: grid; gap: 6px; justify-items: start; width: 100%; }
