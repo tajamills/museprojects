@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="#211a13"/>
+  <!-- hand-drawn door mark: arched door, slightly uneven strokes, gold on ink -->
+  <g fill="none" stroke="#d9a441" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 50 L21.4 27 C21.6 19.5 26 14.6 32.2 14.3 C38.6 14.5 42.7 19.7 42.9 27.2 L43.2 50"/>
+    <path d="M15.5 50.4 L48.6 49.7"/>
+    <path d="M27 49.8 L27.3 28.5 C27.4 23.6 29.4 20.6 32.1 20.4 C34.9 20.7 36.6 23.8 36.8 28.6 L37.1 49.9"/>
+  </g>
+  <circle cx="39.6" cy="36.4" r="2.3" fill="#d9a441"/>
+</svg>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>__PAGE_TITLE__</title>
+    <meta name="description" content="__PAGE_DESCRIPTION__" />
+    <link rel="canonical" href="__PAGE_URL__" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Abisola Writes" />
+    <meta property="og:title" content="__PAGE_TITLE__" />
+    <meta property="og:description" content="__PAGE_DESCRIPTION__" />
+    <meta property="og:url" content="__PAGE_URL__" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="__PAGE_TITLE__" />
+    <meta name="twitter:description" content="__PAGE_DESCRIPTION__" />
+    <script>
+      // Seed the theme before first paint: the stored choice
+      // (localStorage "abisolawrites-theme", set by the in-app toggle)
+      // wins; with no stored choice, follow the device setting.
+      // theme.css keys every dark rule off <html data-theme="...">.
+      (function () {
+        var theme = null;
+        try { theme = window.localStorage.getItem("abisolawrites-theme"); } catch (e) { /* storage unavailable */ }
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+    <link rel="stylesheet" href="/theme.css" />
+    <script type="module" src="/bundle.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;0,9..144,800;1,9..144,500;1,9..144,650&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app-root"></div>
+  </body>
+</html>
