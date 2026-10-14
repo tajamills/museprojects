@@ -1,7 +1,7 @@
 import { and, eq, lte } from "drizzle-orm";
 import type { AppCtx } from "./ctx.js";
 import * as schema from "./schema.js";
-import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
+import { publishBumpJobNow, publishPendingTargets } from "./publish.js";
 
 // In-process scheduler. The original Hatch app had no scheduler at all —
 // scheduled posts stayed "pending" until cancelled, and demo bump comments
@@ -37,14 +37,14 @@ export async function publishDuePosts(ctx: AppCtx): Promise<number> {
 export async function publishDueBumpComments(ctx: AppCtx): Promise<number> {
   const now = new Date();
   const due = await ctx.db
-    .select({ id: schema.bumpComments.id })
-    .from(schema.bumpComments)
-    .where(and(eq(schema.bumpComments.status, "pending"), lte(schema.bumpComments.scheduledAt, now)));
-  for (const bump of due) {
+    .select({ id: schema.bumpCommentJobs.id })
+    .from(schema.bumpCommentJobs)
+    .where(and(eq(schema.bumpCommentJobs.status, "pending"), lte(schema.bumpCommentJobs.scheduledAt, now)));
+  for (const job of due) {
     try {
-      await publishBumpCommentNow(ctx, bump.id);
+      await publishBumpJobNow(ctx, job.id);
     } catch (err) {
-      console.error(`[scheduler] failed to publish bump comment ${bump.id}:`, err);
+      console.error(`[scheduler] failed to publish bump comment job ${job.id}:`, err);
     }
   }
   return due.length;

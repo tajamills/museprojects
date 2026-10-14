@@ -37,11 +37,15 @@ export { decryptToken, encryptToken, requireTokenEncryption };
 
 /** Permissions requested at OAuth time. youtube.upload covers uploads;
  *  youtube.readonly lets us read the channel (id + title) at connect time.
- *  The upload scope is "sensitive" and needs Google verification before
- *  production use; in testing mode it works for test users immediately. */
+ *  youtube.force-ssl powers the 24-hour post bump's follow-up comments
+ *  (commentThreads.insert accepts no lesser scope); connections made
+ *  before it was added must reconnect to grant it. The upload and
+ *  force-ssl scopes are "sensitive" and need Google verification before
+ *  production use; in testing mode they work for test users immediately. */
 export const YT_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ] as const;
 
 export class YoutubeApiError extends Error {
@@ -259,4 +263,55 @@ export async function uploadYoutubeVideo(
   }
   if (!putBody.id) throw new YoutubeApiError("YouTube did not return a video id.");
   return { videoId: String(putBody.id) };
+}
+
+export interface YoutubeCommentResult {
+  commentId: string;
+}
+
+/** POST commentThreads?part=snippet — posts a top-level comment on the
+ *  channel's own video (24-hour post bump). Costs 100 quota units per
+ *  insert (the free daily quota is 10,000). Requires the
+ *  youtube.force-ssl scope; the API answers 403 "insufficientPermissions"
+ *  without it, which the caller maps to a "reconnect" reason — the error
+ *  reason is included in the thrown message for that mapping. */
+export async function postYoutubeComment(
+  args: { accessToken: string; videoId: string; text: string },
+  fetchFn: FetchFn = fetch,
+): Promise<YoutubeCommentResult> {
+  const url = `https://www.googleapis.com/youtube/v3/commentThreads?${new URLSearchParams({ part: "snippet" }).toString()}`;
+  let res: Response;
+  try {
+    res = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${args.accessToken}`,
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        snippet: {
+          videoId: args.videoId,
+          topLevelComment: { snippet: { textOriginal: args.text } },
+        },
+      }),
+    });
+  } catch (err) {
+    throw new YoutubeApiError(`YouTube comment failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let body: any = null;
+  try {
+    body = await res.json();
+  } catch {
+    throw new YoutubeApiError(`YouTube returned a non-JSON response (HTTP ${res.status}).`, res.status);
+  }
+  if (!res.ok || body?.error) {
+    const err = body?.error ?? {};
+    const reason = err.errors?.[0]?.reason ? ` [${String(err.errors[0].reason)}]` : "";
+    throw new YoutubeApiError(
+      `YouTube error: ${err.message ?? `HTTP ${res.status}`}${reason}`,
+      res.status,
+    );
+  }
+  if (!body.id) throw new YoutubeApiError("YouTube did not return a comment id.");
+  return { commentId: String(body.id) };
 }

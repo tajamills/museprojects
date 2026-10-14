@@ -72,7 +72,7 @@ import {
   xRedirectUri,
 } from "./x.js";
 export { isXAppConfigured, ownerXCredentials };
-import { publishBumpCommentNow, publishPendingTargets } from "./publish.js";
+import { BUMP_SLOT_OFFSETS_HOURS, publishBumpJobNow, publishPendingTargets } from "./publish.js";
 import { resolvePlatformSecret } from "./secrets.js";
 
 const platformSchema = z.enum(["facebook", "instagram", "tiktok", "youtube", "x"]);
@@ -129,12 +129,6 @@ const DEMO_HANDLES: Record<Platform, string> = {
   youtube: "Demo Channel",
   x: "@demo_studio",
 };
-
-function bumpOffsets(count: number): number[] {
-  if (count === 2) return [1, 23];
-  if (count === 3) return [1, 8, 23];
-  return [1, 6, 12, 23];
-}
 
 async function digestPassword(password: string, salt: string): Promise<string> {
   const payload = new TextEncoder().encode(`${salt}:${password}`);
@@ -241,7 +235,7 @@ async function billingUserSynced(ctx: AppCtx, token: string) {
 
 export interface XAddonStatus {
   configured: boolean;
-  tiers: XAddonTier[];
+  tiers: Array<XAddonTier & { amountCents: number | null }>;
   activeTier: string | null;
   usage: {
     postsUsed: number;
@@ -258,8 +252,28 @@ export interface XAddonStatus {
  * user row, and this billing period's usage counters. When no tier is
  * configured the client renders nothing about X at all.
  */
+/** Tier display prices, read once from Stripe and cached (prices are immutable). */
+const tierAmountCache = new Map<string, number | null>();
+async function tierAmountCents(priceId: string): Promise<number | null> {
+  if (tierAmountCache.has(priceId)) return tierAmountCache.get(priceId) ?? null;
+  let amount: number | null = null;
+  try {
+    if (process.env.STRIPE_SECRET_KEY) {
+      const price = await getStripe().prices.retrieve(priceId);
+      amount = price.unit_amount ?? null;
+    }
+  } catch {
+    amount = null;
+  }
+  tierAmountCache.set(priceId, amount);
+  return amount;
+}
+
 async function xAddonStatusFor(ctx: AppCtx, user: NonNullable<Awaited<ReturnType<typeof billingUser>>>): Promise<XAddonStatus> {
-  const tiers = xAddonTiers();
+  const configuredTiers = xAddonTiers();
+  const tiers = await Promise.all(
+    configuredTiers.map(async (tierDef) => ({ ...tierDef, amountCents: await tierAmountCents(tierDef.priceId) })),
+  );
   const tier = xAddonTierForPriceId(user.xAddonTierPriceId);
   // Usage is anchored to the tier's own billing period when the tier
   // has its own subscription, else the base subscription's period.
@@ -568,6 +582,9 @@ export const actions: Record<string, ActionDef> = {
       const bumpRows = postIds.length > 0
         ? await ctx.db.select().from(schema.bumpComments).where(inArray(schema.bumpComments.postId, postIds)).orderBy(schema.bumpComments.sequence)
         : [];
+      const bumpJobRows = bumpRows.length > 0
+        ? await ctx.db.select().from(schema.bumpCommentJobs).where(inArray(schema.bumpCommentJobs.bumpCommentId, bumpRows.map((row) => row.id))).orderBy(schema.bumpCommentJobs.id)
+        : [];
       const hydrated = await Promise.all(postRows.map(async (post) => ({
         id: post.id,
         body: post.body,
@@ -592,6 +609,15 @@ export const actions: Record<string, ActionDef> = {
           scheduledAt: comment.scheduledAt.toISOString(),
           status: comment.status,
           publishedAt: comment.publishedAt?.toISOString() ?? null,
+          errorMessage: comment.errorMessage ?? null,
+          jobs: bumpJobRows.filter((job) => job.bumpCommentId === comment.id).map((job) => ({
+            id: job.id,
+            platform: job.platform,
+            status: job.status,
+            scheduledAt: job.scheduledAt.toISOString(),
+            publishedAt: job.publishedAt?.toISOString() ?? null,
+            errorMessage: job.errorMessage ?? null,
+          })),
         })),
       })));
       return {
@@ -1055,7 +1081,9 @@ export const actions: Record<string, ActionDef> = {
       accountIds: z.array(z.number().int().positive()).min(1),
       publishMode: z.enum(["now", "scheduled"]),
       scheduledAt: z.string().datetime().optional(),
-      bumpComments: z.array(z.string().trim().min(1).max(500)).min(2).max(4).optional(),
+      // Positional slots: index 0 = +1h, 1 = +6h, 2 = +12h, 3 = +23h.
+      // Empty slots are skipped; a filled slot keeps its own offset.
+      bumpComments: z.array(z.string().trim().max(500)).max(4).optional(),
       media: z.object({ name: z.string().min(1).max(240), mimeType: z.string().min(1).max(100), dataBase64: z.string().min(1) }).optional(),
     }),
     async handler(ctx, args) {
@@ -1087,6 +1115,17 @@ export const actions: Record<string, ActionDef> = {
           };
         }
       }
+      // Bump comments: at least one slot must be filled, and a filled slot
+      // targeting X must fit X's 280-character limit (a bump on X is a reply
+      // post and is metered by the add-on — enforced when the job runs).
+      const bumpSlots: string[] = (args.bumpComments ?? []).map((text: string) => text.trim());
+      const filledBumps: Array<{ text: string; index: number }> = bumpSlots.map((text, index) => ({ text, index })).filter((slot) => slot.text.length > 0);
+      if (args.bumpComments !== undefined && filledBumps.length === 0) {
+        return { ok: false, message: "Add at least one follow-up comment, or turn the bump off.", postId: null };
+      }
+      if (platforms.includes("x") && filledBumps.some((slot) => slot.text.length > 280)) {
+        return { ok: false, message: "Follow-up comments for X must be 280 characters or fewer. Shorten them or remove X.", postId: null };
+      }
       if (!args.body.trim() && !args.media) return { ok: false, message: "Add text or media before publishing.", postId: null };
       const scheduledAt = args.publishMode === "scheduled" && args.scheduledAt ? new Date(args.scheduledAt) : null;
       if (args.publishMode === "scheduled" && (!scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now())) return { ok: false, message: "Choose a future date and time for this scheduled post.", postId: null };
@@ -1110,7 +1149,7 @@ export const actions: Record<string, ActionDef> = {
         publishMode: args.publishMode,
         scheduledAt,
         status: "pending",
-        bumpEnabled: Boolean(args.bumpComments?.length),
+        bumpEnabled: filledBumps.length > 0,
         createdAt: now,
         updatedAt: now,
       }).returning({ id: schema.posts.id });
@@ -1137,21 +1176,23 @@ export const actions: Record<string, ActionDef> = {
       } else {
         publishNote = "Post scheduled.";
       }
-      if (args.bumpComments?.length) {
+      if (filledBumps.length > 0) {
+        // Plan rows: one per filled slot. The row's scheduledAt is a nominal
+        // anchor until the post publishes; the per-platform jobs created at
+        // publish time carry the real slot times (publish + offset).
         const baseTime = scheduledAt ?? now;
-        const offsets = bumpOffsets(args.bumpComments.length);
-        await ctx.db.insert(schema.bumpComments).values((args.bumpComments as string[]).map((comment: string, index: number) => ({
+        await ctx.db.insert(schema.bumpComments).values(filledBumps.map((slot) => ({
           postId: post.id,
-          sequence: index + 1,
-          body: comment.trim(),
-          scheduledAt: new Date(baseTime.getTime() + (offsets[index] ?? 23) * 60 * 60 * 1000),
+          sequence: slot.index + 1,
+          body: slot.text,
+          scheduledAt: new Date(baseTime.getTime() + (BUMP_SLOT_OFFSETS_HOURS[slot.index] ?? 23) * 60 * 60 * 1000),
           status: "pending" as const,
           publishedAt: null,
           errorMessage: null,
         })));
       }
       ctx.invalidateQueries();
-      const scheduleNote = args.bumpComments?.length ? ` ${args.bumpComments.length} follow-up comments are staggered across the next 24 hours.` : "";
+      const scheduleNote = filledBumps.length > 0 ? ` ${filledBumps.length} follow-up comments are staggered across the next 24 hours.` : "";
       return {
         ok: true,
         message: publishNote + scheduleNote,
@@ -1167,12 +1208,22 @@ export const actions: Record<string, ActionDef> = {
       if (!user) return { ok: false, message: "Your session expired. Sign in again." };
       const owned = await ctx.db.select({ id: schema.posts.id }).from(schema.posts).where(and(eq(schema.posts.id, args.postId), eq(schema.posts.userId, user.id))).limit(1);
       if (!owned[0]) return { ok: false, message: "That post was not found." };
-      const pending = await ctx.db.select().from(schema.bumpComments).where(and(eq(schema.bumpComments.postId, args.postId), eq(schema.bumpComments.status, "pending"))).orderBy(schema.bumpComments.sequence).limit(1);
-      const next = pending[0];
-      if (!next) return { ok: false, message: "This post has no pending bump comments." };
-      // Real Facebook comments go out through the Graph API when the post
-      // went out through a real connection; otherwise simulated as before.
-      const result = await publishBumpCommentNow(ctx, next.id);
+      // Runs the earliest pending bump JOB for this post (per-platform).
+      // Jobs only exist once the post has published on that platform.
+      const jobs = await ctx.db
+        .select({ id: schema.bumpCommentJobs.id })
+        .from(schema.bumpCommentJobs)
+        .innerJoin(schema.bumpComments, eq(schema.bumpCommentJobs.bumpCommentId, schema.bumpComments.id))
+        .where(and(eq(schema.bumpComments.postId, args.postId), eq(schema.bumpCommentJobs.status, "pending")))
+        .orderBy(schema.bumpCommentJobs.scheduledAt)
+        .limit(1);
+      const nextJob = jobs[0];
+      if (!nextJob) {
+        const pendingPlan = await ctx.db.select({ id: schema.bumpComments.id }).from(schema.bumpComments).where(and(eq(schema.bumpComments.postId, args.postId), eq(schema.bumpComments.status, "pending"))).limit(1);
+        if (pendingPlan[0]) return { ok: false, message: "Follow-up comments run after the post publishes." };
+        return { ok: false, message: "This post has no pending bump comments." };
+      }
+      const result = await publishBumpJobNow(ctx, nextJob.id);
       ctx.invalidateQueries();
       return result;
     },
@@ -1186,6 +1237,13 @@ export const actions: Record<string, ActionDef> = {
       const owned = await ctx.db.select({ id: schema.posts.id }).from(schema.posts).where(and(eq(schema.posts.id, args.postId), eq(schema.posts.userId, user.id))).limit(1);
       if (!owned[0]) return { ok: false, message: "That post was not found." };
       await ctx.db.transaction(async (tx) => {
+        const planRows = await tx.select({ id: schema.bumpComments.id }).from(schema.bumpComments).where(eq(schema.bumpComments.postId, args.postId));
+        if (planRows.length > 0) {
+          await tx
+            .update(schema.bumpCommentJobs)
+            .set({ status: "cancelled" })
+            .where(and(inArray(schema.bumpCommentJobs.bumpCommentId, planRows.map((row) => row.id)), eq(schema.bumpCommentJobs.status, "pending")));
+        }
         await tx.update(schema.bumpComments).set({ status: "cancelled" }).where(and(eq(schema.bumpComments.postId, args.postId), eq(schema.bumpComments.status, "pending")));
         await tx.update(schema.posts).set({ bumpEnabled: false, updatedAt: new Date() }).where(eq(schema.posts.id, args.postId));
       });
@@ -1206,10 +1264,117 @@ export const actions: Record<string, ActionDef> = {
       await ctx.db.transaction(async (tx) => {
         await tx.update(schema.posts).set({ status: "cancelled", bumpEnabled: false, updatedAt: new Date() }).where(eq(schema.posts.id, post.id));
         await tx.update(schema.postTargets).set({ status: "cancelled" }).where(eq(schema.postTargets.postId, post.id));
+        const planRows = await tx.select({ id: schema.bumpComments.id }).from(schema.bumpComments).where(eq(schema.bumpComments.postId, post.id));
+        if (planRows.length > 0) {
+          await tx
+            .update(schema.bumpCommentJobs)
+            .set({ status: "cancelled" })
+            .where(and(inArray(schema.bumpCommentJobs.bumpCommentId, planRows.map((row) => row.id)), eq(schema.bumpCommentJobs.status, "pending")));
+        }
         await tx.update(schema.bumpComments).set({ status: "cancelled" }).where(and(eq(schema.bumpComments.postId, post.id), eq(schema.bumpComments.status, "pending")));
       });
       ctx.invalidateQueries();
       return { ok: true, message: "Scheduled post cancelled." };
+    },
+  },
+
+  /**
+   * Permanently deletes the signed-in user's account (Settings → Account
+   * actions). The confirmation must be the literal word DELETE or the
+   * account's own email. Live Stripe subscriptions — the base plan AND the
+   * X add-on — are cancelled first; if that fails the delete aborts so the
+   * user is never left billed for an account that no longer exists. Then
+   * every owned row goes in one transaction: sessions, password resets,
+   * platform configs, connected accounts, all platform connection/token
+   * rows, X usage rows, posts (targets and bump rows cascade), and the
+   * user row itself.
+   */
+  deleteAccount: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+      confirmation: z.string().max(320),
+    }),
+    async handler(ctx, args) {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again." };
+      const confirmation = args.confirmation.trim();
+      if (confirmation !== "DELETE" && confirmation.toLowerCase() !== user.email.toLowerCase()) {
+        return { ok: false, message: "Type DELETE to confirm account deletion." };
+      }
+      // Cancel live Stripe subscriptions first (base + X add-on).
+      if (user.stripeCustomerId && process.env.STRIPE_SECRET_KEY) {
+        try {
+          const stripe = getStripe();
+          const subs = (await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "all", limit: 50 })).data;
+          const live = subs.filter((sub) =>
+            ["active", "trialing", "past_due", "unpaid", "paused", "incomplete"].includes(sub.status),
+          );
+          for (const sub of live) {
+            await stripe.subscriptions.cancel(sub.id);
+          }
+        } catch {
+          return { ok: false, message: "We couldn't cancel your subscription. Contact support and we'll finish the deletion for you." };
+        }
+      }
+      await ctx.db.transaction(async (tx) => {
+        await tx.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+        await tx.delete(schema.passwordResets).where(eq(schema.passwordResets.userId, user.id));
+        await tx.delete(schema.platformConfigs).where(eq(schema.platformConfigs.userId, user.id));
+        await tx.delete(schema.connectedAccounts).where(eq(schema.connectedAccounts.userId, user.id));
+        await tx.delete(schema.facebookConnections).where(eq(schema.facebookConnections.userId, user.id));
+        await tx.delete(schema.instagramConnections).where(eq(schema.instagramConnections.userId, user.id));
+        await tx.delete(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, user.id));
+        await tx.delete(schema.youtubeConnections).where(eq(schema.youtubeConnections.userId, user.id));
+        await tx.delete(schema.xConnections).where(eq(schema.xConnections.userId, user.id));
+        await tx.delete(schema.xAddonUsage).where(eq(schema.xAddonUsage.userId, user.id));
+        await tx.delete(schema.xMonthlyUsage).where(eq(schema.xMonthlyUsage.userId, user.id));
+        await tx.delete(schema.tiktokMonthlyUsage).where(eq(schema.tiktokMonthlyUsage.userId, user.id));
+        // Posts cascade to postTargets, bumpComments and bumpCommentJobs.
+        await tx.delete(schema.posts).where(eq(schema.posts.userId, user.id));
+        await tx.delete(schema.users).where(eq(schema.users.id, user.id));
+      });
+      ctx.invalidateQueries();
+      return { ok: true, message: "Your account has been deleted." };
+    },
+  },
+
+  /**
+   * Billing history for the Billing page: the signed-in customer's Stripe
+   * invoices, newest first (cap 12). Description comes from the invoice or
+   * its first line item — whatever Stripe has, never a hardcoded plan
+   * name. Draft invoices are skipped (not bills yet). Accounts without a
+   * Stripe customer simply get an empty list.
+   */
+  listBillingInvoices: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args) {
+      const user = await billingUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Your session expired. Sign in again.", invoices: [] as Array<{ id: string; date: string; description: string; amountCents: number; currency: string; status: string; hostedInvoiceUrl: string | null }> };
+      if (!user.stripeCustomerId || !process.env.STRIPE_SECRET_KEY) {
+        return { ok: true, message: "No invoices yet.", invoices: [] as Array<{ id: string; date: string; description: string; amountCents: number; currency: string; status: string; hostedInvoiceUrl: string | null }> };
+      }
+      try {
+        const stripe = getStripe();
+        const data = (await stripe.invoices.list({ customer: user.stripeCustomerId, limit: 12 })).data;
+        const statusMap: Record<string, string> = { paid: "Paid", open: "Open", uncollectible: "Uncollectible", void: "Void" };
+        const invoices = data
+          .filter((invoice) => invoice.status !== "draft")
+          .map((invoice) => ({
+            id: invoice.id,
+            date: new Date((invoice.created ?? 0) * 1000).toISOString(),
+            description:
+              invoice.description ??
+              invoice.lines?.data?.find((line) => line.description)?.description ??
+              "Subscription",
+            amountCents: invoice.amount_paid ?? invoice.total ?? 0,
+            currency: invoice.currency ?? "usd",
+            status: statusMap[invoice.status ?? ""] ?? "Open",
+            hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+          }));
+        return { ok: true, message: "Invoices loaded.", invoices };
+      } catch {
+        return { ok: false, message: "Invoices couldn't be loaded right now.", invoices: [] as Array<{ id: string; date: string; description: string; amountCents: number; currency: string; status: string; hostedInvoiceUrl: string | null }> };
+      }
     },
   },
 

@@ -153,3 +153,46 @@ failed payments) show up instantly instead of on the next billing read.
 
 After adding/updating variables, Railway redeploys automatically — wait for the
 deploy to finish before testing Connect.
+
+## 7. 24-hour post bump (follow-up comments) — scope notes
+
+The composer toggle "Keep this post moving for 24 hours" posts up to four
+customer-written comments per platform at +1h / +6h / +12h / +23h after the
+post publishes on that platform. Jobs are created per published target and
+run through the same in-process scheduler as scheduled posts; outcomes
+(posted / failed + a customer-safe reason) show in the post's bump plan.
+
+Support matrix (verified against each platform's API):
+
+- **Facebook** — works. `POST /{post-id}/comments` with the Page token;
+  no new scope beyond the existing Page publishing setup.
+- **Instagram** — works, needs a scope step. `POST /{ig-media-id}/comments`
+  requires `instagram_manage_comments`, now included in the app's OAuth
+  scopes. Until Meta App Review approves that permission, commenting can
+  fail for accounts outside the app's roles — submit it with the next
+  App Review round. **Existing Instagram connections must reconnect**
+  once so the new scope is granted.
+- **YouTube** — works, needs a scope step. `commentThreads.insert` (100
+  quota units per comment; the free daily quota is 10,000, so four
+  comments per post is comfortably inside it) requires the
+  `youtube.force-ssl` scope, now included in the OAuth scopes. That is a
+  **sensitive scope**: Google may require app verification before
+  non-test users can grant it, and while the OAuth app is in Testing
+  mode only listed test users can connect. **Existing YouTube
+  connections must reconnect** once so the new scope is granted.
+- **X** — works. A bump comment is a reply post (`in_reply_to_tweet_id`)
+  through the existing X integration. It is gated by the X add-on
+  exactly like a normal post (`canPostToX` before posting,
+  `recordXPost` after; a reply containing a link counts against the
+  link-post allowance). With no tier or no allowance left, the X bump
+  job fails with that reason recorded — it does not retry forever.
+  Note: this build also wired `recordXPost` into normal X publishes —
+  before, createPost checked the counters but nothing incremented them,
+  so tier caps could never actually bind.
+- **TikTok** — NOT supported. The Content Posting API has no endpoint
+  for posting comments, and the audited scope set
+  (`user.info.basic`, `video.upload`, `video.publish`) includes no
+  comment capability. The composer says "Not available for TikTok yet"
+  when TikTok is selected. **Follow-up for the audit:** if TikTok ever
+  offers a comment scope for third-party apps, request it then and
+  enable bump for TikTok at that point.

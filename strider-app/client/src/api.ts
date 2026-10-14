@@ -26,7 +26,16 @@ type WorkspaceResult = {
     bumpEnabled: boolean;
     createdAt: string;
     targets: Array<{ platform: Platform; status: string; errorMessage: string | null }>;
-    bumpComments: Array<{ id: number; sequence: number; body: string; scheduledAt: string; status: string; publishedAt: string | null }>;
+    bumpComments: Array<{
+      id: number;
+      sequence: number;
+      body: string;
+      scheduledAt: string;
+      status: string;
+      publishedAt: string | null;
+      errorMessage: string | null;
+      jobs: Array<{ id: number; platform: Platform; status: string; scheduledAt: string; publishedAt: string | null; errorMessage: string | null }>;
+    }>;
   }>;
 };
 type SettingsResult = {
@@ -57,6 +66,7 @@ type XAddonTierInfo = {
   name: string;
   postsPerMonth: number;
   linkPostsPerMonth: number;
+  amountCents: number | null;
 };
 type XAddonStatusResult = {
   configured: boolean;
@@ -77,6 +87,16 @@ type BillingStatusResult = {
   xAddon: XAddonStatusResult;
 };
 type RedirectResult = { url: string };
+type BillingInvoice = {
+  id: string;
+  date: string;
+  description: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  hostedInvoiceUrl: string | null;
+};
+type BillingInvoicesResult = { ok: boolean; message: string; invoices: BillingInvoice[] };
 
 type ConnectFacebookResult = BasicResult & { mode: "oauth" | "demo"; authUrl: string | null };
 type FacebookPagesResult = { ok: boolean; pages: Array<{ id: string; name: string }>; selectedPageId: string | null; error?: string };
@@ -93,6 +113,8 @@ type ClientApi = {
   resetPassword(args: { token: string; password: string }): Promise<BasicResult>;
   generatePasswordResetLink(args: { sessionToken: string; email: string }): Promise<{ ok: boolean; message: string; resetUrl: string | null }>;
   changePassword(args: { sessionToken: string; currentPassword: string; newPassword: string }): Promise<BasicResult>;
+  deleteAccount(args: { sessionToken: string; confirmation: string }): Promise<BasicResult>;
+  listBillingInvoices(args: { sessionToken: string }): Promise<BillingInvoicesResult>;
   getWorkspace(args: { sessionToken: string }): Promise<WorkspaceResult>;
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;

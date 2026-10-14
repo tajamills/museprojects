@@ -49,6 +49,12 @@ const IconBook = () => <StrokeIcon><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-
 const IconMail = () => <StrokeIcon><rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,6 12,13 2,6" /></StrokeIcon>;
 const IconExternal = () => <StrokeIcon><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></StrokeIcon>;
 const IconPlaySolid = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><polygon points="7 4 20 12 7 20" /></svg>;
+const IconUser = () => <StrokeIcon><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></StrokeIcon>;
+const IconLock = () => <StrokeIcon><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></StrokeIcon>;
+const IconTrash = () => <StrokeIcon><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></StrokeIcon>;
+const IconEye = () => <StrokeIcon><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></StrokeIcon>;
+const IconEyeOff = () => <StrokeIcon><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></StrokeIcon>;
+const IconDoc = () => <StrokeIcon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></StrokeIcon>;
 /* Empty-state illustrations — same stroke family, drawn larger and lighter. */
 const IconEmptyPosts = () => <StrokeIcon><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 9h8" /><path d="M8 13h5" /><path d="M16.8 15.2 13 19h5v-5l-1.2 1.2z" /></StrokeIcon>;
 const IconEmptyChannels = () => <StrokeIcon><path d="M10 14a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 5.43" /><path d="M14 10a5 5 0 0 0-7.07 0L4.1 12.83a5 5 0 0 0 7.07 7.07l1.33-1.33" /></StrokeIcon>;
@@ -437,7 +443,17 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
     {post.mediaUrl && <div className="post-thumb" aria-hidden="true">{post.mediaType?.startsWith("video") ? <video src={post.mediaUrl} preload="metadata" muted playsInline /> : <img src={post.mediaUrl} alt="" loading="lazy" />}</div>}
     {post.bumpComments.length > 0 && <details className="bump-plan">
       <summary><span><i className={post.bumpEnabled ? "pulse-dot" : ""} />24-hour bump plan</span><strong>{post.bumpComments.filter((comment) => comment.status === "published").length}/{post.bumpComments.length} sent</strong><span className="summary-chev"><IconChevron /></span></summary>
-      <ol>{post.bumpComments.map((comment) => <li key={comment.id} className={`bump-${comment.status}`}><span>{comment.status === "published" ? "Sent" : comment.status === "cancelled" ? "Stopped" : formatDate(comment.scheduledAt)}</span><p>{comment.body}</p></li>)}</ol>
+      <ol>{post.bumpComments.map((comment) => <li key={comment.id} className={`bump-${comment.status}`}>
+        <span>{comment.status === "published" ? "Sent" : comment.status === "cancelled" ? "Stopped" : comment.status === "failed" ? "Failed" : comment.jobs.length > 0 ? `Slot ${comment.sequence}` : formatDate(comment.scheduledAt)}</span>
+        <div className="bump-comment-body">
+          <p>{comment.body}</p>
+          {comment.status === "failed" && comment.errorMessage && <p className="bump-error">{comment.errorMessage}</p>}
+          {comment.jobs.length > 0 && <ul className="bump-jobs">{comment.jobs.map((job) => <li key={job.id} className={`bump-job-${job.status}`}>
+            <span className="bump-job-platform">{PLATFORM_META[job.platform].label}</span>
+            <span>{job.status === "published" ? `Sent ${formatDate(job.publishedAt)}` : job.status === "failed" ? `Failed${job.errorMessage ? ` — ${job.errorMessage}` : ""}` : job.status === "cancelled" ? "Stopped" : `Scheduled ${formatDate(job.scheduledAt)}`}</span>
+          </li>)}</ul>}
+        </div>
+      </li>)}</ol>
       {post.bumpEnabled && post.bumpComments.some((comment) => comment.status === "pending") && <div className="bump-actions">
         {onAdvanceBump && <button className="secondary-button" disabled={cancelling} onClick={() => onAdvanceBump(post.id)}>{demoMode ? "Run next demo comment" : "Run next comment"}</button>}
         {onCancelBump && <button className="danger-text" disabled={cancelling} onClick={() => onCancelBump(post.id)}>Stop remaining comments</button>}
@@ -458,17 +474,24 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
   const [mode, setMode] = useState<"now" | "scheduled">("now");
   const [scheduledAt, setScheduledAt] = useState("");
   const [preview, setPreview] = useState<Platform>(connected[0]?.platform ?? "facebook");
+  const [bumpOn, setBumpOn] = useState(false);
+  const [bumpTexts, setBumpTexts] = useState<string[]>(["", "", "", ""]);
   const [message, setMessage] = useState("");
   const objectUrl = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
   useEffect(() => () => { if (objectUrl) URL.revokeObjectURL(objectUrl); }, [objectUrl]);
 
   const selectedAccounts = connected.filter((account) => selected.includes(account.id));
   const selectedPlatforms = selectedAccounts.map((account) => account.platform);
+  const bumpFilled = bumpTexts.filter((text) => text.trim().length > 0).length;
+  const bumpUnsupported = selectedPlatforms.filter((platform) => platform === "tiktok");
   const requirements = [
     selectedPlatforms.includes("x") && body.length > 280 ? `X is ${body.length - 280} characters over its limit.` : null,
     (selectedPlatforms.includes("instagram") || selectedPlatforms.includes("tiktok")) && !file ? "Instagram and TikTok require media." : null,
     selectedPlatforms.includes("youtube") && (!file?.type.startsWith("video/") || !title.trim()) ? "YouTube requires a video and title." : null,
     mode === "scheduled" && !scheduledAt ? "Choose a date and time." : null,
+    bumpOn && bumpFilled === 0 ? "Add at least one follow-up comment, or turn the bump off." : null,
+    bumpOn && selectedPlatforms.length > 0 && selectedPlatforms.every((platform) => platform === "tiktok") ? "Follow-up comments aren't available for TikTok yet. Pick another channel or turn the bump off." : null,
+    bumpOn && selectedPlatforms.includes("x") && bumpTexts.some((text) => text.trim().length > 280) ? "A follow-up comment is over X's 280-character limit." : null,
   ].filter(Boolean) as string[];
 
   const publish = useMutation({
@@ -481,6 +504,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
         accountIds: selected,
         publishMode: mode,
         scheduledAt: mode === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+        bumpComments: bumpOn && bumpFilled > 0 ? bumpTexts.map((text) => text.trim()) : undefined,
         media: encoded && file ? { name: file.name, mimeType: encoded.mimeType, dataBase64: encoded.dataBase64 } : undefined,
       });
     },
@@ -488,6 +512,7 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
       setMessage(result.message);
       if (result.ok) {
         setBody(""); setTitle(""); setSelected([]); setFile(null); setScheduledAt(""); setMode("now");
+        setBumpOn(false); setBumpTexts(["", "", "", ""]);
         await queryClient.invalidateQueries({ queryKey: ["workspace", token] });
         onDone(result.message);
       }
@@ -515,6 +540,28 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
             <input type="checkbox" checked={selected.includes(account.id)} onChange={() => toggle(account.id)} />
             <PlatformBadge platform={account.platform} /><span><strong>{PLATFORM_META[account.platform].label}</strong><small>{account.handle}</small></span>
           </label>)}</div></fieldset>
+          <div className="bump-builder">
+            <div className="bump-toggle-row">
+              <div>
+                <strong>Keep this post moving for 24 hours</strong>
+                <p>Stagger four comments at +1h, +6h, +12h, and +23h.</p>
+                {bumpOn && bumpUnsupported.length > 0 && selectedPlatforms.length > bumpUnsupported.length && <p className="bump-note">Not available for {bumpUnsupported.map((platform) => PLATFORM_META[platform].label).join(", ")} yet — the other channels still get their comments.</p>}
+              </div>
+              <button type="button" role="switch" aria-checked={bumpOn} aria-label="Keep this post moving for 24 hours" className={bumpOn ? "bump-toggle on" : "bump-toggle"} onClick={() => setBumpOn((current) => !current)}><span /></button>
+            </div>
+            {bumpOn && <div className="bump-fields">
+              {["+1 hour", "+6 hours", "+12 hours", "+23 hours"].map((label, index) => <label className="field-label" key={label}>{label}
+                <span>{bumpTexts[index].length}/500{selectedPlatforms.includes("x") && bumpTexts[index].trim().length > 280 ? " · over X's 280 limit" : ""}</span>
+                <textarea
+                  value={bumpTexts[index]}
+                  maxLength={500}
+                  rows={2}
+                  placeholder="Write a follow-up comment (optional)"
+                  onChange={(event) => setBumpTexts((current) => current.map((text, i) => i === index ? event.target.value : text))}
+                />
+              </label>)}
+            </div>}
+          </div>
           {mode === "scheduled" && <label className="field-label">Publish date and time<input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></label>}
           {requirements.length > 0 && <div className="requirements" role="status">{requirements.map((item) => <p key={item}>{item}</p>)}</div>}
           {message && <p className="form-message" role="status">{message}</p>}
@@ -852,7 +899,7 @@ function YoutubePlatformCard({ isAdmin, youtubeConfigured }: { isAdmin: boolean;
   </details>;
 }
 
-function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number }) {
+function OwnerPlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap }: { setting: PlatformSetting; token: string; onMessage: (message: string) => void; isAdmin: boolean; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number }) {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState(setting.clientId);
   const [clientSecret, setClientSecret] = useState("");
@@ -936,10 +983,10 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
     <div className="billing-card">
       <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
       <div className="billing-card-main">
-        <h2>Plan</h2>
-        <p className="billing-price">$19.88/month <small>billed monthly · <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></small></p>
+        <p className="billing-eyebrow">Current plan</p>
+        <p className="billing-price">$19.88 / month <span className="billed-pill">Billed monthly</span> <small><a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></small></p>
         {statusQuery.isPending ? <p className="billing-status">Loading…</p> : statusQuery.isError ? <p className="billing-status">Could not load billing status.</p> : <>
-          <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
+          <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · First charge ${trialEnd}` : null}{renews ? ` · Renews ${renews}` : null}</p>
           {!subscribed && xAddon?.configured && xAddon.tiers.length > 0 && <div className="x-checkout-picker">
             <p className="x-checkout-picker-title">Add X posting now? It bills from day one.</p>
             <ul className="x-tier-list x-picker-list">
@@ -958,7 +1005,10 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
             </ul>
           </div>}
           {subscribed
-            ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
+            ? <div className="billing-actions">
+                <button className="primary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
+                <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>View invoices</button>
+              </div>
             : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
           {!subscribed && <p className="billing-trial">14-day free trial — your card is charged $19.88 on day 15. Cancel anytime.</p>}
         </>}
@@ -967,6 +1017,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
         <li><span className="trust-check"><IconCheck /></span>Post to every connected platform</li>
         <li><span className="trust-check"><IconCheck /></span>Scheduling and post history</li>
         <li><span className="trust-check"><IconCheck /></span>Cancel anytime</li>
+        <li><span className="trust-check"><IconCheck /></span>Access to all features</li>
       </ul>
     </div>
     {!statusQuery.isPending && !statusQuery.isError && xAddon?.configured && <div className="x-addon-card">
@@ -982,6 +1033,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
             const current = tier.name === xAddon.activeTier;
             return <li key={tier.priceId}>
               <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
+              {tier.amountCents != null && <span className="x-tier-price">${(tier.amountCents / 100).toFixed(2).replace(/\.00$/, "")} / month</span>}
               {current
                 ? <span className="status-pill status-live"><i />Current tier</span>
                 : <button className="secondary-button" disabled={setTier.isPending || removeAddon.isPending} onClick={() => setTier.mutate(tier.priceId)}>{setTier.isPending ? "Working…" : xAddon.activeTier ? `Switch to ${tier.name}` : `Add ${tier.name}`}</button>}
@@ -991,15 +1043,62 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
         </> : <p className="x-addon-line">You can pick a tier when you subscribe — or add one any time after.</p>}
       </div>
     </div>}
+    <BillingHistoryCard token={token} subscribed={subscribed} onViewAll={() => portal.mutate()} viewAllPending={portal.isPending} />
     <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
   </section>;
 }
 
-function BillingPage({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
+function BillingHistoryCard({ token, subscribed, onViewAll, viewAllPending }: { token: string; subscribed: boolean; onViewAll: () => void; viewAllPending: boolean }) {
+  const invoicesQuery = useQuery({
+    queryKey: ["billing-invoices", token],
+    queryFn: () => api.listBillingInvoices({ sessionToken: token }),
+    retry: false,
+  });
+  const invoices = invoicesQuery.data?.invoices ?? [];
+  const formatAmount = (cents: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
+    } catch {
+      return `$${(cents / 100).toFixed(2)}`;
+    }
+  };
+  return <div className="billing-history-card">
+    <div className="settings-section-head">
+      <span className="settings-section-icon tint-slate"><IconDoc /></span>
+      <div className="settings-section-titles"><h3>Billing history</h3><p>View your past invoices and payments.</p></div>
+      {(subscribed || invoices.length > 0) && <button className="secondary-button billing-history-all" disabled={viewAllPending} onClick={onViewAll}><IconExternal /> View all invoices</button>}
+    </div>
+    {invoicesQuery.isPending ? <p className="billing-status">Loading…</p> : invoices.length === 0 ? <p className="billing-history-empty">No invoices yet.</p> : <table className="invoice-table">
+      <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th><th>Invoice</th></tr></thead>
+      <tbody>{invoices.map((invoice) => <tr key={invoice.id}>
+        <td data-label="Date">{new Date(invoice.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</td>
+        <td data-label="Description">{invoice.description}</td>
+        <td data-label="Amount">{formatAmount(invoice.amountCents, invoice.currency)}</td>
+        <td data-label="Status"><span className={`invoice-status invoice-status-${invoice.status.toLowerCase()}`}><i />{invoice.status}</span></td>
+        <td data-label="Invoice">{invoice.hostedInvoiceUrl ? <a className="invoice-link" href={invoice.hostedInvoiceUrl} target="_blank" rel="noopener noreferrer"><IconExternal /> View invoice</a> : <span className="dim-text">—</span>}</td>
+      </tr>)}</tbody>
+    </table>}
+  </div>;
+}
+
+function BillingPage({ token, onMessage, go }: { token: string; onMessage: (message: string) => void; go: (page: Page) => void }) {
   return <div className="page-stack billing-page">
-    <div className="page-heading"><h1>Billing</h1><p>Your plan, add-ons, and payment details.</p></div>
+    <div className="page-heading settings-heading">
+      <div><h1>Billing</h1><p>Manage your plan, add-ons, and payment details.</p></div>
+      <button className="billing-help-button" onClick={() => go("help")}><IconHelp /> Billing help</button>
+    </div>
     <BillingSection token={token} onMessage={onMessage} />
   </div>;
+}
+
+function PasswordField({ label, placeholder, value, onChange, autoComplete }: { label: string; placeholder: string; value: string; onChange: (value: string) => void; autoComplete: string }) {
+  const [show, setShow] = useState(false);
+  return <label className="password-field">{label}
+    <span className="password-input">
+      <input type={show ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} required />
+      <button type="button" className="password-eye" aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} onClick={() => setShow((current) => !current)}>{show ? <IconEyeOff /> : <IconEye />}</button>
+    </span>
+  </label>;
 }
 
 function ChangePasswordForm({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
@@ -1021,18 +1120,15 @@ function ChangePasswordForm({ token, onMessage }: { token: string; onMessage: (m
       setMessage(e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not continue.");
     }
   };
-  return <section className="settings-card">
-    <div className="settings-body flush">
-    <h2>Change password</h2>
-    <form onSubmit={run} className="change-password-form">
-      <label>Current password<input type="password" value={current} onChange={(event) => setCurrent(event.target.value)} autoComplete="current-password" required /></label>
-      <label>New password<input type="password" value={next} onChange={(event) => setNext(event.target.value)} autoComplete="new-password" minLength={8} required /></label>
-      <label>Confirm new password<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" required /></label>
-      {message && <p className="form-message" role="status">{message}</p>}
-      <button className="secondary-button" type="submit" disabled={change.isPending}>{change.isPending ? "Updating…" : "Update password"}</button>
-    </form>
+  return <form onSubmit={run} className="change-password-form">
+    <div className="password-grid">
+      <PasswordField label="Current password" placeholder="Enter current password" value={current} onChange={setCurrent} autoComplete="current-password" />
+      <PasswordField label="New password" placeholder="Enter new password" value={next} onChange={setNext} autoComplete="new-password" />
+      <PasswordField label="Confirm new password" placeholder="Confirm new password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
     </div>
-  </section>;
+    {message && <p className="form-message" role="status">{message}</p>}
+    <button className="primary-button password-submit" type="submit" disabled={change.isPending}>{change.isPending ? "Updating…" : "Update password"}</button>
+  </form>;
 }
 
 function AdminResetTool({ token }: { token: string }) {
@@ -1058,17 +1154,112 @@ function AdminResetTool({ token }: { token: string }) {
   </section>;
 }
 
-function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, xVisible, onMessage, onSignOut }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; xVisible: boolean; onMessage: (message: string) => void; onSignOut: () => void }) {
+function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, xVisible, onMessage, onSignOut, go }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; xVisible: boolean; onMessage: (message: string) => void; onSignOut: () => void; go: (page: Page) => void }) {
   const isAdmin = user.role === "admin";
+  const [showCredentials, setShowCredentials] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const deleteAccount = useMutation({
+    mutationFn: () => api.deleteAccount({ sessionToken: token, confirmation: deleteText }),
+    onSuccess: (result) => {
+      if (result.ok) { onSignOut(); return; }
+      setDeleteMessage(result.message);
+    },
+    onError: (e) => setDeleteMessage(e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not continue."),
+  });
+  const miniPlatforms: Platform[] = (["facebook", "instagram", "tiktok", "youtube", "x"] as Platform[]).filter((platform) => platform !== "x" || xVisible);
   return <div className="page-stack">
-    <div className="page-heading"><h1>Settings</h1><p>Platform connections and your account.</p></div>
-    <section className="security-manifest"><span className="manifest-icon"><IconGear /></span><div><h2>How credentials work</h2><p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p></div></section>
-    <section className="settings-list">{settings.filter((setting) => setting.platform !== "x" || xVisible).map((setting) => <PlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
-    <section className="profile-block"><span className="profile-avatar" aria-hidden="true">{user.displayName.trim().charAt(0).toUpperCase() || "Z"}</span><div><h2>{user.displayName}</h2><p>{user.email}</p></div><button className="quiet-button" onClick={onSignOut}>Sign out</button></section>
-    <ChangePasswordForm token={token} onMessage={onMessage} />
-    {isAdmin && <AdminResetTool token={token} />}
+    <div className="page-heading settings-heading">
+      <div><h1>Settings</h1><p>Manage your account, platform connections, and preferences.</p></div>
+      <button className="secondary-button" onClick={() => go("billing")}>View billing</button>
+    </div>
+
+    <section className="settings-section-card">
+      <div className="settings-section-head">
+        <span className="settings-section-icon tint-accent"><IconLink /></span>
+        <div className="settings-section-titles"><h2>Platform connections</h2><p>Connect your social accounts to start posting.</p></div>
+        <button className="text-link-button settings-credentials-link" onClick={() => setShowCredentials(true)}>How credentials work <IconArrowRight /></button>
+      </div>
+      <div className="platform-mini-grid">
+        {miniPlatforms.map((platform) => <button key={platform} type="button" className="platform-mini" onClick={() => go("accounts")}>
+          <PlatformBadge platform={platform} large />
+          <span className="platform-mini-name">{PLATFORM_META[platform].label}</span>
+          <span className="platform-mini-note">No setup needed</span>
+          <span className="platform-mini-chev"><IconChevron /></span>
+        </button>)}
+      </div>
+    </section>
+
+    <section className="settings-section-card">
+      <div className="settings-section-head">
+        <span className="settings-section-icon tint-slate"><IconUser /></span>
+        <div className="settings-section-titles"><h2>Profile</h2><p>Manage your account details and sign out.</p></div>
+      </div>
+      <div className="profile-row">
+        <span className="profile-avatar" aria-hidden="true">{user.displayName.trim().charAt(0).toUpperCase() || "Z"}</span>
+        <div className="profile-id"><strong>{user.displayName}</strong><span>{user.email}</span></div>
+        <button className="secondary-button" onClick={onSignOut}><IconLogout /> Sign out</button>
+      </div>
+    </section>
+
+    <section className="settings-section-card">
+      <div className="settings-section-head">
+        <span className="settings-section-icon tint-green"><IconLock /></span>
+        <div className="settings-section-titles"><h2>Change password</h2><p>Keep your account secure with a strong password.</p></div>
+      </div>
+      <ChangePasswordForm token={token} onMessage={onMessage} />
+    </section>
+
+    <section className="settings-section-card">
+      <div className="settings-section-head">
+        <span className="settings-section-icon tint-red"><IconTrash /></span>
+        <div className="settings-section-titles"><h2>Account actions</h2><p>Permanently delete your account and all data.</p></div>
+      </div>
+      <div className="delete-row">
+        <div className="delete-copy">
+          <strong className="delete-title">Delete account</strong>
+          <p>This will permanently remove your account, posts, and all connected platforms. This action cannot be undone.</p>
+        </div>
+        <button className="danger-outline-button" onClick={() => { setDeleteText(""); setDeleteMessage(""); setShowDelete(true); }}>Delete account</button>
+      </div>
+    </section>
+
+    {isAdmin && <section className="owner-setup">
+      <div className="page-heading"><h2>Owner setup</h2><p>Admin only — platform app credentials and setup steps. Customers never see this section.</p></div>
+      <section className="settings-list">{settings.filter((setting) => setting.platform !== "x" || xVisible).map((setting) => <OwnerPlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
+      <AdminResetTool token={token} />
+    </section>}
+
+    {showCredentials && <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="How credentials work" onClick={() => setShowCredentials(false)}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close" aria-label="Close" onClick={() => setShowCredentials(false)}><IconClose /></button>
+        <span className="manifest-icon"><IconGear /></span>
+        <h2>How credentials work</h2>
+        <p>When you connect a platform, zepostia stores an access token — never your password. Tokens are encrypted and only used to publish the posts you create.</p>
+        <button className="primary-button" onClick={() => setShowCredentials(false)}>Got it</button>
+      </div>
+    </div>}
+
+    {showDelete && <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Delete account" onClick={() => setShowDelete(false)}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close" aria-label="Close" onClick={() => setShowDelete(false)}><IconClose /></button>
+        <span className="settings-section-icon tint-red"><IconTrash /></span>
+        <h2>Delete your account?</h2>
+        <p>This permanently removes your account, posts, and all connected platforms, and cancels any active subscription. This action cannot be undone.</p>
+        <label className="field-label">Type DELETE or your email to confirm
+          <input value={deleteText} onChange={(event) => setDeleteText(event.target.value)} placeholder="DELETE" autoComplete="off" />
+        </label>
+        {deleteMessage && <p className="form-message" role="status">{deleteMessage}</p>}
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={() => setShowDelete(false)}>Keep my account</button>
+          <button className="danger-button" disabled={deleteAccount.isPending || (deleteText.trim() !== "DELETE" && deleteText.trim().toLowerCase() !== user.email.toLowerCase())} onClick={() => deleteAccount.mutate()}>{deleteAccount.isPending ? "Deleting…" : "Delete account"}</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
+
 
 
 type HelpCardDef = { id: string; title: string; sub?: string; search: string; defaultOpen?: boolean; body: ReactNode };
@@ -1690,9 +1881,9 @@ export function App() {
       {page === "dashboard" && <Dashboard accounts={data.accounts} posts={data.posts} go={go} xVisible={xVisible} />}
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => go("accounts")} xVisible={xVisible} />}
       {page === "accounts" && <Accounts accounts={data.accounts} settings={settings.data?.platforms ?? []} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} goHelp={() => go("help")} />}
-      {page === "billing" && <BillingPage token={sessionToken} onMessage={setToast} />}
+      {page === "billing" && <BillingPage token={sessionToken} onMessage={setToast} go={go} />}
       {page === "help" && <HelpPage go={go} xVisible={xVisible} />}
-      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} />}
+      {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} go={go} />}
     </main>
     <nav className="bottom-nav" aria-label="Primary navigation">{NAV.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => go(item.id)}><item.Icon /><small>{item.label}</small></button>)}</nav>
     {toast && <div className="toast" role="status">{toast}</div>}

@@ -248,6 +248,27 @@ export const bumpComments = pgTable(
   (table) => [uniqueIndex("bump_comments_post_sequence").on(table.postId, table.sequence)],
 );
 
+/** Per-target execution jobs for bump comments (24-hour post bump). One
+ *  job per (bump comment, post target) is created when the target
+ *  publishes, anchored to the target's actual publish time; the
+ *  scheduler drains due jobs and records each platform's outcome here.
+ *  TikTok targets never get jobs (no comment API/scope exists). */
+export const bumpCommentJobs = pgTable(
+  "bump_comment_jobs",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    bumpCommentId: integer("bump_comment_id").notNull().references(() => bumpComments.id, { onDelete: "cascade" }),
+    targetId: integer("target_id").notNull().references(() => postTargets.id, { onDelete: "cascade" }),
+    platform: text("platform", { enum: ["facebook", "instagram", "tiktok", "youtube", "x"] }).notNull(),
+    status: text("status", { enum: ["pending", "published", "failed", "cancelled"] }).notNull(),
+    scheduledAt: timestamp("scheduled_at", { mode: "date", withTimezone: true }).notNull(),
+    publishedAt: timestamp("published_at", { mode: "date", withTimezone: true }),
+    errorMessage: text("error_message"),
+    remoteId: text("remote_id"),
+  },
+  (table) => [uniqueIndex("bump_comment_jobs_comment_target").on(table.bumpCommentId, table.targetId)],
+);
+
 export const postTargets = pgTable(
   "post_targets",
   {

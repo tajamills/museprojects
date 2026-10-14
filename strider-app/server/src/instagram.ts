@@ -52,11 +52,15 @@ export {
 /** Permissions requested at OAuth time for Instagram. The instagram_* scopes
  *  come from the "Manage messaging & content on Instagram" use case; the
  *  pages_* scopes (already used for Facebook) are kept for Page discovery.
+ *  instagram_manage_comments powers the 24-hour post bump's follow-up
+ *  comments on the account's own media (POST /{media-id}/comments);
+ *  connections made before it was added must reconnect to grant it.
  *  All require App Review before the app leaves development mode; in dev
  *  mode they work for app admins, developers, and testers immediately. */
 export const IG_OAUTH_SCOPES = [
   "instagram_basic",
   "instagram_content_publish",
+  "instagram_manage_comments",
   "pages_manage_posts",
   "pages_read_engagement",
   "pages_show_list",
@@ -294,4 +298,20 @@ export async function publishInstagramMedia(
     { igUserId: args.igUserId, userAccessToken: args.userAccessToken, containerId },
     fetchFn,
   );
+}
+
+/** POST /{ig-media-id}/comments — posts a comment on the account's own
+ *  media (24-hour post bump). Requires the instagram_manage_comments
+ *  permission on the user token; without it Graph returns error code
+ *  10/200 and the caller maps that to a "reconnect" reason. */
+export async function publishInstagramComment(
+  args: { igMediaId: string; userAccessToken: string; message: string },
+  fetchFn: FetchFn = fetch,
+): Promise<{ commentId: string }> {
+  const body = await graphRequest("POST", `/${encodeURIComponent(args.igMediaId)}/comments`, {
+    message: args.message,
+    access_token: args.userAccessToken,
+  }, fetchFn);
+  if (!body.id) throw new InstagramApiError("Instagram did not return a comment id.");
+  return { commentId: String(body.id) };
 }

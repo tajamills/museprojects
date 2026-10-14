@@ -288,15 +288,19 @@ export async function getXUserInfo(accessToken: string, fetchFn: FetchFn = fetch
   };
 }
 
-/** POST /2/tweets — publishes a tweet. Returns the tweet id. */
+/** POST /2/tweets — publishes a tweet. Returns the tweet id. With
+ *  replyToTweetId the tweet is a reply (used by the 24-hour post bump:
+ *  an X "comment" is a reply post). */
 export async function postTweet(
-  args: { accessToken: string; text: string },
+  args: { accessToken: string; text: string; replyToTweetId?: string },
   fetchFn: FetchFn = fetch,
 ): Promise<{ tweetId: string }> {
   if (args.text.length > X_MAX_TWEET_LENGTH) {
     throw new XApiError(`Tweet is ${args.text.length} characters; X allows ${X_MAX_TWEET_LENGTH}.`);
   }
-  const body = await xApiRequest("POST", "/tweets", args.accessToken, { text: args.text }, fetchFn);
+  const payload: { text: string; reply?: { in_reply_to_tweet_id: string } } = { text: args.text };
+  if (args.replyToTweetId) payload.reply = { in_reply_to_tweet_id: args.replyToTweetId };
+  const body = await xApiRequest("POST", "/tweets", args.accessToken, payload, fetchFn);
   const id = body?.data?.id;
   if (!id) throw new XApiError("X did not return a tweet id.");
   return { tweetId: String(id) };
