@@ -419,8 +419,8 @@ function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; pos
 
     <section className="stat-tiles" aria-label="Workspace summary">
       <div className="stat-tile"><span className="stat-bubble tint-green"><IconLink /></span><div><strong>{connected}<small>/5</small></strong><span>connected</span></div></div>
-      <div className="stat-tile"><span className="stat-bubble tint-slate"><IconClock /></span><div><strong>{pending}</strong><span>queued</span></div></div>
-      <div className="stat-tile"><span className="stat-bubble tint-accent"><IconSend /></span><div><strong>{published}</strong><span>published</span></div></div>
+      <div className="stat-tile"><span className="stat-bubble tint-blue"><IconClock /></span><div><strong>{pending}</strong><span>queued</span></div></div>
+      <div className="stat-tile"><span className="stat-bubble tint-lav"><IconSend /></span><div><strong>{published}</strong><span>published</span></div></div>
     </section>
 
     <section className="content-section">
@@ -437,10 +437,10 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
     <div className="post-topline"><StatusPill status={post.status} /><time>{post.publishMode === "scheduled" ? formatDate(post.scheduledAt) : formatDate(post.createdAt)}</time></div>
     {post.youtubeTitle && <h3>{post.youtubeTitle}</h3>}
     <p>{post.body || <span className="dim-text">Media-only post</span>}</p>
-    {post.mediaName && <div className="media-chip"><IconImage />{post.mediaName}</div>}
+    {post.mediaName && <div className="media-chip">{post.mediaType?.startsWith("video") ? <IconPlay /> : <IconImage />}{post.mediaName}</div>}
     <div className="target-row">{post.targets.map((target, index) => <span key={`${post.id}-${target.platform}-${index}`} title={`${PLATFORM_META[target.platform].label}: ${target.status}`}><PlatformBadge platform={target.platform} small /><i className={`target-dot target-${target.status}`} /></span>)}</div>
     </div>
-    {post.mediaUrl && <div className="post-thumb" aria-hidden="true">{post.mediaType?.startsWith("video") ? <video src={post.mediaUrl} preload="metadata" muted playsInline /> : <img src={post.mediaUrl} alt="" loading="lazy" />}</div>}
+    {post.mediaUrl && <div className="post-thumb" aria-hidden="true">{post.mediaType?.startsWith("video") ? <video src={`${post.mediaUrl}#t=0.1`} preload="metadata" muted playsInline /> : <img src={post.mediaUrl} alt="" loading="lazy" />}</div>}
     {post.bumpComments.length > 0 && <details className="bump-plan">
       <summary><span><i className={post.bumpEnabled ? "pulse-dot" : ""} />24-hour bump plan</span><strong>{post.bumpComments.filter((comment) => comment.status === "published").length}/{post.bumpComments.length} sent</strong><span className="summary-chev"><IconChevron /></span></summary>
       <ol>{post.bumpComments.map((comment) => <li key={comment.id} className={`bump-${comment.status}`}>
@@ -482,6 +482,14 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
 
   const selectedAccounts = connected.filter((account) => selected.includes(account.id));
   const selectedPlatforms = selectedAccounts.map((account) => account.platform);
+  // The preview top bar mirrors the "Publish to" selection: one icon per
+  // selected channel (in platform order); before anything is picked it
+  // shows just the platform being previewed. The preview follows the
+  // selection whenever the current preview platform is deselected.
+  const barPlatforms = selectedPlatforms.length > 0 ? PLATFORM_ORDER.filter((platform) => selectedPlatforms.includes(platform)) : [preview];
+  useEffect(() => {
+    if (selectedPlatforms.length > 0 && !selectedPlatforms.includes(preview)) setPreview(selectedPlatforms[0]);
+  }, [selectedPlatforms, preview]);
   const bumpFilled = bumpTexts.filter((text) => text.trim().length > 0).length;
   const bumpUnsupported = selectedPlatforms.filter((platform) => platform === "tiktok");
   const requirements = [
@@ -580,8 +588,8 @@ function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]
 
         <aside className="preview-panel">
           <div className="preview-topbar">
-            <div className="preview-tabs" role="tablist" aria-label="Platform preview">{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <button key={platform} className={preview === platform ? "active" : ""} onClick={() => setPreview(platform)} role="tab" aria-selected={preview === platform}><PlatformBadge platform={platform} small /></button>)}</div>
-            <label className="preview-switcher"><span className="sr-only">Preview platform</span><select value={preview} onChange={(event) => setPreview(event.target.value as Platform)}>{PLATFORM_ORDER.filter((platform) => connected.some((account) => account.platform === platform)).map((platform) => <option key={platform} value={platform}>{PLATFORM_META[platform].label}</option>)}</select></label>
+            <div className="preview-tabs" role="tablist" aria-label="Platform preview">{barPlatforms.map((platform) => <button key={platform} className={preview === platform ? "active" : ""} onClick={() => setPreview(platform)} role="tab" aria-selected={preview === platform}><PlatformBadge platform={platform} small /></button>)}</div>
+            <label className="preview-switcher"><span className="sr-only">Preview platform</span><select value={preview} onChange={(event) => setPreview(event.target.value as Platform)}>{barPlatforms.map((platform) => <option key={platform} value={platform}>{PLATFORM_META[platform].label}</option>)}</select></label>
           </div>
           <div className={`platform-preview preview-${preview}`}>
             <div className="preview-account"><PlatformBadge platform={preview} /><div><strong>{connected.find((account) => account.platform === preview)?.handle ?? PLATFORM_META[preview].label}</strong><small>Sponsored nowhere · {demoMode ? "demo preview" : "preview"}</small></div></div>

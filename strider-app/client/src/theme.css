@@ -380,8 +380,8 @@ input[type="password"]::placeholder {
 .bump-fields > p { margin: 0; color: var(--dim); font-size: 11px; line-height: 1.45; }
 .preview-panel { align-self: start; }
 .preview-tabs { display: flex; gap: 4px; }
-.preview-tabs button { border: 1px solid var(--border); background: var(--surface); padding: 5px; border-radius: 7px; cursor: pointer; opacity: .5; }
-.preview-tabs button.active { opacity: 1; border-color: var(--border-strong); }
+.preview-tabs button { border: 0; background: transparent; padding: 2px; border-radius: 7px; cursor: pointer; opacity: .45; }
+.preview-tabs button.active { opacity: 1; }
 /* Phone-like preview card (owner mockup): zero card padding with its own
    zones — padded account header, FULL-BLEED media area, padded caption,
    reaction row under a hairline. */
@@ -705,24 +705,27 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .arrow-link { display: inline-flex; align-items: center; gap: 7px; }
 
 /* Overview — yellow connected band */
-.connected-band { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px; padding: 18px 22px; }
-.band-bolt { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 12px; background: var(--accent); color: #111417; display: grid; place-items: center; }
-.band-bolt svg { width: 24px; height: 24px; display: block; }
+.connected-band { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: linear-gradient(100deg, #FDEFC0 0%, #FDF3D3 100%); border: 1px solid var(--accent); border-radius: 12px; padding: 16px 20px; }
+.band-bolt { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #111417; display: grid; place-items: center; }
+.band-bolt svg { width: 23px; height: 23px; display: block; }
 .band-text { flex: 1 1 220px; min-width: 0; display: grid; gap: 1px; }
 .band-text strong { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
 .band-text span { color: var(--dim); font-size: 13px; }
-.band-action { display: inline-flex; align-items: center; gap: 8px; }
+.band-action { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; min-height: 38px; padding: 8px 16px; font-size: 13.5px; }
 
 /* Overview — stat tiles */
 .stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 20px; display: flex; align-items: center; gap: 14px; min-width: 0; }
-.stat-bubble { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; }
-.stat-bubble svg { width: 23px; height: 23px; display: block; }
+.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px; display: flex; align-items: center; gap: 14px; min-width: 0; }
+.stat-bubble { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; }
+.stat-bubble svg { width: 21px; height: 21px; display: block; }
 .tint-green { background: var(--status-green-soft); color: var(--status-green); }
 .tint-slate { background: var(--surface-2); color: var(--dim); }
+.tint-blue { background: rgba(90, 130, 220, .14); color: #4A6FC4; }
+.tint-lav { background: rgba(139, 110, 220, .13); color: #7A5FD0; }
+@media (prefers-color-scheme: dark) { .tint-blue { color: #8FB0EE; } .tint-lav { color: #B79CED; } }
 .tint-accent { background: var(--accent-soft); color: var(--accent-strong); }
 .tint-warm { background: var(--warning-soft); color: var(--warning); }
-.stat-tile strong { font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -.02em; display: block; }
+.stat-tile strong { font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: -.02em; display: block; }
 .stat-tile strong small { color: var(--dim); font-size: 14px; font-weight: 600; }
 .stat-tile div > span { color: var(--dim); font-size: 13px; font-weight: 500; }
 
@@ -782,7 +785,10 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .upload-zone strong { font-size: 14px; }
 .compose-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .compose-actions .primary-button, .compose-actions .secondary-button { flex: 1 1 160px; min-height: 44px; }
-.preview-topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-bottom: 10px; }
+/* White top bar across the preview column (owner mockup): its own surface
+   above the preview card — platform tile at the left, switcher pill at
+   the right — and its top edge lines up with the composer card's top. */
+.preview-topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 8px 10px; margin-bottom: 12px; }
 .preview-switcher select { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -852,7 +858,8 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
    full box edge is unmistakable on the dark page background. */
 @media (prefers-color-scheme: dark) {
   .stat-tile, .post-row, .connect-row, .accounts-help-banner, .tour-card,
-  .issue-card, .help-mini-card, .profile-block, .connected-band { border-color: var(--border-strong); }
+  .issue-card, .help-mini-card, .profile-block, .connected-band, .preview-topbar { border-color: var(--border-strong); }
+  .connected-band { background: rgba(247, 201, 72, .15); }
 }
 
 /* Narrow screens: keep tiles and rows inside 360px */
