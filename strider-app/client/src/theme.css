@@ -1044,4 +1044,49 @@ html, body { overflow-x: hidden; }
   .main-canvas { flex: 1 1 auto; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: 30px; }
   .bottom-nav { position: static; flex: 0 0 auto; }
   .toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
+  .main-canvas { min-width: 0; }
+}
+
+/* ---- Horizontal-overflow ROOT-CAUSE fixes (owner: the mobile app
+   scrolled right-to-left). overflow-x:hidden on the frame only masks
+   sideways overflow; these rules remove it at the source so no
+   element's content is wider than the viewport in the first place.
+   The recurring cause: grid/flex children default to min-width:auto,
+   so one long unbreakable string (an email, a filename, a URL, a
+   handle) forces its track — and with it the whole page — wider than
+   the screen. ---- */
+
+/* 1. Grid-stack children may always shrink to their track. */
+.page-stack > *, .content-section > *, .help-plain > *, .connect-list > *,
+.settings-list > *, .billing-block > *, .composer-card > *, .compose-form > *,
+.post-list > *, .help-cards > *, .issue-grid > *, .faq-grid > *,
+.help-bottom-row > *, .stat-tiles > *, .target-options > *, .help-steps > *,
+.settings-section-card > *, .x-checkout-picker > *, .owner-setup > * { min-width: 0; }
+
+/* 2. Flex children that carry user text get the same freedom. */
+.stat-tile > div, .help-step > div, .preview-account > div,
+.target-option span:not(.platform-badge), .preview-switcher { min-width: 0; }
+/* Stat-tile labels stay inside their tile at 360px (no paint bleed). */
+.stat-tile div > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 3. Long unbroken strings break instead of widening the page. */
+.platform-preview > p, .invoice-table td, .go-live-list p, .secret-note { overflow-wrap: anywhere; }
+
+/* 4. Handles and option sub-lines clip with an ellipsis, never push. */
+.preview-account strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connect-handle { min-width: 0; }
+.connect-handle strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target-option small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 5. Selects size to their container, not to their longest option
+   (a long Facebook Page name must not widen the Accounts card). */
+.page-picker select, .preview-switcher select { max-width: 100%; }
+
+/* 6. Help "What each platform supports" table: at phone widths the
+   columns share the screen and cell text wraps — the wrapper's
+   horizontal scroll is switched off, nothing pans sideways. */
+@media (max-width: 640px) {
+  .help-table { table-layout: fixed; }
+  .help-table th, .help-table td { overflow-wrap: anywhere; padding: 10px 8px; }
+  .help-table-wrap { overflow-x: visible; }
 }
