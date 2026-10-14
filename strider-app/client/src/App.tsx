@@ -1001,6 +1001,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
                   <input type="radio" name="x-checkout-tier" checked={checkoutTier === tier.priceId} onChange={() => setCheckoutTier(tier.priceId)} />
                   <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
                 </label>
+                {tier.amountCents != null && <span className="x-tier-price">${(tier.amountCents / 100).toFixed(2).replace(/\.00$/, "")} / month</span>}
               </li>)}
             </ul>
           </div>}

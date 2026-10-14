@@ -320,8 +320,24 @@ input[type="password"]::placeholder {
 .bump-actions .secondary-button { min-height: 38px; padding: 8px 11px; font-size: 11px; }
 
 /* Composer — pro tool feel */
+/* Layout: a single-column stack by default; the two-column split only
+   begins at a 1200px viewport, the first width where the content area
+   (viewport − sidebar rail − canvas padding) fits BOTH a sane composer
+   and the fixed preview track with room to spare:
+     1200px vp → 852px content → 440px composer + 28px gap + 384px preview
+     1280px vp → 932px content → 520px composer + 28px gap + 384px preview
+     1440px vp → 1012px content (canvas maxes at 1120px) → 600px composer
+   Below 1200px the preview stacks UNDER the composer — it can never
+   overlap or squeeze it, at any width. Grid items are min-width:0 so no
+   child (media, tables, long words) can force a track wider than its
+   share and collide with the neighbouring column. */
 .post-page { gap: 40px; }
-.composer-grid { display: grid; gap: 24px; }
+.composer-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+.composer-grid > * { min-width: 0; }
+@media (min-width: 1200px) {
+  .composer-grid { grid-template-columns: minmax(0, 1fr) 384px; gap: 28px; }
+  .preview-panel { position: sticky; top: 28px; }
+}
 .composer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; display: grid; gap: 24px; }
 .compose-form { display: grid; gap: 24px; }
 .field-label > span { justify-self: end; margin-top: -25px; color: var(--dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 600; }
@@ -551,8 +567,6 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
   .rail-user small { color: #9AA3AD; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
   .main-canvas { padding: 44px 36px 60px; }
   .toast { left: auto; width: min(430px, calc(100vw - 250px)); right: 28px; bottom: 26px; }
-  .composer-grid { grid-template-columns: minmax(0, 1.05fr) minmax(310px, .95fr); align-items: start; }
-  .preview-panel { position: sticky; top: 30px; }
   .target-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .connect-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 20px 22px; }
   .connect-row details { grid-column: 1 / -1; }
@@ -700,9 +714,13 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 
 /* Post rows as individual cards with a media thumbnail */
 .post-list { display: grid; gap: 12px; background: transparent; border: 0; border-radius: 0; overflow: visible; }
-.post-row { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 20px 22px; display: flex; gap: 18px; align-items: flex-start; }
+.post-row { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 20px 22px; display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .post-row + .post-row { border-top: 1px solid var(--border); }
 .post-main { flex: 1 1 auto; min-width: 0; }
+/* The bump plan and the cancel action drop to their own full-width row
+   under the post body instead of squeezing in as side flex items. */
+.post-row .bump-plan { flex: 1 1 100%; min-width: 0; }
+.post-row > .danger-text { flex: 0 0 auto; margin-left: auto; }
 .post-thumb { flex: 0 0 auto; width: 168px; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); align-self: center; }
 .post-thumb img, .post-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 @media (max-width: 640px) { .post-thumb { width: 104px; } .post-row { padding: 16px; } }
@@ -947,10 +965,14 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
   .billing-history-card { padding: 18px; }
 }
 
-/* ---- Mobile app frame: the page never scrolls; only the content region does ---- */
+/* ---- Mobile app frame: inside the signed-in app the page never scrolls;
+   only the content region does. The lock is scoped with :has(.app-shell)
+   so public pages (landing, /services, legal, password reset) — which do
+   not render the shell — keep their natural page scroll. ---- */
 html, body { overflow-x: hidden; }
 @media (max-width: 759px) {
-  html, body { height: 100%; overflow-y: hidden; overscroll-behavior: none; }
+  html:has(.app-shell), body:has(.app-shell) { height: 100%; }
+  body:has(.app-shell) { overflow-y: hidden; overscroll-behavior: none; }
   .app-shell { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .mobile-header { position: static; flex: 0 0 auto; }
   .main-canvas { flex: 1 1 auto; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: 30px; }
