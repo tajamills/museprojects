@@ -16,7 +16,7 @@
 /* zepostia professional theme: charcoal + lightning yellow on clean neutrals.
    Green appears ONLY in status contexts (connected pill / published dots). */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #F4F5F6;
   --surface: #FFFFFF;
   --surface-2: #EDF0F2;
@@ -44,8 +44,8 @@
   --space-accent: var(--accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #14171A;
     --surface: #1D2126;
     --surface-2: #262C33;
@@ -66,7 +66,6 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.4), 0 14px 32px rgba(0, 0, 0, 0.45);
   }
-}
 
 * { box-sizing: border-box; }
 html { background: var(--bg); }
@@ -85,10 +84,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .primary-button { background: #111417; color: #FFFFFF; box-shadow: var(--shadow); }
 .primary-button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-lift); background: #23282E; }
 .primary-button:active:not(:disabled) { transform: translateY(0); }
-@media (prefers-color-scheme: dark) {
-  .primary-button { background: var(--accent); color: #111417; }
-  .primary-button:hover:not(:disabled) { background: #FFD84D; }
-}
+:root[data-theme="dark"] .primary-button { background: var(--accent); color: #111417; }
+:root[data-theme="dark"] .primary-button:hover:not(:disabled) { background: #FFD84D; }
 .secondary-button { background: var(--surface); border-color: var(--border-strong); color: var(--text); box-shadow: 0 1px 2px rgba(17, 20, 23, 0.04); }
 .secondary-button:hover:not(:disabled) { border-color: var(--text); transform: translateY(-1px); }
 .quiet-button { background: transparent; border-color: var(--border); color: var(--dim); }
@@ -247,7 +244,7 @@ input[type="password"]::placeholder {
 .bottom-nav button small { font-size: 9px; }
 .bottom-nav button.active { color: var(--text); font-weight: 800; box-shadow: inset 0 -3px 0 var(--accent); }
 .toast { position: fixed; z-index: 50; left: 16px; right: 16px; bottom: calc(77px + env(safe-area-inset-bottom)); background: #111417; color: #fff; padding: 13px 15px; border-radius: 8px; box-shadow: var(--shadow-lift); font-size: 13px; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .toast { background: #F2F4F5; color: #111417; } }
+:root[data-theme="dark"] .toast { background: #F2F4F5; color: #111417; }
 .loading-screen { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 12px; text-align: center; padding: 24px; }
 .loading-mark { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 28px; font-weight: 900; }
 
@@ -359,7 +356,7 @@ input[type="password"]::placeholder {
 .timing-switch { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border-strong); border-radius: 10px; overflow: hidden; background: var(--surface-2); padding: 4px; gap: 4px; }
 .timing-switch button { min-height: 44px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; font-weight: 600; color: var(--dim); }
 .timing-switch button.active { background: #111417; color: #fff; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-@media (prefers-color-scheme: dark) { .timing-switch button.active { background: var(--accent); color: #111417; } }
+:root[data-theme="dark"] .timing-switch button.active { background: var(--accent); color: #111417; }
 .requirements { padding: 12px 14px; background: var(--warning-soft); border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 8px; }
 .requirements p { margin: 3px 0; color: var(--warning); font-size: 12px; font-weight: 700; }
 .demo-action-note { margin: -8px 0 0; text-align: center; color: var(--dim); font-size: 11px; }
@@ -372,7 +369,8 @@ input[type="password"]::placeholder {
 .bump-toggle span { position: absolute; width: 22px; height: 22px; left: 2px; top: 2px; border-radius: 50%; background: var(--dim); transition: transform .18s ease, background-color .18s ease; }
 .bump-toggle.on { background: #111417; border-color: #111417; }
 .bump-toggle.on span { transform: translateX(20px); background: #fff; }
-@media (prefers-color-scheme: dark) { .bump-toggle.on { background: var(--accent); border-color: var(--accent); } .bump-toggle.on span { background: #111417; } }
+:root[data-theme="dark"] .bump-toggle.on { background: var(--accent); border-color: var(--accent); }
+:root[data-theme="dark"] .bump-toggle.on span { background: #111417; }
 .bump-fields { border-top: 1px solid var(--border); padding: 16px; display: grid; gap: 13px; background: var(--surface-2); }
 .bump-fields label { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 12px; font-weight: 700; }
 .bump-fields label > span { color: var(--dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -421,7 +419,7 @@ input[type="password"]::placeholder {
 .filter-row button { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; padding: 8px 14px; font-size: 12px; font-weight: 600; text-transform: capitalize; cursor: pointer; color: var(--dim); }
 .filter-row button:hover { border-color: var(--text); color: var(--text); }
 .filter-row button.active { background: #111417; color: #fff; border-color: #111417; font-weight: 700; }
-@media (prefers-color-scheme: dark) { .filter-row button.active { background: var(--accent); border-color: var(--accent); color: #111417; } }
+:root[data-theme="dark"] .filter-row button.active { background: var(--accent); border-color: var(--accent); color: #111417; }
 .security-manifest { padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .security-manifest h2 { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
 
@@ -459,12 +457,10 @@ input[type="password"]::placeholder {
    from the plan card's right edge, behind the perks column. Decorative
    only — never intercepts clicks and is hidden from assistive tech. */
 .billing-splash { position: absolute; top: 0; right: 0; width: 210px; height: 100%; z-index: 0; pointer-events: none; }
-@media (prefers-color-scheme: dark) { .billing-splash { opacity: .35; } }
-@media (prefers-color-scheme: dark) {
-  /* Full box edge must read unmistakably against the dark page background. */
-  .billing-card, .x-addon-card { border-color: var(--border-strong); }
-  .billing-card { background: linear-gradient(115deg, rgba(247, 201, 72, .08) 0%, var(--surface) 54%, rgba(247, 201, 72, .05) 100%); }
-}
+:root[data-theme="dark"] .billing-splash { opacity: .35; }
+/* Full box edge must read unmistakably against the dark page background. */
+:root[data-theme="dark"] .billing-card, :root[data-theme="dark"] .x-addon-card { border-color: var(--border-strong); }
+:root[data-theme="dark"] .billing-card { background: linear-gradient(115deg, rgba(247, 201, 72, .08) 0%, var(--surface) 54%, rgba(247, 201, 72, .05) 100%); }
 .billing-card-icon { flex: 0 0 auto; width: 96px; height: 96px; border-radius: 24px; background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; }
 .billing-card-icon svg { width: 46px; height: 46px; display: block; }
 .billing-card-main { flex: 1 1 280px; min-width: 0; display: grid; gap: 8px; justify-items: start; align-content: start; }
@@ -537,7 +533,9 @@ input[type="password"]::placeholder {
   .billing-history-card .billing-history-all { grid-area: link; margin-left: 0; justify-self: start; margin-top: 4px; }
   .x-addon-main { flex-basis: 100%; }
 }
-@media (max-width: 720px) and (prefers-color-scheme: dark) { .billing-splash { opacity: .25; } }
+@media (max-width: 720px) {
+  :root[data-theme="dark"] .billing-splash { opacity: .25; }
+}
 
 /* Drawn chevron toggle on every <details> summary: points right when
    closed, rotates down when open. Replaces the old typed-glyph markers. */
@@ -692,6 +690,34 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .rail-signout:hover { color: #F2F4F5; border-color: #3A4149; background: #1D2126; }
 .rail-signout svg { width: 16px; height: 16px; }
 
+/* Light/dark theme switch: drawn sun + moon flanking a sliding track
+   (modeled on .bump-toggle). The active theme's icon takes the ink
+   color and the knob slides toward it. Colors run on theme tokens, so
+   the one control works on the themed mobile header as-is; the rail
+   overrides below pin it to the rail's always-dark palette. */
+.theme-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 6px; background: transparent; border: 0; cursor: pointer; color: var(--dim); }
+.theme-toggle .theme-icon { display: inline-grid; place-items: center; color: var(--dim); transition: color .18s ease; }
+.theme-toggle .theme-icon svg { width: 16px; height: 16px; display: block; }
+.theme-toggle .theme-icon.active { color: var(--ink); }
+.theme-toggle-track { flex: 0 0 auto; width: 40px; height: 22px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border-strong); position: relative; transition: background-color .18s ease, border-color .18s ease; }
+.theme-toggle-knob { position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; border-radius: 50%; background: var(--ink); transition: transform .18s ease; }
+.theme-toggle.is-dark .theme-toggle-knob { transform: translateX(18px); }
+/* Rail (always dark charcoal): full-width row under the user card,
+   styled to sit with the Sign out row. */
+.rail-user .theme-toggle { width: 100%; justify-content: center; margin-top: 10px; min-height: 40px; padding: 8px 12px; border: 1px solid #2A3037; border-radius: 8px; }
+.rail-user .theme-toggle:hover { border-color: #3A4149; background: #1D2126; }
+.rail-user .theme-toggle .theme-icon { color: #9AA3AD; }
+.rail-user .theme-toggle .theme-icon.active { color: var(--accent); }
+.rail-user .theme-toggle-track { background: #1D2126; border-color: #3A4149; }
+.rail-user .theme-toggle-knob { background: #F2F4F5; }
+/* Mobile header: the generic header-button rule forces a 40px grid
+   cell; the switch needs its natural flex width, slightly compact. */
+.mobile-status .theme-toggle { display: inline-flex; min-width: 0; min-height: 40px; padding: 4px 2px; margin-left: 2px; }
+.mobile-status .theme-toggle .theme-icon svg { width: 15px; height: 15px; }
+.mobile-status .theme-toggle-track { width: 34px; height: 20px; }
+.mobile-status .theme-toggle-knob { width: 14px; height: 14px; }
+.mobile-status .theme-toggle.is-dark .theme-toggle-knob { transform: translateX(16px); }
+
 /* Admin password-reset tool */
 .admin-reset { margin-top: 24px; }
 .admin-reset h2 { margin: 0 0 6px; font-size: 15px; font-weight: 700; }
@@ -756,7 +782,8 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 .tint-slate { background: var(--surface-2); color: var(--dim); }
 .tint-blue { background: rgba(90, 130, 220, .14); color: #4A6FC4; }
 .tint-lav { background: rgba(139, 110, 220, .13); color: #7A5FD0; }
-@media (prefers-color-scheme: dark) { .tint-blue { color: #8FB0EE; } .tint-lav { color: #B79CED; } }
+:root[data-theme="dark"] .tint-blue { color: #8FB0EE; }
+:root[data-theme="dark"] .tint-lav { color: #B79CED; }
 .tint-accent { background: var(--accent-soft); color: var(--accent-strong); }
 .tint-warm { background: var(--warning-soft); color: var(--warning); }
 .stat-tile strong { font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: -.02em; display: block; }
@@ -916,11 +943,8 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 
 /* Dark theme: key rebuilt cards take the stronger border so the
    full box edge is unmistakable on the dark page background. */
-@media (prefers-color-scheme: dark) {
-  .stat-tile, .post-row, .connect-row, .accounts-help-banner, .tour-card,
-  .issue-card, .help-mini-card, .profile-block, .connected-band, .preview-topbar { border-color: var(--border-strong); }
-  .connected-band { background: rgba(247, 201, 72, .15); }
-}
+:root[data-theme="dark"] .stat-tile, :root[data-theme="dark"] .post-row, :root[data-theme="dark"] .connect-row, :root[data-theme="dark"] .accounts-help-banner, :root[data-theme="dark"] .tour-card, :root[data-theme="dark"] .issue-card, :root[data-theme="dark"] .help-mini-card, :root[data-theme="dark"] .profile-block, :root[data-theme="dark"] .connected-band, :root[data-theme="dark"] .preview-topbar { border-color: var(--border-strong); }
+:root[data-theme="dark"] .connected-band { background: rgba(247, 201, 72, .15); }
 
 /* Narrow screens: keep tiles and rows inside 360px */
 @media (max-width: 480px) {
@@ -1015,7 +1039,7 @@ details[open ] > summary .summary-chev svg { transform: rotate(0deg); }
 /* "Billed monthly" pill is purple in the owner's mockup: soft lavender
    fill with purple text, beside the price. */
 .billed-pill { display: inline-block; vertical-align: 3px; background: #EAE6FB; color: #6C4BD8; border-radius: 99px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
-@media (prefers-color-scheme: dark) { .billed-pill { background: rgba(167, 139, 250, .16); color: #C4B5FD; } }
+:root[data-theme="dark"] .billed-pill { background: rgba(167, 139, 250, .16); color: #C4B5FD; }
 .billing-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 /* Billing buttons run compact, as in the owner's mockup — the global
    46px button height belongs to forms, not these cards. */

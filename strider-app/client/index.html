@@ -6,6 +6,20 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/logo-mark.png" />
     <title>zepostia</title>
+    <script>
+      // Seed the theme before first paint: the stored choice
+      // (localStorage "zepostia-theme", set by the in-app toggle)
+      // wins; with no stored choice, follow the device setting.
+      // theme.css keys every dark rule off <html data-theme="...">.
+      (function () {
+        var theme = null;
+        try { theme = window.localStorage.getItem("zepostia-theme"); } catch (e) { /* storage unavailable */ }
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
     <link rel="stylesheet" href="/theme.css" />
     <script type="module" src="/bundle.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
