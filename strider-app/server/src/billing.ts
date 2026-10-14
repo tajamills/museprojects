@@ -301,6 +301,85 @@ export async function syncSubscription(db: Db, subscription: Stripe.Subscription
     .where(eq(schema.users.id, user.id));
 }
 
+type UserRow = typeof schema.users.$inferSelect;
+
+/**
+ * Read-time reconciliation: rebuild a user's local subscription state
+ * from Stripe's actual state. This makes billing self-healing — the
+ * webhook (see handleStripeEvent) is still the primary sync path, but a
+ * completed checkout must never be stranded by a webhook endpoint that
+ * was never registered in the Stripe dashboard or a signing-secret
+ * mismatch: the next billing read repairs the local row from Stripe.
+ *
+ * Callers invoke this only when the local row does NOT already show a
+ * live subscription with a subscription ID, so in the steady state it
+ * costs no Stripe calls at all. On the repair path it costs one
+ * subscriptions.list call (plus a customer lookup when the row has no
+ * Stripe customer ID yet).
+ *
+ * Returns true when the local row was updated. Never throws — a Stripe
+ * outage must not break the billing page; the caller falls back to the
+ * local state it already had.
+ */
+export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Promise<boolean> {
+  if (!process.env.STRIPE_SECRET_KEY) return false;
+  try {
+    const stripe = getStripe();
+
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      // The row never got its Stripe customer bound (checkout completed
+      // without the binding webhook and the session-time write was
+      // lost). Find the customer by email: prefer one that carries a
+      // live subscription, else the newest customer with any
+      // subscription on file.
+      const customers = await stripe.customers.list({ email: user.email, limit: 10 });
+      let fallbackCustomerId: string | null = null;
+      for (const customer of customers.data) {
+        if (customer.deleted) continue;
+        const subs = await stripe.subscriptions.list({ customer: customer.id, status: "all", limit: 10 });
+        if (subs.data.some((sub) => SUBSCRIBED_STATUSES.includes(sub.status))) {
+          customerId = customer.id;
+          break;
+        }
+        if (!fallbackCustomerId && subs.data.length > 0) fallbackCustomerId = customer.id;
+      }
+      customerId = customerId ?? fallbackCustomerId;
+      if (!customerId) return false;
+      await db
+        .update(schema.users)
+        .set({ stripeCustomerId: customerId })
+        .where(eq(schema.users.id, user.id));
+    }
+
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+    const live = subs.data.find((sub) => SUBSCRIBED_STATUSES.includes(sub.status));
+    if (live) {
+      // syncSubscription keys its row lookup on stripeCustomerId, which
+      // is guaranteed set by this point.
+      await syncSubscription(db, live);
+      return true;
+    }
+    // No live subscription in Stripe. Record a cancellation if the
+    // newest subscription is canceled (keeps the Billing label and the
+    // X entitlement truthful); leave the row untouched for anything
+    // else (an abandoned checkout's "incomplete" subscription means
+    // "No subscription" is already the correct local state).
+    const newest = subs.data[0];
+    if (newest && newest.status === "canceled" && user.subscriptionStatus !== "canceled") {
+      await syncSubscription(db, newest);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error(
+      `billing reconcile failed for user ${user.id}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
 async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<void> {
   const customerId =
     typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;

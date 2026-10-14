@@ -4,12 +4,14 @@ import type { AppCtx } from "./ctx.js";
 import type { Db } from "./db.js";
 import * as schema from "./schema.js";
 import {
+  SUBSCRIBED_STATUSES,
   TRIAL_DAYS,
   baseUrl,
   canPostToX,
   getStripe,
   getXAddonUsage,
   isXAddonConfigured,
+  reconcileSubscriptionFromStripe,
   syncSubscription,
   xAddonSubscriptionItem,
   xAddonTierForPriceId,
@@ -211,6 +213,27 @@ async function billingUser(ctx: AppCtx, token: string) {
   const row = rows[0];
   if (!row || row.sessions.expiresAt.getTime() <= Date.now()) return null;
   return row.users;
+}
+
+/**
+ * billingUser + self-healing: when the local row does not show a live
+ * subscription (or has no subscription ID — e.g. a completed checkout
+ * whose webhook never arrived because the endpoint isn't registered in
+ * Stripe), reconcile the row from Stripe's actual state first, then
+ * re-read it. When the local row is already live this is exactly
+ * billingUser — no Stripe call is made.
+ */
+async function billingUserSynced(ctx: AppCtx, token: string) {
+  let user = await billingUser(ctx, token);
+  if (!user) return null;
+  if (!SUBSCRIBED_STATUSES.includes(user.subscriptionStatus) || !user.stripeSubscriptionId) {
+    const changed = await reconcileSubscriptionFromStripe(ctx.db, user);
+    if (changed) {
+      const fresh = await billingUser(ctx, token);
+      if (fresh) user = fresh;
+    }
+  }
+  return user;
 }
 
 export interface XAddonStatus {
@@ -1196,7 +1219,7 @@ export const actions: Record<string, ActionDef> = {
   createCheckoutSession: {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args): Promise<{ url: string }> {
-      const user = await billingUser(ctx, args.sessionToken);
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const stripe = getStripe();
       const priceId = process.env.STRIPE_PRICE_ID;
@@ -1235,7 +1258,7 @@ export const actions: Record<string, ActionDef> = {
   createPortalSession: {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args): Promise<{ url: string }> {
-      const user = await billingUser(ctx, args.sessionToken);
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const stripe = getStripe();
       if (!user.stripeCustomerId) throw new Error("No billing account yet — subscribe first.");
@@ -1254,7 +1277,7 @@ export const actions: Record<string, ActionDef> = {
       ctx,
       args,
     ): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null; xAddon: XAddonStatus }> {
-      const user = await billingUser(ctx, args.sessionToken);
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const status = user.subscriptionStatus || "none";
       const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
@@ -1278,7 +1301,7 @@ export const actions: Record<string, ActionDef> = {
   setXAddonTier: {
     request: z.object({ sessionToken: z.string().min(1), priceId: z.string().min(1) }),
     async handler(ctx, args): Promise<{ activeTier: string | null }> {
-      const user = await billingUser(ctx, args.sessionToken);
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const tier = xAddonTierForPriceId(args.priceId);
       if (!tier) throw new Error("That X add-on tier is not available.");
@@ -1314,7 +1337,7 @@ export const actions: Record<string, ActionDef> = {
   removeXAddon: {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args): Promise<{ activeTier: string | null }> {
-      const user = await billingUser(ctx, args.sessionToken);
+      const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       if (!user.stripeSubscriptionId) throw new Error("No subscription found.");
       const stripe = getStripe();

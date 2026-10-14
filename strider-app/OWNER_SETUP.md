@@ -81,11 +81,12 @@ One-time setup (Stripe dashboard):
    ```
 
 4. That's it. Once `STRIPE_X_TIERS` is set and Railway redeploys, the
-   add-on appears automatically in each customer's **Settings → Billing**
+   add-on appears automatically on each customer's **Billing** page
    with the tier list, their current tier, and their usage vs cap.
    Customers add, switch, or remove a tier there; the change is applied
-   to their existing Stripe subscription and synced back by the Stripe
-   webhook. If `STRIPE_X_TIERS` is unset, the add-on is not offered
+   to their existing Stripe subscription immediately, kept in sync by
+   the Stripe webhook (§6), and self-healed from Stripe on billing reads
+   if a webhook event is ever missed. If `STRIPE_X_TIERS` is unset, the add-on is not offered
    anywhere in the app and X stays hidden as a platform.
 
 **Pricing guidance:** each tier's price should cover X's raw cost for its
@@ -98,6 +99,33 @@ allowance raw cost.
 The add-on entitlement gates the X posting feature: a workspace can only
 post to X while its subscription carries a tier, and only up to that
 tier's caps for the current billing period.
+
+## 6. Billing (Stripe) — base plan, webhook, and self-healing sync
+
+The $19.88/month base plan needs `STRIPE_SECRET_KEY` and `STRIPE_PRICE_ID`
+in Railway. Checkout itself works with just those two.
+
+**Register the webhook (one-time, Stripe dashboard):** Developers →
+Webhooks → **Add endpoint**:
+
+- URL: `https://zepostia.com/webhooks/stripe`
+- Events: `checkout.session.completed`, `customer.subscription.created`,
+  `customer.subscription.updated`, `customer.subscription.deleted`,
+  `invoice.payment_failed`
+- After creating it, open the endpoint, reveal its **Signing secret**
+  (`whsec_…`), and put it in Railway as `STRIPE_WEBHOOK_SECRET`, then let
+  Railway redeploy.
+
+**The app does not depend on the webhook to notice a paid plan.** Every
+billing read (and checkout / add-on action) first checks the local
+subscription state; if it doesn't show a live subscription, the server
+asks Stripe directly for the customer's subscriptions and repairs the
+local record from Stripe's answer (`reconcileSubscriptionFromStripe` in
+`server/src/billing.ts`). A customer who completes checkout therefore
+sees their plan — and the X add-on tiers — on their next Billing page
+load even if the webhook was never registered. The webhook is still
+worth registering so changes made inside Stripe (portal cancellations,
+failed payments) show up instantly instead of on the next billing read.
 
 ## Railway variables — full list
 
