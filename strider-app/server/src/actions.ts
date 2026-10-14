@@ -6,16 +6,20 @@ import * as schema from "./schema.js";
 import {
   SUBSCRIBED_STATUSES,
   TRIAL_DAYS,
+  X_ADDON_SUBSCRIPTION_METADATA,
   baseUrl,
   canPostToX,
   getStripe,
   getXAddonUsage,
   isXAddonConfigured,
+  isXAddonSubscription,
   reconcileSubscriptionFromStripe,
-  syncSubscription,
+  subscriptionDefaultPaymentMethod,
+  syncBillingForCustomer,
   xAddonSubscriptionItem,
   xAddonTierForPriceId,
   xAddonTiers,
+  xAddonUsagePeriod,
   type BillingPeriod,
   type XAddonTier,
 } from "./billing.js";
@@ -216,22 +220,21 @@ async function billingUser(ctx: AppCtx, token: string) {
 }
 
 /**
- * billingUser + self-healing: when the local row does not show a live
- * subscription (or has no subscription ID — e.g. a completed checkout
- * whose webhook never arrived because the endpoint isn't registered in
- * Stripe), reconcile the row from Stripe's actual state first, then
- * re-read it. When the local row is already live this is exactly
- * billingUser — no Stripe call is made.
+ * billingUser + self-healing: reconcile the row from Stripe's actual
+ * state first, then re-read it when anything changed. This is what
+ * keeps a completed checkout from ever being stranded by a webhook
+ * endpoint that isn't registered in Stripe — and what delivers the X
+ * add-on subscription for a tier prepaid at checkout when the
+ * completion webhook was missed. Costs one Stripe subscriptions list
+ * per billing call in the steady state.
  */
 async function billingUserSynced(ctx: AppCtx, token: string) {
   let user = await billingUser(ctx, token);
   if (!user) return null;
-  if (!SUBSCRIBED_STATUSES.includes(user.subscriptionStatus) || !user.stripeSubscriptionId) {
-    const changed = await reconcileSubscriptionFromStripe(ctx.db, user);
-    if (changed) {
-      const fresh = await billingUser(ctx, token);
-      if (fresh) user = fresh;
-    }
+  const changed = await reconcileSubscriptionFromStripe(ctx.db, user);
+  if (changed) {
+    const fresh = await billingUser(ctx, token);
+    if (fresh) user = fresh;
   }
   return user;
 }
@@ -258,10 +261,9 @@ export interface XAddonStatus {
 async function xAddonStatusFor(ctx: AppCtx, user: NonNullable<Awaited<ReturnType<typeof billingUser>>>): Promise<XAddonStatus> {
   const tiers = xAddonTiers();
   const tier = xAddonTierForPriceId(user.xAddonTierPriceId);
-  const period: BillingPeriod | null =
-    user.currentPeriodStart && user.currentPeriodEnd
-      ? { start: user.currentPeriodStart, end: user.currentPeriodEnd }
-      : null;
+  // Usage is anchored to the tier's own billing period when the tier
+  // has its own subscription, else the base subscription's period.
+  const period: BillingPeriod | null = xAddonUsagePeriod(user);
   const usage = await getXAddonUsage(ctx.db, user.id, period);
   return {
     configured: tiers.length > 0,
@@ -272,7 +274,7 @@ async function xAddonStatusFor(ctx: AppCtx, user: NonNullable<Awaited<ReturnType
       postsCap: tier?.postsPerMonth ?? 0,
       linkPostsUsed: usage.linkPostsUsed,
       linkPostsCap: tier?.linkPostsPerMonth ?? 0,
-      periodEnd: user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null,
+      periodEnd: period ? period.end.toISOString() : null,
     },
   };
 }
@@ -1215,9 +1217,22 @@ export const actions: Record<string, ActionDef> = {
    * Start a Stripe Checkout subscription for the $19.88/month zepostia plan.
    * 14-day free trial: the card is collected at checkout, the first charge
    * lands on day 15. Creates and stores a Stripe customer on first use.
+   *
+   * An X add-on tier can be picked in the same purchase
+   * (xAddonTierPriceId). The trial NEVER covers the tier: the tier's
+   * first month rides the session as a one-time line item on the tier's
+   * own product — one-time items are due at checkout even when the
+   * recurring items trial, so the Checkout page shows the tier amount
+   * as due today next to the base plan's "14 days free". The tier then
+   * renews on its own add-on subscription, created at checkout
+   * completion with its first renewal deferred to the end of the
+   * prepaid month (see ensureXAddonSubscription in billing.ts).
    */
   createCheckoutSession: {
-    request: z.object({ sessionToken: z.string().min(1) }),
+    request: z.object({
+      sessionToken: z.string().min(1),
+      xAddonTierPriceId: z.string().min(1).optional(),
+    }),
     async handler(ctx, args): Promise<{ url: string }> {
       const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
@@ -1226,6 +1241,11 @@ export const actions: Record<string, ActionDef> = {
       if (!priceId) throw new Error("Billing is not configured yet.");
       if (["trialing", "active", "past_due"].includes(user.subscriptionStatus) && user.stripeCustomerId) {
         throw new Error("You already have a subscription — use Manage billing to update it.");
+      }
+      let tier: XAddonTier | undefined;
+      if (args.xAddonTierPriceId) {
+        tier = xAddonTierForPriceId(args.xAddonTierPriceId);
+        if (!tier) throw new Error("That X add-on tier is not available.");
       }
       let customerId = user.stripeCustomerId;
       if (!customerId) {
@@ -1236,13 +1256,35 @@ export const actions: Record<string, ActionDef> = {
         customerId = customer.id;
         await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
       }
+      const lineItems: Array<{
+        price?: string;
+        price_data?: { currency: string; product: string; unit_amount: number };
+        quantity: number;
+      }> = [{ price: priceId, quantity: 1 }];
+      if (tier) {
+        // The tier's first month as a one-time price on the tier's own
+        // product, mirroring the tier price's amount and currency.
+        const tierPrice = await stripe.prices.retrieve(tier.priceId);
+        const productId = typeof tierPrice.product === "string" ? tierPrice.product : tierPrice.product?.id;
+        if (!productId || tierPrice.unit_amount == null) {
+          throw new Error("That X add-on tier is not available.");
+        }
+        lineItems.push({
+          price_data: { currency: tierPrice.currency, product: productId, unit_amount: tierPrice.unit_amount },
+          quantity: 1,
+        });
+      }
       const url = baseUrl(ctx.origin);
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer: customerId,
         client_reference_id: String(user.id),
-        line_items: [{ price: priceId, quantity: 1 }],
-        subscription_data: { trial_period_days: TRIAL_DAYS },
+        line_items: lineItems,
+        subscription_data: {
+          trial_period_days: TRIAL_DAYS,
+          ...(tier ? { metadata: { xAddonTierPriceId: tier.priceId } } : {}),
+        },
+        ...(tier ? { metadata: { xAddonTierPriceId: tier.priceId } } : {}),
         success_url: `${url}/?billing=success`,
         cancel_url: `${url}/?billing=cancelled`,
       });
@@ -1292,11 +1334,15 @@ export const actions: Record<string, ActionDef> = {
   },
 
   /**
-   * Add the X (Twitter) posting add-on tier to the workspace's existing
-   * subscription — or switch tiers when a different tier is already
-   * attached (the subscription item's price is swapped). The entitlement
-   * is re-synced from Stripe immediately; the webhook keeps it in sync
-   * afterwards. The tier price IDs come only from STRIPE_X_TIERS.
+   * Add an X (Twitter) posting add-on tier — or switch tiers. The tier
+   * lives on its OWN Stripe subscription so it bills from day one even
+   * while the base plan is still trialing: adding creates that
+   * subscription with no trial (the first invoice charges
+   * immediately), switching swaps its item price with prorations. A
+   * tier still riding on the base subscription (legacy representation)
+   * is moved over. The entitlement is re-synced from Stripe
+   * immediately; the webhook keeps it in sync afterwards. The tier
+   * price IDs come only from STRIPE_X_TIERS.
    */
   setXAddonTier: {
     request: z.object({ sessionToken: z.string().min(1), priceId: z.string().min(1) }),
@@ -1305,49 +1351,90 @@ export const actions: Record<string, ActionDef> = {
       if (!user) throw new Error("Your session expired. Sign in again.");
       const tier = xAddonTierForPriceId(args.priceId);
       if (!tier) throw new Error("That X add-on tier is not available.");
-      if (!["trialing", "active", "past_due"].includes(user.subscriptionStatus) || !user.stripeSubscriptionId) {
+      if (!["trialing", "active", "past_due"].includes(user.subscriptionStatus) || !user.stripeSubscriptionId || !user.stripeCustomerId) {
         throw new Error("Start your subscription first — the X add-on attaches to your plan.");
       }
       const stripe = getStripe();
-      const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
-      const existingItem = xAddonSubscriptionItem(subscription);
-      if (existingItem && existingItem.price?.id !== tier.priceId) {
-        await stripe.subscriptionItems.update(existingItem.id, {
-          price: tier.priceId,
-          proration_behavior: "create_prorations",
-        });
-      } else if (!existingItem) {
-        await stripe.subscriptionItems.create({
-          subscription: subscription.id,
-          price: tier.priceId,
-          proration_behavior: "create_prorations",
-        });
+      const customerId = user.stripeCustomerId;
+      const base = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+      // Legacy representation: move a tier item off the base
+      // subscription — from here on the tier bills on its own
+      // subscription so the base plan's trial can never cover it.
+      const legacyItem = xAddonSubscriptionItem(base);
+      if (legacyItem) {
+        await stripe.subscriptionItems.del(legacyItem.id, { proration_behavior: "create_prorations" });
       }
-      const updated = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
-      await syncSubscription(ctx.db, updated);
+      const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
+      const addon = subs.find(
+        (s) => isXAddonSubscription(s) && ["trialing", "active", "past_due"].includes(s.status),
+      );
+      if (addon) {
+        const item = xAddonSubscriptionItem(addon);
+        if (item && item.price?.id !== tier.priceId) {
+          await stripe.subscriptionItems.update(item.id, {
+            price: tier.priceId,
+            proration_behavior: "create_prorations",
+          });
+        } else if (!item) {
+          await stripe.subscriptionItems.create({
+            subscription: addon.id,
+            price: tier.priceId,
+            proration_behavior: "create_prorations",
+          });
+        }
+      } else {
+        const paymentMethod = await subscriptionDefaultPaymentMethod(stripe, base);
+        const created = await stripe.subscriptions.create({
+          customer: customerId,
+          items: [{ price: tier.priceId }],
+          ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
+          metadata: {
+            [X_ADDON_SUBSCRIPTION_METADATA]: "1",
+            userId: String(user.id),
+            tierPriceId: tier.priceId,
+          },
+        });
+        if (created.status === "incomplete") {
+          // The day-one charge failed — leave no dangling
+          // subscription behind and tell the customer plainly.
+          await stripe.subscriptions.cancel(created.id).catch(() => undefined);
+          throw new Error("Your card couldn't be charged for the X add-on. Update your payment method, then try again.");
+        }
+      }
+      await syncBillingForCustomer(ctx.db, stripe, customerId);
       const fresh = await billingUser(ctx, args.sessionToken);
       return { activeTier: fresh ? xAddonTierForPriceId(fresh.xAddonTierPriceId)?.name ?? null : null };
     },
   },
 
   /**
-   * Remove the X add-on tier item from the workspace's subscription and
-   * re-sync the entitlement from Stripe (it turns off immediately).
+   * Remove the X add-on: cancel its own subscription (and strip any
+   * legacy tier item off the base subscription), then re-sync the
+   * entitlement from Stripe — it turns off immediately.
    */
   removeXAddon: {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args): Promise<{ activeTier: string | null }> {
       const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
-      if (!user.stripeSubscriptionId) throw new Error("No subscription found.");
+      if (!user.stripeCustomerId) throw new Error("No subscription found.");
       const stripe = getStripe();
-      const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
-      const item = xAddonSubscriptionItem(subscription);
-      if (item) {
-        await stripe.subscriptionItems.del(item.id, { proration_behavior: "create_prorations" });
-        const updated = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
-        await syncSubscription(ctx.db, updated);
+      const customerId = user.stripeCustomerId;
+      const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
+      const addon = subs.find(
+        (s) => isXAddonSubscription(s) && ["trialing", "active", "past_due"].includes(s.status),
+      );
+      if (addon) {
+        await stripe.subscriptions.cancel(addon.id);
       }
+      if (user.stripeSubscriptionId) {
+        const base = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        const item = xAddonSubscriptionItem(base);
+        if (item) {
+          await stripe.subscriptionItems.del(item.id, { proration_behavior: "create_prorations" });
+        }
+      }
+      await syncBillingForCustomer(ctx.db, stripe, customerId);
       return { activeTier: null };
     },
   },

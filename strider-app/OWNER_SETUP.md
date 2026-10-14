@@ -83,11 +83,22 @@ One-time setup (Stripe dashboard):
 4. That's it. Once `STRIPE_X_TIERS` is set and Railway redeploys, the
    add-on appears automatically on each customer's **Billing** page
    with the tier list, their current tier, and their usage vs cap.
-   Customers add, switch, or remove a tier there; the change is applied
-   to their existing Stripe subscription immediately, kept in sync by
-   the Stripe webhook (§6), and self-healed from Stripe on billing reads
-   if a webhook event is ever missed. If `STRIPE_X_TIERS` is unset, the add-on is not offered
+   Customers add, switch, or remove a tier there; the change takes
+   effect immediately, is kept in sync by the Stripe webhook (§6), and
+   self-heals from Stripe on billing reads if a webhook event is ever
+   missed. If `STRIPE_X_TIERS` is unset, the add-on is not offered
    anywhere in the app and X stays hidden as a platform.
+
+**Tiers bill from day one — they never get the base plan's free
+trial.** A customer can also pick a tier during checkout itself: the
+tier's first month is charged on the Checkout page (it shows as an
+amount due today, next to the base plan's "14 days free"), and from
+month two the tier renews on its own separate Stripe subscription,
+which the app creates automatically at checkout completion — no
+extra setup step for you. Adding a tier later (from the Billing page)
+creates that same add-on subscription and charges immediately. If the
+base plan is canceled, the add-on subscription is canceled with it,
+so a tier can never keep billing on its own.
 
 **Pricing guidance:** each tier's price should cover X's raw cost for its
 **full** allowance plus your markup: `posts × $0.015 + link posts × $0.20`.

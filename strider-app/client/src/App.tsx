@@ -822,6 +822,10 @@ function PlatformSettingsCard({ setting, token, onMessage, isAdmin, metaConfigur
 
 function BillingSection({ token, onMessage }: { token: string; onMessage: (message: string) => void }) {
   const queryClient = useQueryClient();
+  // X add-on tier picked at checkout (null = base plan only). The tier
+  // is charged on the Checkout page itself — it never joins the free
+  // trial — and renews on its own subscription from month two.
+  const [checkoutTier, setCheckoutTier] = useState<string | null>(null);
   const statusQuery = useQuery({
     queryKey: ["billing", token],
     queryFn: () => api.getBillingStatus({ sessionToken: token }),
@@ -832,7 +836,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
     return /not configured/i.test(msg) ? "Billing isn't connected yet. Check back soon." : msg.replace(/^action \w+ error: /, "");
   };
   const checkout = useMutation({
-    mutationFn: () => api.createCheckoutSession({ sessionToken: token }),
+    mutationFn: () => api.createCheckoutSession({ sessionToken: token, ...(checkoutTier ? { xAddonTierPriceId: checkoutTier } : {}) }),
     onSuccess: (result) => { window.location.href = result.url; },
     onError: (e) => onMessage(friendly(e)),
   });
@@ -871,6 +875,23 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
         <p className="billing-price">$19.88/month <small>billed monthly · <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> · <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a></small></p>
         {statusQuery.isPending ? <p className="billing-status">Loading…</p> : statusQuery.isError ? <p className="billing-status">Could not load billing status.</p> : <>
           <p className="billing-status"><strong>{label}</strong>{trialEnd ? ` · first charge ${trialEnd}` : null}{renews ? ` · renews ${renews}` : null}</p>
+          {!subscribed && xAddon?.configured && xAddon.tiers.length > 0 && <div className="x-checkout-picker">
+            <p className="x-checkout-picker-title">Add X posting now? It bills from day one.</p>
+            <ul className="x-tier-list x-picker-list">
+              <li className={checkoutTier === null ? "selected" : undefined} onClick={() => setCheckoutTier(null)}>
+                <label>
+                  <input type="radio" name="x-checkout-tier" checked={checkoutTier === null} onChange={() => setCheckoutTier(null)} />
+                  <span><strong>No X add-on</strong> — base plan only</span>
+                </label>
+              </li>
+              {xAddon.tiers.map((tier) => <li key={tier.priceId} className={checkoutTier === tier.priceId ? "selected" : undefined} onClick={() => setCheckoutTier(tier.priceId)}>
+                <label>
+                  <input type="radio" name="x-checkout-tier" checked={checkoutTier === tier.priceId} onChange={() => setCheckoutTier(tier.priceId)} />
+                  <span><strong>{tier.name}</strong> — {tier.postsPerMonth} posts · {tier.linkPostsPerMonth} link posts / month</span>
+                </label>
+              </li>)}
+            </ul>
+          </div>}
           {subscribed
             ? <button className="secondary-button" disabled={portal.isPending} onClick={() => portal.mutate()}>{portal.isPending ? "Working…" : "Manage billing"}</button>
             : <button className="primary-button" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Start subscription"}</button>}
@@ -902,7 +923,7 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
             </li>;
           })}</ul>
           {xAddon.activeTier && <button className="quiet-button" disabled={removeAddon.isPending || setTier.isPending} onClick={() => removeAddon.mutate()}>{removeAddon.isPending ? "Working…" : "Remove add-on"}</button>}
-        </> : <p className="x-addon-line">Start your subscription first — the add-on attaches to your plan.</p>}
+        </> : <p className="x-addon-line">You can pick a tier when you subscribe — or add one any time after.</p>}
       </div>
     </div>}
     <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>

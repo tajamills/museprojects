@@ -112,7 +112,7 @@ type ClientApi = {
   advanceBumpDemo(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   cancelBumpPlan(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   cancelPost(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
-  createCheckoutSession(args: { sessionToken: string }): Promise<RedirectResult>;
+  createCheckoutSession(args: { sessionToken: string; xAddonTierPriceId?: string }): Promise<RedirectResult>;
   createPortalSession(args: { sessionToken: string }): Promise<RedirectResult>;
   getBillingStatus(args: { sessionToken: string }): Promise<BillingStatusResult>;
   setXAddonTier(args: { sessionToken: string; priceId: string }): Promise<{ activeTier: string | null }>;

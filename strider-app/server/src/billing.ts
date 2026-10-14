@@ -48,13 +48,37 @@ export const SUBSCRIBED_STATUSES = ["trialing", "active", "past_due"];
 /* X (Twitter) posting add-on: tiered + capped                         */
 /*                                                                     */
 /* Tiers are defined ONLY by the STRIPE_X_TIERS env config (one Stripe */
-/* price per tier, all under one "X Posting Add-on" product). A       */
-/* workspace's active tier is whichever tier's priceId appears in its   */
-/* Stripe subscription items — synced onto the user row by the webhook */
-/* and the add/switch/remove actions. Plain posts and posts with      */
-/* links are capped (and counted) separately because X bills them at   */
-/* different rates ($0.015 vs $0.20 per post creation).               */
+/* price per tier, each tier its own product). A workspace's active     */
+/* tier is whichever tier's priceId appears in its Stripe subscription */
+/* items — synced onto the user row from Stripe state. Plain posts     */
+/* and posts with links are capped (and counted) separately because X  */
+/* bills them at different rates ($0.015 vs $0.20 per post creation).  */
+/*                                                                     */
+/* Representation: a tier lives on its OWN Stripe subscription         */
+/* (metadata zepostia_x_addon=1), never as an item on the base         */
+/* subscription — a single shared subscription would trial (or bill)   */
+/* both items together, but the product rule is that the base plan's   */
+/* 14-day free trial NEVER covers a tier: tiers bill from day one.     */
+/* At checkout the tier's first month is charged on the Checkout page  */
+/* itself as a one-time line item on the tier's product (one-time      */
+/* items are due at checkout even when the recurring items trial);     */
+/* the add-on subscription is created at checkout completion with its  */
+/* first renewal deferred to the end of that prepaid month. Adding a   */
+/* tier after subscribing creates the same add-on subscription with    */
+/* no deferral, so it charges immediately. Legacy subscriptions may    */
+/* still carry a tier as an item on the base subscription — sync       */
+/* honors that representation too. If the base plan dies, the add-on   */
+/* subscription is canceled with it (see syncBillingForCustomer).      */
 /* ------------------------------------------------------------------ */
+
+/** Metadata key marking a Stripe subscription as the X add-on's own
+ *  subscription (as opposed to the base plan's subscription). */
+export const X_ADDON_SUBSCRIPTION_METADATA = "zepostia_x_addon";
+
+/** True when the subscription is the X add-on's own subscription. */
+export function isXAddonSubscription(subscription: Stripe.Subscription): boolean {
+  return subscription.metadata?.[X_ADDON_SUBSCRIPTION_METADATA] === "1";
+}
 
 export interface XAddonTier {
   priceId: string;
@@ -126,6 +150,47 @@ export function xAddonTierForSubscription(subscription: Stripe.Subscription): XA
 export function xAddonSubscriptionItem(subscription: Stripe.Subscription): Stripe.SubscriptionItem | undefined {
   const tiers = xAddonTiers();
   return (subscription.items?.data ?? []).find((item) => tiers.some((tier) => tier.priceId === item.price?.id));
+}
+
+/** A subscription's X add-on billing period, from the tier item's own
+ *  current period (falling back to the first item). This is the cycle
+ *  X usage is metered against when the tier has its own subscription —
+ *  during the checkout flow's prepaid first month it is exactly the
+ *  window between the add-on subscription's start and its first
+ *  renewal. */
+export function xAddonPeriod(subscription: Stripe.Subscription): BillingPeriod | null {
+  const item = xAddonSubscriptionItem(subscription) ?? subscription.items?.data?.[0];
+  if (!item?.current_period_start || !item?.current_period_end) return null;
+  return {
+    start: new Date(item.current_period_start * 1000),
+    end: new Date(item.current_period_end * 1000),
+  };
+}
+
+/** The billing period X usage is anchored to for a user row: the
+ *  add-on tier's own period when the tier has its own subscription,
+ *  otherwise the base subscription's period (legacy representation). */
+export function xAddonUsagePeriod(user: {
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  xAddonPeriodStart?: Date | null;
+  xAddonPeriodEnd?: Date | null;
+}): BillingPeriod | null {
+  if (user.xAddonPeriodStart && user.xAddonPeriodEnd) {
+    return { start: user.xAddonPeriodStart, end: user.xAddonPeriodEnd };
+  }
+  if (user.currentPeriodStart && user.currentPeriodEnd) {
+    return { start: user.currentPeriodStart, end: user.currentPeriodEnd };
+  }
+  return null;
+}
+
+/** Add calendar months (UTC) — used to compute the end of the tier's
+ *  prepaid first month from the base subscription's creation date. */
+export function addMonths(date: Date, months: number): Date {
+  const d = new Date(date.getTime());
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d;
 }
 
 export interface BillingPeriod {
@@ -215,7 +280,14 @@ export type CanPostToXResult =
  */
 export async function canPostToX(
   db: Db,
-  user: { id: number; xAddonTierPriceId: string | null; currentPeriodStart: Date | null; currentPeriodEnd: Date | null },
+  user: {
+    id: number;
+    xAddonTierPriceId: string | null;
+    currentPeriodStart: Date | null;
+    currentPeriodEnd: Date | null;
+    xAddonPeriodStart?: Date | null;
+    xAddonPeriodEnd?: Date | null;
+  },
   opts: { hasLink: boolean },
 ): Promise<CanPostToXResult> {
   if (!isXAddonConfigured()) {
@@ -225,10 +297,9 @@ export async function canPostToX(
   if (!tier) {
     return { allowed: false, reason: "no_tier", tier: null, usage: null };
   }
-  const period: BillingPeriod | null =
-    user.currentPeriodStart && user.currentPeriodEnd
-      ? { start: user.currentPeriodStart, end: user.currentPeriodEnd }
-      : null;
+  // Usage is metered over the tier's own billing period when the tier
+  // has its own subscription, else the base subscription's period.
+  const period = xAddonUsagePeriod(user);
   const usage = await getXAddonUsage(db, user.id, period);
   const used = opts.hasLink ? usage.linkPostsUsed : usage.postsUsed;
   const cap = opts.hasLink ? tier.linkPostsPerMonth : tier.postsPerMonth;
@@ -272,13 +343,47 @@ function periodStart(sub: Stripe.Subscription): Date | null {
   return start ? new Date(start * 1000) : null;
 }
 
-/** Copy a Stripe subscription's state onto the matching user row,
- *  including the X add-on tier entitlement recomputed from the
- *  subscription's price items (null when no configured tier price is
- *  present or the subscription is not in a live status). */
-export async function syncSubscription(db: Db, subscription: Stripe.Subscription): Promise<void> {
-  const customerId =
-    typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+type UserRow = typeof schema.users.$inferSelect;
+
+export interface BillingSyncSummary {
+  /** True when the persisted billing fields actually changed. */
+  changed: boolean;
+  /** True when the base plan subscription is in a live status. */
+  baseLive: boolean;
+  /** The base plan subscription as classified from Stripe, if any. */
+  baseSubscription: Stripe.Subscription | null;
+  /** The active X add-on tier price ID after the sync, if any. */
+  xAddonTierPriceId: string | null;
+}
+
+function sameDate(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.getTime() === b.getTime();
+}
+
+/**
+ * Authoritative billing sync: recompute a customer's ENTIRE local
+ * billing state from Stripe in one pass — the base plan subscription
+ * AND the X add-on's own subscription — and write it onto the user row.
+ *
+ * Classification: a subscription is the add-on's when it carries the
+ * zepostia_x_addon metadata marker; the base is a live non-add-on
+ * subscription (the recorded one preferred), else the recorded or
+ * newest non-add-on one. The tier entitlement comes from the add-on
+ * subscription when one exists; otherwise it falls back to the legacy
+ * representation (a tier item riding on the base subscription).
+ *
+ * Cascade: a tier never bills without a live base plan — if the base
+ * is gone or dead while the add-on subscription is still live, the
+ * add-on subscription is canceled here and the entitlement clears in
+ * the same write.
+ */
+export async function syncBillingForCustomer(
+  db: Db,
+  stripe: Stripe,
+  customerId: string,
+): Promise<BillingSyncSummary> {
   const rows = await db
     .select()
     .from(schema.users)
@@ -286,40 +391,189 @@ export async function syncSubscription(db: Db, subscription: Stripe.Subscription
     .limit(1);
   const user = rows[0];
   if (!user) {
-    console.warn(`stripe webhook: no user found for customer ${customerId}`);
-    return;
+    console.warn(`stripe billing sync: no user found for customer ${customerId}`);
+    return { changed: false, baseLive: false, baseSubscription: null, xAddonTierPriceId: null };
   }
-  await db
-    .update(schema.users)
-    .set({
-      stripeSubscriptionId: subscription.id,
-      subscriptionStatus: subscription.status,
-      currentPeriodEnd: periodEnd(subscription),
-      currentPeriodStart: periodStart(subscription),
-      xAddonTierPriceId: xAddonTierForSubscription(subscription)?.priceId ?? null,
-    })
-    .where(eq(schema.users.id, user.id));
+
+  const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
+  const addonSubs = subs.filter(isXAddonSubscription);
+  const baseCandidates = subs.filter((s) => !isXAddonSubscription(s));
+  // Prefer a live base subscription (the recorded one first, then any
+  // live one — a re-subscription must win over a recorded-but-canceled
+  // predecessor), falling back to the recorded / newest candidate.
+  const base =
+    baseCandidates.find((s) => s.id === user.stripeSubscriptionId && SUBSCRIBED_STATUSES.includes(s.status)) ??
+    baseCandidates.find((s) => SUBSCRIBED_STATUSES.includes(s.status)) ??
+    baseCandidates.find((s) => s.id === user.stripeSubscriptionId) ??
+    baseCandidates[0] ??
+    null;
+  let addon =
+    addonSubs.find((s) => SUBSCRIBED_STATUSES.includes(s.status)) ?? addonSubs[0] ?? null;
+  const baseLive = !!base && SUBSCRIBED_STATUSES.includes(base.status);
+
+  // Cascade: cancel a live add-on subscription whose base plan is gone.
+  if (addon && SUBSCRIBED_STATUSES.includes(addon.status) && !baseLive) {
+    try {
+      addon = await stripe.subscriptions.cancel(addon.id);
+    } catch (err) {
+      console.error(
+        `billing sync: failed to cancel orphaned X add-on subscription ${addon.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  const addonLive = !!addon && SUBSCRIBED_STATUSES.includes(addon.status);
+
+  let tierPriceId: string | null = null;
+  let addonPeriod: BillingPeriod | null = null;
+  if (addon && addonLive) {
+    tierPriceId = xAddonTierForSubscription(addon)?.priceId ?? null;
+    if (tierPriceId) addonPeriod = xAddonPeriod(addon);
+  }
+  if (!addon && base) {
+    // Legacy representation: the tier item rides on the base
+    // subscription; its period is the base subscription's period.
+    tierPriceId = xAddonTierForSubscription(base)?.priceId ?? null;
+    if (tierPriceId) {
+      const start = periodStart(base);
+      const end = periodEnd(base);
+      addonPeriod = start && end ? { start, end } : null;
+    }
+  }
+
+  const next = {
+    stripeSubscriptionId: base ? base.id : user.stripeSubscriptionId,
+    subscriptionStatus: base
+      ? base.status
+      : user.subscriptionStatus === "none"
+        ? "none"
+        : "canceled",
+    currentPeriodEnd: base ? periodEnd(base) : null,
+    currentPeriodStart: base ? periodStart(base) : null,
+    stripeXAddonSubscriptionId: addon ? addon.id : null,
+    xAddonTierPriceId: tierPriceId,
+    xAddonPeriodStart: addonPeriod?.start ?? null,
+    xAddonPeriodEnd: addonPeriod?.end ?? null,
+  };
+  const changed =
+    next.stripeSubscriptionId !== user.stripeSubscriptionId ||
+    next.subscriptionStatus !== user.subscriptionStatus ||
+    next.stripeXAddonSubscriptionId !== user.stripeXAddonSubscriptionId ||
+    next.xAddonTierPriceId !== user.xAddonTierPriceId ||
+    !sameDate(next.currentPeriodEnd, user.currentPeriodEnd) ||
+    !sameDate(next.currentPeriodStart, user.currentPeriodStart) ||
+    !sameDate(next.xAddonPeriodStart, user.xAddonPeriodStart) ||
+    !sameDate(next.xAddonPeriodEnd, user.xAddonPeriodEnd);
+  if (changed) {
+    await db.update(schema.users).set(next).where(eq(schema.users.id, user.id));
+  }
+  return { changed, baseLive, baseSubscription: base, xAddonTierPriceId: tierPriceId };
 }
 
-type UserRow = typeof schema.users.$inferSelect;
+/** The payment method a new add-on subscription should charge: the
+ *  base subscription's default, falling back to the customer's
+ *  invoice default. */
+export async function subscriptionDefaultPaymentMethod(
+  stripe: Stripe,
+  subscription: Stripe.Subscription,
+): Promise<string | undefined> {
+  const pm = subscription.default_payment_method;
+  if (typeof pm === "string" && pm) return pm;
+  if (pm && typeof pm === "object" && "id" in pm && pm.id) return pm.id;
+  const customerId =
+    typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer.deleted) return undefined;
+    const cpm = customer.invoice_settings?.default_payment_method;
+    if (typeof cpm === "string" && cpm) return cpm;
+    if (cpm && typeof cpm === "object" && "id" in cpm && cpm.id) return cpm.id;
+  } catch {
+    // Fall through: Stripe will use the customer's default source.
+  }
+  return undefined;
+}
 
 /**
- * Read-time reconciliation: rebuild a user's local subscription state
- * from Stripe's actual state. This makes billing self-healing — the
- * webhook (see handleStripeEvent) is still the primary sync path, but a
+ * Create the X add-on's own subscription for a checkout that prepaid
+ * the tier's first month on the Checkout page. The base subscription
+ * carries the chosen tier in its metadata (xAddonTierPriceId); the
+ * add-on subscription is created with its first renewal deferred to
+ * the end of the prepaid month (base creation + one month) so the
+ * customer is never double-charged for month one, and its usage
+ * period covers the prepaid month from day one.
+ *
+ * Idempotent and self-healing: if ANY add-on subscription already
+ * exists for the customer (live, or canceled after having been
+ * delivered) this does nothing — recreation after a removal is the
+ * explicit add-on action's job, never a background repair's. Never
+ * throws. Returns true when a subscription was created.
+ */
+export async function ensureXAddonSubscription(
+  db: Db,
+  stripe: Stripe,
+  user: UserRow,
+  tierPriceId: string,
+): Promise<boolean> {
+  const tier = xAddonTierForPriceId(tierPriceId);
+  if (!tier || !user.stripeCustomerId) return false;
+  try {
+    const subs = (await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "all", limit: 20 })).data;
+    if (subs.some(isXAddonSubscription)) return false;
+    const base =
+      subs.find((s) => s.id === user.stripeSubscriptionId && !isXAddonSubscription(s)) ??
+      subs.find((s) => !isXAddonSubscription(s) && SUBSCRIBED_STATUSES.includes(s.status));
+    if (!base || !SUBSCRIBED_STATUSES.includes(base.status)) return false;
+
+    const prepaidUntil = addMonths(new Date(base.created * 1000), 1);
+    const nowSec = Math.floor(Date.now() / 1000);
+    // Defer the first renewal to the end of the prepaid month. If that
+    // moment has already passed (a very late repair), omit the
+    // deferral — the tier then bills immediately, starting month two.
+    const trialEnd =
+      prepaidUntil.getTime() / 1000 > nowSec + 3600
+        ? Math.floor(prepaidUntil.getTime() / 1000)
+        : undefined;
+    const paymentMethod = await subscriptionDefaultPaymentMethod(stripe, base);
+    await stripe.subscriptions.create({
+      customer: user.stripeCustomerId,
+      items: [{ price: tier.priceId }],
+      ...(trialEnd ? { trial_end: trialEnd } : {}),
+      ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
+      metadata: {
+        [X_ADDON_SUBSCRIPTION_METADATA]: "1",
+        userId: String(user.id),
+        tierPriceId: tier.priceId,
+      },
+    });
+    await syncBillingForCustomer(db, stripe, user.stripeCustomerId);
+    return true;
+  } catch (err) {
+    console.error(
+      `billing: failed to create X add-on subscription for user ${user.id}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+/**
+ * Read-time reconciliation: rebuild a user's local billing state from
+ * Stripe's actual state. This makes billing self-healing — the webhook
+ * (see handleStripeEvent) is still the primary sync path, but a
  * completed checkout must never be stranded by a webhook endpoint that
  * was never registered in the Stripe dashboard or a signing-secret
  * mismatch: the next billing read repairs the local row from Stripe.
+ * It also delivers the X add-on subscription for a checkout that
+ * prepaid a tier whenever the completion webhook was missed.
  *
- * Callers invoke this only when the local row does NOT already show a
- * live subscription with a subscription ID, so in the steady state it
- * costs no Stripe calls at all. On the repair path it costs one
- * subscriptions.list call (plus a customer lookup when the row has no
- * Stripe customer ID yet).
+ * Billing reads invoke this on every call: in the steady state it
+ * costs one subscriptions.list for the customer (plus a customer
+ * lookup when the row has no Stripe customer ID yet).
  *
- * Returns true when the local row was updated. Never throws — a Stripe
- * outage must not break the billing page; the caller falls back to the
- * local state it already had.
+ * Returns true when local state was created or repaired. Never
+ * throws — a Stripe outage must not break the billing page; the
+ * caller falls back to the local state it already had.
  */
 export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Promise<boolean> {
   if (!process.env.STRIPE_SECRET_KEY) return false;
@@ -352,25 +606,21 @@ export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Pr
         .where(eq(schema.users.id, user.id));
     }
 
-    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
-    const live = subs.data.find((sub) => SUBSCRIBED_STATUSES.includes(sub.status));
-    if (live) {
-      // syncSubscription keys its row lookup on stripeCustomerId, which
-      // is guaranteed set by this point.
-      await syncSubscription(db, live);
-      return true;
+    const summary = await syncBillingForCustomer(db, stripe, customerId);
+    let created = false;
+    // A tier picked at checkout is recorded in the base subscription's
+    // metadata; if its add-on subscription was never created (the
+    // completion webhook was missed), create it now.
+    const marker = summary.baseSubscription?.metadata?.xAddonTierPriceId;
+    if (summary.baseLive && marker && xAddonTierForPriceId(marker)) {
+      created = await ensureXAddonSubscription(
+        db,
+        stripe,
+        { ...user, stripeCustomerId: customerId },
+        marker,
+      );
     }
-    // No live subscription in Stripe. Record a cancellation if the
-    // newest subscription is canceled (keeps the Billing label and the
-    // X entitlement truthful); leave the row untouched for anything
-    // else (an abandoned checkout's "incomplete" subscription means
-    // "No subscription" is already the correct local state).
-    const newest = subs.data[0];
-    if (newest && newest.status === "canceled" && user.subscriptionStatus !== "canceled") {
-      await syncSubscription(db, newest);
-      return true;
-    }
-    return false;
+    return summary.changed || created;
   } catch (err) {
     console.error(
       `billing reconcile failed for user ${user.id}:`,
@@ -378,31 +628,6 @@ export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Pr
     );
     return false;
   }
-}
-
-async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<void> {
-  const customerId =
-    typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-  const rows = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.stripeCustomerId, customerId))
-    .limit(1);
-  const user = rows[0];
-  if (!user) {
-    console.warn(`stripe webhook: no user found for customer ${customerId}`);
-    return;
-  }
-  await db
-    .update(schema.users)
-    .set({
-      stripeSubscriptionId: subscription.id,
-      subscriptionStatus: "canceled",
-      currentPeriodEnd: periodEnd(subscription),
-      currentPeriodStart: null,
-      xAddonTierPriceId: null,
-    })
-    .where(eq(schema.users.id, user.id));
 }
 
 async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
@@ -447,23 +672,48 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
           })
           .where(eq(schema.users.id, userId));
       }
-      if (subscriptionId) {
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        await syncSubscription(db, sub);
+      if (customerId) {
+        await syncBillingForCustomer(db, stripe, customerId);
+        // A tier picked at checkout prepaid its first month on the
+        // Checkout page; create its add-on subscription now (the
+        // read-time reconcile retries this if it ever fails here).
+        const tierPriceId = session.metadata?.xAddonTierPriceId;
+        if (tierPriceId && userId && xAddonTierForPriceId(tierPriceId)) {
+          const rows = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+          if (rows[0]) await ensureXAddonSubscription(db, stripe, rows[0], tierPriceId);
+        }
       }
       break;
     }
     case "customer.subscription.created":
-    case "customer.subscription.updated": {
-      await syncSubscription(db, event.data.object as Stripe.Subscription);
-      break;
-    }
+    case "customer.subscription.updated":
     case "customer.subscription.deleted": {
-      await markCanceled(db, event.data.object as Stripe.Subscription);
+      const sub = event.data.object as Stripe.Subscription;
+      const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+      if (customerId) await syncBillingForCustomer(db, stripe, customerId);
       break;
     }
     case "invoice.payment_failed": {
-      await markPastDue(db, event.data.object as Stripe.Invoice);
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId =
+        typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+      const invoiceSub = invoice.parent?.subscription_details?.subscription;
+      const invoiceSubId = typeof invoiceSub === "string" ? invoiceSub : invoiceSub?.id;
+      if (customerId && invoiceSubId) {
+        // A failed ADD-ON invoice must not mark the base plan past
+        // due — re-sync from Stripe instead (the add-on subscription's
+        // own status drives the entitlement).
+        const rows = await db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.stripeCustomerId, customerId))
+          .limit(1);
+        if (rows[0] && rows[0].stripeXAddonSubscriptionId === invoiceSubId) {
+          await syncBillingForCustomer(db, stripe, customerId);
+          break;
+        }
+      }
+      await markPastDue(db, invoice);
       break;
     }
     default:

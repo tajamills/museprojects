@@ -18,11 +18,22 @@ export const users = pgTable("users", {
   subscriptionStatus: text("subscription_status").notNull().default("none"),
   currentPeriodEnd: timestamp("current_period_end", { mode: "date", withTimezone: true }),
   currentPeriodStart: timestamp("current_period_start", { mode: "date", withTimezone: true }),
-  /** X (Twitter) posting add-on: the Stripe price ID of the add-on tier
-   *  item on this workspace's subscription (tiers come from the
-   *  STRIPE_X_TIERS env config), or null when no tier is attached.
-   *  Synced from Stripe only. */
+  /** X (Twitter) posting add-on: the Stripe price ID of the active
+   *  add-on tier (tiers come from the STRIPE_X_TIERS env config), or
+   *  null when no tier is attached. Synced from Stripe only. The tier
+   *  lives on its OWN Stripe subscription (stripeXAddonSubscriptionId)
+   *  so it can bill from day one while the base plan trials; legacy
+   *  subscriptions may instead carry the tier as an item on the base
+   *  subscription, which sync also honors. */
   xAddonTierPriceId: text("x_addon_tier_price_id"),
+  /** The add-on tier's own Stripe subscription, when the tier is
+   *  represented that way (see xAddonTierPriceId). */
+  stripeXAddonSubscriptionId: text("stripe_x_addon_subscription_id"),
+  /** The add-on tier's current billing period (from its own
+   *  subscription's tier item) — X usage is anchored to this period
+   *  when set, falling back to the base subscription's period. */
+  xAddonPeriodStart: timestamp("x_addon_period_start", { mode: "date", withTimezone: true }),
+  xAddonPeriodEnd: timestamp("x_addon_period_end", { mode: "date", withTimezone: true }),
 });
 
 export const sessions = pgTable(
