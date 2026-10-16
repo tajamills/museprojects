@@ -77,7 +77,15 @@ const html = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="./brand-mark.svg" />
-    <title>kovala</title>
+    <title>kovala — business entity manager & compliance reminders</title>
+    <meta name="description" content="kovala — the business entity manager. Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
+    <meta property="og:title" content="kovala — business entity manager & compliance reminders" />
+    <meta property="og:description" content="Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kovala.io/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="kovala — business entity manager & compliance reminders" />
+    <meta name="twitter:description" content="Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
     <link rel="stylesheet" href="./assets/theme.css" />
     <script type="module" src="./assets/${jsFile}"></script>
   </head>
@@ -90,5 +98,6 @@ await writeFile(path.join(outDir, "index.html"), html);
 await cp(path.join(here, "logo.png"), path.join(outDir, "logo.png"));
 await cp(path.join(here, "logo-mark.png"), path.join(outDir, "logo-mark.png"));
 await cp(path.join(here, "brand-mark.svg"), path.join(outDir, "brand-mark.svg"));
+await cp(path.join(here, "google19638b72474d3670.html"), path.join(outDir, "google19638b72474d3670.html"));
 
 console.log(`Client bundle written to ${outDir}`);
