@@ -76,6 +76,7 @@ const html = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="google-site-verification" content="RhXLG-gGaXkby9VKo9wEWdS4y_6XAMkEBuRwI50LwyU" />
     <link rel="icon" type="image/svg+xml" href="./brand-mark.svg" />
     <title>kovala — business entity manager & compliance reminders</title>
     <meta name="description" content="kovala — the business entity manager. Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
