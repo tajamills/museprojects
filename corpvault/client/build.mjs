@@ -77,7 +77,11 @@ const html = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="color-scheme" content="light dark" />
     <meta name="google-site-verification" content="RhXLG-gGaXkby9VKo9wEWdS4y_6XAMkEBuRwI50LwyU" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="./brand-mark.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>kovala — business entity manager & compliance reminders</title>
     <meta name="description" content="kovala — the business entity manager. Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
     <meta property="og:title" content="kovala — business entity manager & compliance reminders" />
@@ -99,6 +103,11 @@ await writeFile(path.join(outDir, "index.html"), html);
 await cp(path.join(here, "logo.png"), path.join(outDir, "logo.png"));
 await cp(path.join(here, "logo-mark.png"), path.join(outDir, "logo-mark.png"));
 await cp(path.join(here, "brand-mark.svg"), path.join(outDir, "brand-mark.svg"));
+await cp(path.join(here, "favicon.ico"), path.join(outDir, "favicon.ico"));
+await cp(path.join(here, "favicon-32.png"), path.join(outDir, "favicon-32.png"));
+await cp(path.join(here, "icon-192.png"), path.join(outDir, "icon-192.png"));
+await cp(path.join(here, "icon-512.png"), path.join(outDir, "icon-512.png"));
+await cp(path.join(here, "apple-touch-icon.png"), path.join(outDir, "apple-touch-icon.png"));
 await cp(path.join(here, "google19638b72474d3670.html"), path.join(outDir, "google19638b72474d3670.html"));
 await cp(path.join(here, "sitemap.xml"), path.join(outDir, "sitemap.xml"));
 await cp(path.join(here, "robots.txt"), path.join(outDir, "robots.txt"));
