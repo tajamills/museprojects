@@ -52,4 +52,5 @@ await cp(path.join(root, "logo-mark.png"), path.join(outdir, "logo-mark.png"));
 await cp(path.join(root, "facebook-setup-tutorial.mp4"), path.join(outdir, "facebook-setup-tutorial.mp4"));
 await cp(path.join(root, "getting-started-tutorial.mp4"), path.join(outdir, "getting-started-tutorial.mp4"));
 await cp(path.join(root, "getting-started-poster.png"), path.join(outdir, "getting-started-poster.png"));
+await cp(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
 console.log("[build:client] dist/client ready");

@@ -67,4 +67,5 @@ cpSync(path.join(root, "index.html"), path.join(outdir, "index.html"));
 cpSync(path.join(root, "favicon.svg"), path.join(outdir, "favicon.svg"));
 cpSync(path.join(root, "robots.txt"), path.join(outdir, "robots.txt"));
 cpSync(path.join(root, "sitemap.xml"), path.join(outdir, "sitemap.xml"));
+cpSync(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
 console.log("client build complete ->", outdir);

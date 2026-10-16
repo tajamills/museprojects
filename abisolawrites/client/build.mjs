@@ -46,4 +46,5 @@ await run(path.join(repoRoot, "node_modules", ".bin", "tailwindcss"), [
 
 await cp(path.join(root, "index.html"), path.join(outdir, "index.html"));
 await cp(path.join(root, "favicon.svg"), path.join(outdir, "favicon.svg"));
+await cp(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
 console.log("[build:client] dist/client ready");
