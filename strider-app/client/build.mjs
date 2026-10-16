@@ -53,4 +53,6 @@ await cp(path.join(root, "facebook-setup-tutorial.mp4"), path.join(outdir, "face
 await cp(path.join(root, "getting-started-tutorial.mp4"), path.join(outdir, "getting-started-tutorial.mp4"));
 await cp(path.join(root, "getting-started-poster.png"), path.join(outdir, "getting-started-poster.png"));
 await cp(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
+await cp(path.join(root, "sitemap.xml"), path.join(outdir, "sitemap.xml"));
+await cp(path.join(root, "robots.txt"), path.join(outdir, "robots.txt"));
 console.log("[build:client] dist/client ready");

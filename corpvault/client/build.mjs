@@ -100,5 +100,7 @@ await cp(path.join(here, "logo.png"), path.join(outDir, "logo.png"));
 await cp(path.join(here, "logo-mark.png"), path.join(outDir, "logo-mark.png"));
 await cp(path.join(here, "brand-mark.svg"), path.join(outDir, "brand-mark.svg"));
 await cp(path.join(here, "google19638b72474d3670.html"), path.join(outDir, "google19638b72474d3670.html"));
+await cp(path.join(here, "sitemap.xml"), path.join(outDir, "sitemap.xml"));
+await cp(path.join(here, "robots.txt"), path.join(outDir, "robots.txt"));
 
 console.log(`Client bundle written to ${outDir}`);

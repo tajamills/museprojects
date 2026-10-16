@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kovala.io/sitemap.xml
