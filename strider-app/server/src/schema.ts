@@ -184,6 +184,27 @@ export const xConnections = pgTable("x_connections", {
   updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull(),
 });
 
+/**
+ * One-time $125 setup-session bookings — Layla's done-with-you setup
+ * help, sold from the public Services page and the in-app Billing
+ * page. One row per PAID Stripe checkout session; recorded by the
+ * completion webhook AND repaired by read-time reconciliation from
+ * Stripe (the same self-healing rule as subscription state — a
+ * booking must never depend on the webhook alone). Scheduling itself
+ * happens by email; status starts "booked".
+ */
+export const setupBookings = pgTable("setup_bookings", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id").notNull().unique(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  amountCents: integer("amount_cents").notNull(),
+  currency: text("currency").notNull().default("usd"),
+  status: text("status").notNull().default("booked"),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
 export const tiktokMonthlyUsage = pgTable("tiktok_monthly_usage", {
   userId: integer("user_id").notNull(),
   yearMonth: text("year_month").notNull(),

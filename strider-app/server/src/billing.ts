@@ -41,6 +41,12 @@ type Db = NodePgDatabase<typeof schema>;
 /** Length of the zepostia free trial, in days. */
 export const TRIAL_DAYS = 14;
 
+/** One-time price of the 1:1 setup session with Layla, in cents. */
+export const SETUP_SESSION_PRICE_CENTS = 12500;
+
+/** Checkout-session metadata marker for setup-session purchases. */
+export const SETUP_BOOKING_KIND = "setup_booking";
+
 /** Subscription statuses that count as "subscribed" across the app. */
 export const SUBSCRIBED_STATUSES = ["trialing", "active", "past_due"];
 
@@ -727,6 +733,66 @@ async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
 }
 
 /**
+ * Record a PAID setup-session checkout as a booking row. Idempotent:
+ * the Stripe session ID is unique, so the webhook and the read-time
+ * reconcile can both call this for the same purchase safely. Returns
+ * true when a new row was inserted. Never throws to the webhook —
+ * the caller logs and moves on; reconcile retries later.
+ */
+export async function recordSetupBooking(db: Db, session: Stripe.Checkout.Session): Promise<boolean> {
+  if (session.metadata?.kind !== SETUP_BOOKING_KIND) return false;
+  if (session.payment_status !== "paid") return false;
+  const userId = Number(session.client_reference_id);
+  if (!userId) return false;
+  const paymentIntentId =
+    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+  const inserted = await db
+    .insert(schema.setupBookings)
+    .values({
+      userId,
+      email: session.customer_details?.email ?? "",
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: paymentIntentId,
+      amountCents: session.amount_total ?? SETUP_SESSION_PRICE_CENTS,
+      currency: session.currency ?? "usd",
+      status: "booked",
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing({ target: schema.setupBookings.stripeCheckoutSessionId })
+    .returning({ id: schema.setupBookings.id });
+  return inserted.length > 0;
+}
+
+/**
+ * Read-time repair for setup bookings, mirroring
+ * reconcileSubscriptionFromStripe: a completed setup checkout must
+ * never be stranded by a webhook endpoint that isn't registered or a
+ * signing-secret mismatch, so every billing read re-checks Stripe's
+ * checkout sessions for this customer and records any paid setup
+ * purchase that has no row yet. Never throws — a Stripe outage must
+ * not break the billing page.
+ */
+export async function reconcileSetupBookingsFromStripe(db: Db, user: UserRow): Promise<boolean> {
+  if (!process.env.STRIPE_SECRET_KEY || !user.stripeCustomerId) return false;
+  try {
+    const stripe = getStripe();
+    const sessions = await stripe.checkout.sessions.list({ customer: user.stripeCustomerId, limit: 25 });
+    let created = false;
+    for (const session of sessions.data) {
+      if (session.mode !== "payment") continue;
+      if (await recordSetupBooking(db, session)) created = true;
+    }
+    return created;
+  } catch (err) {
+    console.error(
+      `setup booking reconcile failed for user ${user.id}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+/**
  * Handle a verified Stripe webhook event. The caller is responsible for
  * signature verification; this only applies the business logic.
  */
@@ -750,6 +816,11 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
       }
       if (customerId) {
         await syncBillingForCustomer(db, stripe, customerId);
+        // A paid setup-session checkout becomes a booking row (the
+        // read-time reconcile repairs this if the write ever fails).
+        if (session.metadata?.kind === SETUP_BOOKING_KIND) {
+          await recordSetupBooking(db, session);
+        }
         // A tier picked at checkout prepaid its first month on the
         // Checkout page; create its add-on subscription now (the
         // read-time reconcile retries this if it ever fails here).

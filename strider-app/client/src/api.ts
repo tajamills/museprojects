@@ -85,6 +85,7 @@ type BillingStatusResult = {
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
   xAddon: XAddonStatusResult;
+  setupBookings: Array<{ id: number; bookedAt: string; amountCents: number; status: string }>;
 };
 type RedirectResult = { url: string };
 type BillingInvoice = {
@@ -135,6 +136,7 @@ type ClientApi = {
   cancelBumpPlan(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   cancelPost(args: { sessionToken: string; postId: number }): Promise<BasicResult>;
   createCheckoutSession(args: { sessionToken: string; xAddonTierPriceId?: string }): Promise<RedirectResult>;
+  createSetupCheckoutSession(args: { sessionToken: string }): Promise<RedirectResult>;
   createPortalSession(args: { sessionToken: string }): Promise<RedirectResult>;
   getBillingStatus(args: { sessionToken: string }): Promise<BillingStatusResult>;
   setXAddonTier(args: { sessionToken: string; priceId: string }): Promise<{ activeTier: string | null }>;

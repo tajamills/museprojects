@@ -14,6 +14,9 @@ import {
   getXAddonUsage,
   isXAddonConfigured,
   isXAddonSubscription,
+  SETUP_BOOKING_KIND,
+  SETUP_SESSION_PRICE_CENTS,
+  reconcileSetupBookingsFromStripe,
   reconcileSubscriptionFromStripe,
   settleTierSwitchNet,
   subscriptionDefaultPaymentMethod,
@@ -233,6 +236,9 @@ async function billingUserSynced(ctx: AppCtx, token: string) {
     const fresh = await billingUser(ctx, token);
     if (fresh) user = fresh;
   }
+  // Setup bookings live outside the user row, so no re-read is needed;
+  // this just repairs any booking the completion webhook missed.
+  await reconcileSetupBookingsFromStripe(ctx.db, user);
   return user;
 }
 
@@ -1493,18 +1499,83 @@ export const actions: Record<string, ActionDef> = {
     async handler(
       ctx,
       args,
-    ): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null; xAddon: XAddonStatus }> {
+    ): Promise<{ status: string; trialEndsAt: string | null; currentPeriodEnd: string | null; xAddon: XAddonStatus; setupBookings: Array<{ id: number; bookedAt: string; amountCents: number; status: string }> }> {
       const user = await billingUserSynced(ctx, args.sessionToken);
       if (!user) throw new Error("Your session expired. Sign in again.");
       const status = user.subscriptionStatus || "none";
       const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
+      const bookingRows = await ctx.db
+        .select()
+        .from(schema.setupBookings)
+        .where(eq(schema.setupBookings.userId, user.id))
+        .orderBy(desc(schema.setupBookings.createdAt))
+        .limit(5);
       return {
         status,
         // During a trial, Stripe sets current_period_end to the trial's end.
         trialEndsAt: status === "trialing" ? periodEnd : null,
         currentPeriodEnd: periodEnd,
         xAddon: await xAddonStatusFor(ctx, user),
+        setupBookings: bookingRows.map((row) => ({
+          id: row.id,
+          bookedAt: row.createdAt.toISOString(),
+          amountCents: row.amountCents,
+          status: row.status,
+        })),
       };
+    },
+  },
+
+  /**
+   * Book the 1:1 setup session with Layla — a one-time $125 Stripe
+   * Checkout payment (mode "payment", price built inline with
+   * price_data so no pre-created Stripe price is needed). Completion
+   * is recorded as a setup_bookings row by the webhook, repaired on
+   * billing reads by reconcileSetupBookingsFromStripe. Scheduling
+   * happens by email after booking; nothing here books a calendar.
+   */
+  createSetupCheckoutSession: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+    }),
+    async handler(ctx, args): Promise<{ url: string }> {
+      const user = await billingUserSynced(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const stripe = getStripe();
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: String(user.id) },
+        });
+        customerId = customer.id;
+        await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
+      }
+      const url = baseUrl(ctx.origin);
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        customer: customerId,
+        client_reference_id: String(user.id),
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              unit_amount: SETUP_SESSION_PRICE_CENTS,
+              product_data: {
+                name: "Zepostia setup session — 1:1 with Layla",
+                description:
+                  "A personal setup session: connect your accounts together, schedule your first posts, and turn on your 24-hour bump. We email you within one business day after booking to pick your time.",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: { kind: SETUP_BOOKING_KIND },
+        success_url: `${url}/?setup=booked`,
+        cancel_url: `${url}/?setup=cancelled`,
+      });
+      if (!session.url) throw new Error("Could not start checkout. Try again.");
+      return { url: session.url };
     },
   },
 

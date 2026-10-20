@@ -321,6 +321,15 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
             <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
           </div>
         </section>
+        <section className="pricing-section" id="setup-help">
+          <h2>Want a hand getting set up?</h2>
+          <div className="pricing-card">
+            <div className="price">$125<small> one-time</small></div>
+            <p>Book a 1:1 setup session with Layla, zepostia&apos;s founder. Together you&apos;ll connect your accounts, schedule your first posts, and turn on your 24-hour bump &mdash; done in one sitting.</p>
+            <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Book a setup session</button>
+            <p>After you book, we&apos;ll email you within one business day to pick your time.</p>
+          </div>
+        </section>
       </main>
       <footer className="landing-footer">
         <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
@@ -999,6 +1008,11 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
     onSuccess: (result) => { window.location.href = result.url; },
     onError: (e) => onMessage(friendly(e)),
   });
+  const setupCheckout = useMutation({
+    mutationFn: () => api.createSetupCheckoutSession({ sessionToken: token }),
+    onSuccess: (result) => { window.location.href = result.url; },
+    onError: (e) => onMessage(friendly(e)),
+  });
   const setTier = useMutation({
     mutationFn: (priceId: string) => api.setXAddonTier({ sessionToken: token, priceId }),
     onSuccess: async (result) => {
@@ -1016,6 +1030,8 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
     onError: (e) => onMessage(friendly(e)),
   });
   const xAddon = statusQuery.data?.xAddon;
+  const setupBookings = statusQuery.data?.setupBookings ?? [];
+  const latestSetupBooking = setupBookings[0];
   const status = statusQuery.data?.status ?? "none";
   const subscribed = ["trialing", "active", "past_due"].includes(status);
   const label = status === "trialing" ? "Free trial" : status === "active" ? "Active" : status === "past_due" ? "Past due" : status === "canceled" ? "Canceled" : "No subscription";
@@ -1082,6 +1098,24 @@ function BillingSection({ token, onMessage }: { token: string; onMessage: (messa
           })}</ul>
           {xAddon.activeTier && <button className="quiet-button" disabled={removeAddon.isPending || setTier.isPending} onClick={() => removeAddon.mutate()}>{removeAddon.isPending ? "Working…" : "Remove add-on"}</button>}
         </> : <p className="x-addon-line">You can pick a tier when you subscribe — or add one any time after.</p>}
+      </div>
+    </div>}
+    {!statusQuery.isPending && !statusQuery.isError && <div className="x-addon-card">
+      <div className="billing-card-icon" aria-hidden="true"><IconUsers /></div>
+      <div className="x-addon-main">
+        <h3>Setup session — 1:1 with Layla</h3>
+        <p className="billing-price">$125 <small>one-time</small></p>
+        {latestSetupBooking
+          ? <>
+              <p><strong>Booked</strong> · {new Date(latestSetupBooking.bookedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+              <p className="x-addon-line">You&apos;re booked. We&apos;ll email you within one business day to pick your session time.</p>
+              <button className="quiet-button" disabled={setupCheckout.isPending} onClick={() => setupCheckout.mutate()}>{setupCheckout.isPending ? "Working…" : "Book another session"}</button>
+            </>
+          : <>
+              <p className="x-addon-line">A personal setup session with zepostia&apos;s founder: connect your accounts together, schedule your first posts, and turn on your 24-hour bump — done in one sitting.</p>
+              <button className="secondary-button" disabled={setupCheckout.isPending} onClick={() => setupCheckout.mutate()}>{setupCheckout.isPending ? "Working…" : "Book a setup session"}</button>
+              <p className="x-addon-line">After you book, we&apos;ll email you within one business day to pick your time.</p>
+            </>}
       </div>
     </div>}
     <BillingHistoryCard token={token} subscribed={subscribed} onViewAll={() => portal.mutate()} viewAllPending={portal.isPending} />
@@ -1661,6 +1695,10 @@ function ServicesPage() {
       q: "Do you need my social media passwords?",
       a: "No. You log in on each platform's own website — facebook.com, google.com, tiktok.com, x.com — and approve zepostia there. Zepostia receives a limited access token that only allows posting; it never sees or stores your password, and you can disconnect any account at any time.",
     },
+    {
+      q: "Can someone set it up for me?",
+      a: "Yes — book a 1:1 setup session with Layla, zepostia's founder, for $125 one-time. You'll connect your accounts together, schedule your first posts, and turn on your 24-hour bump in one sitting. Book from your Billing page once you have an account; after you book, we'll email you within one business day to pick your time.",
+    },
   ];
   return (
     <div className="landing-shell">
@@ -1745,7 +1783,7 @@ function ServicesPage() {
         </section>
 
         <section className="svc-section" id="pricing" aria-label="Pricing">
-          <div className="svc-heading"><h2>One plan. One add-on.</h2><p>Start with the plan — every platform above except X is in it. Add X posting only if you want it.</p></div>
+          <div className="svc-heading"><h2>One plan, plus the extras</h2><p>Start with the plan — every platform above except X is in it. Add X posting only if you want it, and book a setup session if you'd like a hand getting started.</p></div>
           <div className="billing-block svc-pricing">
             <div className="billing-card">
               <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
@@ -1772,6 +1810,16 @@ function ServicesPage() {
                   <li><span><strong>Tier 3</strong> — 1,000 posts · 250 link posts / month</span><strong>$100/month</strong></li>
                 </ul>
                 <p className="x-addon-line">Pick a tier at checkout, or add one any time later on the Billing page. Tiers bill from day one — they are never part of the free trial.</p>
+              </div>
+            </div>
+            <div className="x-addon-card">
+              <div className="billing-card-icon" aria-hidden="true"><IconUsers /></div>
+              <div className="x-addon-main">
+                <h3>Setup session — 1:1 with Layla</h3>
+                <p className="billing-price">$125 <small>one-time</small></p>
+                <p>A personal setup session with zepostia&apos;s founder: connect your accounts together, schedule your first posts, and turn on your 24-hour bump — done in one sitting.</p>
+                <p className="x-addon-line">Book from your Billing page once you have an account. After you book, we&apos;ll email you within one business day to pick your time.</p>
+                <a className="secondary-button" href="/?auth=signup">Book a setup session</a>
               </div>
             </div>
             <p className="billing-support">Questions about billing? Contact our <a href="mailto:zepostia@cryptobagtracker.io">support team</a>.</p>
