@@ -1,9 +1,16 @@
 // Price-alert delivery worker.
 //
-//   - CoinGecko free API (no key) for spot prices, cached 60s, graceful
-//     backoff on 429s.
-//   - Pure crossing/cooldown logic (shouldTrigger / isDue / evaluateAlerts)
-//     so it can be unit-tested without network or DB.
+//   - CoinGecko free API (no key) for spot prices, cached 30s, graceful
+//     backoff on 429s. Prices are fetched in ONE batched call per tick for
+//     every symbol any active alert needs, so a faster tick rate does not
+//     multiply API load.
+//   - Pure episode logic (shouldTrigger / evaluateAlerts) so it can be
+//     unit-tested without network or DB. An alert fires the moment price
+//     crosses its target, then keeps re-notifying while price stays in the
+//     trigger zone: at once on a further >=1% move past the last notified
+//     price, otherwise every 15 minutes, for up to 24 hours per episode.
+//     The episode closes (the alert re-arms) once price leaves the zone by
+//     a 0.25% hysteresis band, so a fresh crossing fires immediately.
 //   - Telegram delivery via the app-level TELEGRAM_BOT_TOKEN and each user's
 //     telegram_chat_id (from alert_settings).
 //   - Generic outbound webhook: if ALERT_WEBHOOK_URL is set, every trigger
@@ -54,7 +61,7 @@ const COINGECKO_IDS: Record<string, string> = {
   TURBO: "turbo",
 };
 
-const PRICE_CACHE_TTL_MS = 60_000;
+const PRICE_CACHE_TTL_MS = 30_000;
 const priceCache = new Map<string, { price: number; fetchedAt: number }>();
 let coingeckoBackoffUntil = 0;
 const warnedSymbols = new Set<string>();
@@ -138,7 +145,7 @@ export async function fetchPrices(symbols: string[]): Promise<Map<string, number
 }
 
 // ---------------------------------------------------------------------------
-// Crossing / cooldown logic (pure, unit-testable)
+// Crossing / episode logic (pure, unit-testable)
 // ---------------------------------------------------------------------------
 
 export function shouldTrigger(direction: Direction, price: number, target: number): boolean {
@@ -150,27 +157,108 @@ export function isDue(lastTriggeredAt: Date | null, nowMs: number, cooldownMs: n
   return nowMs - lastTriggeredAt.getTime() >= cooldownMs;
 }
 
+/** True once price has left the trigger zone by the hysteresis band. */
+export function hasExitedZone(direction: Direction, price: number, target: number, hysteresisPct: number): boolean {
+  const band = (hysteresisPct / 100) * target;
+  return direction === "above" ? price < target - band : price > target + band;
+}
+
+/** True when price has run at least stepPct% further in the trigger direction since the last notification. */
+export function hasSteppedBeyond(direction: Direction, price: number, baseline: number, stepPct: number): boolean {
+  if (!(baseline > 0)) return false;
+  const step = (stepPct / 100) * baseline;
+  return direction === "above" ? price >= baseline + step : price <= baseline - step;
+}
+
+export interface AlertRepeatPolicy {
+  /** While price stays in the zone, re-notify at most this often. */
+  repeatMs: number;
+  /** A further move of this percent past the last notified price re-fires at once. */
+  stepPct: number;
+  /** Stop repeating this long after the episode's first trigger. */
+  capMs: number;
+  /** Price must leave the zone by this percent before the alert re-arms. */
+  hysteresisPct: number;
+}
+
+export const DEFAULT_ALERT_POLICY: AlertRepeatPolicy = {
+  repeatMs: 15 * 60 * 1000,
+  stepPct: 1,
+  capMs: 24 * 60 * 60 * 1000,
+  hysteresisPct: 0.25,
+};
+
+export function alertRepeatPolicy(env: NodeJS.ProcessEnv = process.env): AlertRepeatPolicy {
+  const num = (raw: string | undefined, fallback: number) => {
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  return {
+    repeatMs: num(env.ALERT_REPEAT_INTERVAL_MS, DEFAULT_ALERT_POLICY.repeatMs),
+    stepPct: num(env.ALERT_STEP_PERCENT, DEFAULT_ALERT_POLICY.stepPct),
+    capMs: num(env.ALERT_EPISODE_CAP_MS, DEFAULT_ALERT_POLICY.capMs),
+    hysteresisPct: num(env.ALERT_HYSTERESIS_PERCENT, DEFAULT_ALERT_POLICY.hysteresisPct),
+  };
+}
+
+export type TriggerKind = "cross" | "step" | "repeat";
+
 export interface TriggeredAlert {
   alert: AlertRow;
   price: number;
+  kind: TriggerKind;
 }
 
-/** Alerts that are crossed right now and past their cooldown. Pure. */
+export interface AlertEvaluation {
+  triggers: TriggeredAlert[];
+  /** Alerts whose episode closed this tick (price left the zone): re-arm them. */
+  resets: AlertRow[];
+}
+
+/**
+ * Evaluate every active alert against current prices. Pure.
+ *
+ * An "episode" runs from the first crossing until price leaves the zone
+ * (past the hysteresis band). Inside an episode the alert re-fires on a
+ * further step move or when the repeat interval elapses, until the cap.
+ * Rows written before episodes existed (last_triggered_at set, episode
+ * fields null) are treated as an episode that started at last_triggered_at
+ * with the target price as the step baseline.
+ */
 export function evaluateAlerts(
   alerts: AlertRow[],
   prices: Map<string, number>,
   nowMs: number,
-  cooldownMs: number,
-): TriggeredAlert[] {
-  const out: TriggeredAlert[] = [];
+  policy: AlertRepeatPolicy = DEFAULT_ALERT_POLICY,
+): AlertEvaluation {
+  const triggers: TriggeredAlert[] = [];
+  const resets: AlertRow[] = [];
   for (const alert of alerts) {
     const price = prices.get(alert.asset.toUpperCase());
-    if (price == null) continue; // no price available; leave active, retry next tick
-    if (!shouldTrigger(alert.direction as Direction, price, alert.targetPrice)) continue;
-    if (!isDue(alert.lastTriggeredAt, nowMs, cooldownMs)) continue;
-    out.push({ alert, price });
+    if (price == null) continue; // no price available; leave state untouched, retry next tick
+    const direction = alert.direction as Direction;
+    const episodeStart = alert.episodeStartedAt ?? alert.lastTriggeredAt;
+    if (!shouldTrigger(direction, price, alert.targetPrice)) {
+      if (episodeStart && hasExitedZone(direction, price, alert.targetPrice, policy.hysteresisPct)) {
+        resets.push(alert);
+      }
+      continue;
+    }
+    if (!episodeStart) {
+      triggers.push({ alert, price, kind: "cross" });
+      continue;
+    }
+    if (nowMs - episodeStart.getTime() >= policy.capMs) continue; // episode spent; waits for exit + a fresh cross
+    const baseline = alert.lastNotifiedPrice ?? alert.targetPrice;
+    if (hasSteppedBeyond(direction, price, baseline, policy.stepPct)) {
+      triggers.push({ alert, price, kind: "step" });
+      continue;
+    }
+    if (isDue(alert.lastTriggeredAt, nowMs, policy.repeatMs)) {
+      triggers.push({ alert, price, kind: "repeat" });
+    }
   }
-  return out;
+  return { triggers, resets };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +298,7 @@ export interface AlertWebhookPayload {
   targetPrice: number;
   currentPrice: number;
   triggeredAt: string;
+  kind: TriggerKind;
 }
 
 export async function postAlertWebhook(payload: AlertWebhookPayload): Promise<void> {
@@ -242,9 +331,13 @@ function fmtUsd(n: number): string {
   return n.toPrecision(4);
 }
 
+/**
+ * @deprecated The flat cooldown (ALERT_COOLDOWN_MS, default 24h) was
+ * replaced by episode repeats — see alertRepeatPolicy(). Kept so existing
+ * imports keep working; returns the episode cap.
+ */
 export function alertCooldownMs(): number {
-  const v = Number(process.env.ALERT_COOLDOWN_MS);
-  return Number.isFinite(v) && v > 0 ? v : 24 * 60 * 60 * 1000;
+  return alertRepeatPolicy().capMs;
 }
 
 export interface AlertCheckDeps {
@@ -253,14 +346,27 @@ export interface AlertCheckDeps {
 }
 
 /** One scheduler tick: check every active alert, deliver, record, re-arm. */
-export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promise<{ checked: number; triggered: number }> {
+export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promise<{ checked: number; triggered: number; reset: number }> {
   const alerts = await db.select().from(schema.priceAlerts).where(eq(schema.priceAlerts.active, true));
-  if (!alerts.length) return { checked: 0, triggered: 0 };
+  if (!alerts.length) return { checked: 0, triggered: 0, reset: 0 };
 
   const symbols = [...new Set(alerts.map((a) => a.asset.toUpperCase()))];
   const prices = deps.fetchPrices ? await deps.fetchPrices(symbols) : await fetchPrices(symbols);
   const now = Date.now();
-  const due = evaluateAlerts(alerts, prices, now, alertCooldownMs());
+  const { triggers: due, resets } = evaluateAlerts(alerts, prices, now, alertRepeatPolicy());
+
+  // Re-arm alerts whose price left the zone, so the next crossing fires
+  // fresh instead of waiting out a timer. Silent on purpose: no message.
+  for (const alert of resets) {
+    try {
+      await db
+        .update(schema.priceAlerts)
+        .set({ lastTriggeredAt: null, episodeStartedAt: null, lastNotifiedPrice: null })
+        .where(eq(schema.priceAlerts.id, alert.id));
+    } catch (err) {
+      console.error(`price alerts: failed to re-arm alert ${alert.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
 
   const userIds = [...new Set(due.map((d) => d.alert.userId))];
   const settingsRows = userIds.length
@@ -270,10 +376,12 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
   const send = deps.sendTelegram ?? sendTelegramMessage;
 
   let triggered = 0;
-  for (const { alert, price } of due) {
+  for (const { alert, price, kind } of due) {
     triggered++;
-    const verb = alert.direction === "above" ? "rose above" : "fell below";
-    const message = `🔔 ${alert.asset} ${verb} $${fmtUsd(alert.targetPrice)} — now $${fmtUsd(price)}`;
+    const message =
+      kind === "cross"
+        ? `🔔 ${alert.asset} ${alert.direction === "above" ? "rose above" : "fell below"} $${fmtUsd(alert.targetPrice)} — now $${fmtUsd(price)}`
+        : `🔔 ${alert.asset} ${alert.direction === "above" ? "still above" : "still below"} $${fmtUsd(alert.targetPrice)} — now $${fmtUsd(price)}`;
     const settings = settingsByUser.get(alert.userId);
     const channels = alert.channels.split(",").map((c) => c.trim());
     const delivered: string[] = [];
@@ -310,7 +418,14 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
         message: historyMessage,
         deliveredAt: new Date(now),
       });
-      await db.update(schema.priceAlerts).set({ lastTriggeredAt: new Date(now) }).where(eq(schema.priceAlerts.id, alert.id));
+      await db
+        .update(schema.priceAlerts)
+        .set({
+          lastTriggeredAt: new Date(now),
+          lastNotifiedPrice: price,
+          episodeStartedAt: alert.episodeStartedAt ?? alert.lastTriggeredAt ?? new Date(now),
+        })
+        .where(eq(schema.priceAlerts.id, alert.id));
     } catch (err) {
       console.error(`price alerts: failed to record trigger for alert ${alert.id}:`, err instanceof Error ? err.message : err);
     }
@@ -323,7 +438,8 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
       targetPrice: alert.targetPrice,
       currentPrice: price,
       triggeredAt: new Date(now).toISOString(),
+      kind,
     });
   }
-  return { checked: alerts.length, triggered };
+  return { checked: alerts.length, triggered, reset: resets.length };
 }

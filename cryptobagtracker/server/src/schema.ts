@@ -106,6 +106,8 @@ export const priceAlerts = pgTable("price_alerts", {
   channels: text("channels").notNull(),
   active: boolean("active").notNull().default(true),
   lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true, mode: "date" }),
+  episodeStartedAt: timestamp("episode_started_at", { withTimezone: true, mode: "date" }),
+  lastNotifiedPrice: doublePrecision("last_notified_price"),
   createdAt: createdAt(),
 });
 

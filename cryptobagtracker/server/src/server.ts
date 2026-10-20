@@ -119,15 +119,21 @@ async function main(): Promise<void> {
   // Price-alert scheduler: poll CoinGecko for active alerts, deliver via
   // Telegram / outbound webhook, and record every trigger in alert_history.
   // Single-replica safe for Railway's default deployment; failures are logged
-  // and never crash the server.
+  // and never crash the server. Prices are fetched in one batched call per
+  // tick, so the 60s default cadence stays at ~1 CoinGecko request/minute.
   const priceCheckMs = Number(process.env.PRICE_CHECK_INTERVAL_MS);
-  const priceCheckInterval = Number.isFinite(priceCheckMs) && priceCheckMs > 0 ? priceCheckMs : 5 * 60 * 1000;
+  const priceCheckInterval = Number.isFinite(priceCheckMs) && priceCheckMs > 0 ? priceCheckMs : 60 * 1000;
+  let alertCheckRunning = false;
   const runAlertCheck = async () => {
+    if (alertCheckRunning) return; // a slow tick skips the next one instead of stacking sends
+    alertCheckRunning = true;
     try {
       const { checked, triggered } = await checkPriceAlerts(db);
       if (triggered > 0) console.log(`price alerts: ${triggered} triggered (${checked} active checked)`);
     } catch (err) {
       console.error("price alert check failed:", err instanceof Error ? err.message : err);
+    } finally {
+      alertCheckRunning = false;
     }
   };
   setTimeout(runAlertCheck, 30_000);

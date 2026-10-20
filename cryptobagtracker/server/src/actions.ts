@@ -285,7 +285,7 @@ export const Actions = {
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
         exchanges: exchanges.map((e) => ({ id: e.id, provider: e.provider, label: e.label, keyHint: e.keyHint, status: e.status, lastSyncedAt: e.lastSyncedAt ? e.lastSyncedAt.toISOString() : null, syncError: e.syncError, createdAt: e.createdAt.toISOString() })),
-        alerts: alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), channels: a.channels.split(",").filter(Boolean) })),
+        alerts: alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), lastTriggeredAt: a.lastTriggeredAt?.toISOString() ?? null, episodeStartedAt: a.episodeStartedAt?.toISOString() ?? null, channels: a.channels.split(",").filter(Boolean) })),
         alertHistory: history.map((h) => ({ ...h, deliveredAt: h.deliveredAt.toISOString() })),
         alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false },
         portfolio: { assets: [...assetMap.entries()].filter(([, v]) => Math.abs(v.amount) > 1e-10).map(([asset, v]) => ({ asset, amount: Number(v.amount.toFixed(10)), value: money(v.value) })), totalValue: money([...assetMap.values()].reduce((s, v) => s + v.value, 0)) },
