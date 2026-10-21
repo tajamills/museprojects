@@ -299,6 +299,17 @@ export interface AlertWebhookPayload {
   currentPrice: number;
   triggeredAt: string;
   kind: TriggerKind;
+  /**
+   * Ready-made message text, named to match the field the live Zapier SMS
+   * Zap ("Send SMS alerts from webhook") is mapped to. The older alert
+   * engine already sends `messageShort`/`messageFull`; including them here
+   * means an SMS built from either engine's payload renders in full
+   * (learned Oct 20, 2026, when the old engine's percent-change payloads met
+   * a template mapped to this payload's field names and every value came
+   * out empty).
+   */
+  messageShort: string;
+  messageFull: string;
 }
 
 export async function postAlertWebhook(payload: AlertWebhookPayload): Promise<void> {
@@ -439,6 +450,8 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
       currentPrice: price,
       triggeredAt: new Date(now).toISOString(),
       kind,
+      messageShort: message,
+      messageFull: message,
     });
   }
   return { checked: alerts.length, triggered, reset: resets.length };
