@@ -47,6 +47,58 @@ export const SETUP_SESSION_PRICE_CENTS = 12500;
 /** Checkout-session metadata marker for setup-session purchases. */
 export const SETUP_BOOKING_KIND = "setup_booking";
 
+/* ------------------------------------------------------------------ */
+/* Black Friday launch (waitlist playbook, Oct 2026)                   */
+/*                                                                     */
+/* Tripwire: the one-time $8.88 "90 Plug-and-Post Captions" pack,     */
+/* sold from the /black-friday/youre-in confirmation page during the  */
+/* runway. Its Stripe price comes ONLY from STRIPE_TRIPWIRE_PRICE_ID  */
+/* (one price on the "90 Plug-and-Post Captions" product) — unset     */
+/* means the pack is not offered anywhere.                            */
+/*                                                                     */
+/* Deal (PREP ONLY): a $10.00-off, duration-"once" Stripe coupon      */
+/* (STRIPE_BF_COUPON_ID) applied by a SEPARATE Black Friday checkout  */
+/* action, only inside the cart window Fri Nov 27 – Mon Nov 30,       */
+/* 2026 (America/New_York). First month $19.88 − $10.00 = $9.88,      */
+/* renewals at the regular $19.88. The regular checkout never sees    */
+/* the coupon, and nothing links to the BF checkout yet.              */
+/* ------------------------------------------------------------------ */
+
+/** One-time price of the captions pack, in cents. */
+export const BF_TRIPWIRE_PRICE_CENTS = 888;
+
+/** Checkout-session metadata marker for captions-pack purchases. */
+export const BF_TRIPWIRE_KIND = "bf_tripwire";
+
+/** Stripe price ID for the captions pack, or null when not configured. */
+export function bfTripwirePriceId(): string | null {
+  return process.env.STRIPE_TRIPWIRE_PRICE_ID?.trim() || null;
+}
+
+/** Stripe coupon ID for the Black Friday deal, or null when not configured. */
+export function bfCouponId(): string | null {
+  return process.env.STRIPE_BF_COUPON_ID?.trim() || null;
+}
+
+/** Cart window, America/New_York (EST = UTC−5 in late November):
+ *  opens Fri Nov 27, 2026 00:00 ET, closes at Tue Dec 1, 2026 00:00 ET
+ *  (i.e. the deal runs through Mon Nov 30, 23:59 ET). */
+export const BF_WINDOW_START = new Date("2026-11-27T05:00:00.000Z");
+export const BF_WINDOW_END = new Date("2026-12-01T05:00:00.000Z");
+
+export function isBfWindowOpen(now: Date = new Date()): boolean {
+  return now >= BF_WINDOW_START && now < BF_WINDOW_END;
+}
+
+/**
+ * Where the pack PDF is served from once payment is verified. The
+ * path segment is unguessable and the path is only ever RETURNED by
+ * the server after a Stripe read-back confirms the session is paid —
+ * the file itself sits in the client's static assets (see
+ * client/build.mjs), like the tutorial videos.
+ */
+export const BF_PACK_DOWNLOAD_PATH = "/bf-pack-f111d5619e2e249b/captions-pack-90.pdf";
+
 /** Subscription statuses that count as "subscribed" across the app. */
 export const SUBSCRIBED_STATUSES = ["trialing", "active", "past_due"];
 
@@ -793,6 +845,69 @@ export async function reconcileSetupBookingsFromStripe(db: Db, user: UserRow): P
 }
 
 /**
+ * Record a PAID captions-pack checkout as a purchase row. Idempotent
+ * (the Stripe session ID is unique), so the webhook and the read-time
+ * verification can both call this safely. Mirrors recordSetupBooking,
+ * minus the user: pack buyers need no account, so the email Stripe
+ * collected is the identity. Returns true when a new row landed.
+ */
+export async function recordBfPackPurchase(db: Db, session: Stripe.Checkout.Session): Promise<boolean> {
+  if (session.metadata?.kind !== BF_TRIPWIRE_KIND) return false;
+  if (session.payment_status !== "paid") return false;
+  const email = session.customer_details?.email ?? session.customer_email ?? "";
+  if (!email) return false;
+  const paymentIntentId =
+    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+  const inserted = await db
+    .insert(schema.bfPackPurchases)
+    .values({
+      email,
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: paymentIntentId,
+      amountCents: session.amount_total ?? BF_TRIPWIRE_PRICE_CENTS,
+      currency: session.currency ?? "usd",
+      status: "paid",
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing({ target: schema.bfPackPurchases.stripeCheckoutSessionId })
+    .returning({ id: schema.bfPackPurchases.id });
+  return inserted.length > 0;
+}
+
+/**
+ * The download gate for the captions pack, and the house billing rule
+ * applied to a one-time purchase: NEVER trust a success redirect (or
+ * a webhook) — re-read the checkout session from Stripe, and only a
+ * session Stripe itself reports as paid, in payment mode, carrying
+ * the tripwire marker, grants the download. A verified payment is
+ * also recorded on the spot, so the purchase row exists even if the
+ * completion webhook was missed. Never throws — a Stripe outage
+ * reads as "not confirmed", not as a crash.
+ */
+export async function verifyBfPackSession(
+  db: Db,
+  sessionId: string,
+): Promise<{ ok: boolean; email: string | null; downloadPath: string | null }> {
+  if (!process.env.STRIPE_SECRET_KEY) return { ok: false, email: null, downloadPath: null };
+  try {
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.mode !== "payment" || session.metadata?.kind !== BF_TRIPWIRE_KIND || session.payment_status !== "paid") {
+      return { ok: false, email: null, downloadPath: null };
+    }
+    await recordBfPackPurchase(db, session);
+    return {
+      ok: true,
+      email: session.customer_details?.email ?? session.customer_email ?? null,
+      downloadPath: BF_PACK_DOWNLOAD_PATH,
+    };
+  } catch (err) {
+    console.error("bf pack verification failed:", err instanceof Error ? err.message : err);
+    return { ok: false, email: null, downloadPath: null };
+  }
+}
+
+/**
  * Handle a verified Stripe webhook event. The caller is responsible for
  * signature verification; this only applies the business logic.
  */
@@ -829,6 +944,13 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
           const rows = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
           if (rows[0]) await ensureXAddonSubscription(db, stripe, rows[0], tierPriceId);
         }
+      }
+      // A paid captions-pack checkout becomes a purchase row (the
+      // pack page's read-time verification repairs this if the write
+      // ever fails). Recorded OUTSIDE the customer block above: pack
+      // buyers check out as guests — no zepostia customer exists.
+      if (session.metadata?.kind === BF_TRIPWIRE_KIND) {
+        await recordBfPackPurchase(db, session);
       }
       break;
     }

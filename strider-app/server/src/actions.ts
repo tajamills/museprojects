@@ -16,6 +16,11 @@ import {
   isXAddonSubscription,
   SETUP_BOOKING_KIND,
   SETUP_SESSION_PRICE_CENTS,
+  BF_TRIPWIRE_KIND,
+  bfCouponId,
+  bfTripwirePriceId,
+  isBfWindowOpen,
+  verifyBfPackSession,
   reconcileSetupBookingsFromStripe,
   reconcileSubscriptionFromStripe,
   settleTierSwitchNet,
@@ -1576,6 +1581,218 @@ export const actions: Record<string, ActionDef> = {
       });
       if (!session.url) throw new Error("Could not start checkout. Try again.");
       return { url: session.url };
+    },
+  },
+
+  /**
+   * Join the Black Friday waitlist (public — no account needed).
+   * Capture only: writes one bf_waitlist row. A repeat email is a
+   * graceful no-op ("already on the list"), never an error and never
+   * a duplicate row — the insert leans on the email unique constraint
+   * so simultaneous double-submits can't race into two rows either.
+   * No Stripe, no checkout, no deal terms: pricing for the launch is
+   * Layla-approval-gated and lives nowhere in this action.
+   */
+  joinBfWaitlist: {
+    request: z.object({
+      email: z.string().email().max(200),
+      phone: z.string().trim().max(40).optional(),
+      firstName: z.string().trim().max(60).optional(),
+    }),
+    async handler(ctx, args): Promise<{ ok: boolean; alreadyOnList: boolean; message: string }> {
+      const email = args.email.trim().toLowerCase();
+      const phone = args.phone?.trim() ? args.phone.trim() : null;
+      const firstName = args.firstName?.trim() ? args.firstName.trim() : null;
+      const inserted = await ctx.db
+        .insert(schema.bfWaitlist)
+        .values({ email, phone, firstName, source: "black-friday", createdAt: new Date() })
+        .onConflictDoNothing({ target: schema.bfWaitlist.email })
+        .returning({ id: schema.bfWaitlist.id });
+      if (!inserted[0]) {
+        return { ok: true, alreadyOnList: true, message: "You're already on the list — watch for one email a week until cart open." };
+      }
+      return { ok: true, alreadyOnList: false, message: "You're on the list." };
+    },
+  },
+
+  /**
+   * Public Black Friday page config. The confirmation page renders
+   * its captions-pack purchase block ONLY when the pack's Stripe
+   * price is configured on the server (STRIPE_TRIPWIRE_PRICE_ID) —
+   * until then nothing about the pack renders at all, so the page
+   * never shows a price with a dead button behind it.
+   */
+  getBfConfig: {
+    request: z.object({}),
+    async handler(): Promise<{ tripwireConfigured: boolean }> {
+      return { tripwireConfigured: bfTripwirePriceId() !== null };
+    },
+  },
+
+  /**
+   * Start the captions-pack checkout (public — pack buyers need no
+   * zepostia account). One-time $8.88 payment against the pre-created
+   * Stripe price from STRIPE_TRIPWIRE_PRICE_ID — no price is ever
+   * built inline here, and no other product can be substituted: the
+   * price ID comes only from server config. The buyer's email rides
+   * as customer_email + client_reference_id; the session carries the
+   * bf_tripwire metadata marker the webhook and the read-back gate
+   * both check. Success lands on /black-friday/pack, which grants
+   * the download ONLY after verifyBfPackSession re-reads the session
+   * from Stripe and sees it paid.
+   */
+  createBfTripwireCheckoutSession: {
+    request: z.object({
+      email: z.string().email().max(200),
+    }),
+    async handler(ctx, args): Promise<{ url: string }> {
+      const priceId = bfTripwirePriceId();
+      if (!priceId) throw new Error("The captions pack is not on sale right now.");
+      const stripe = getStripe();
+      const email = args.email.trim().toLowerCase();
+      const url = baseUrl(ctx.origin);
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{ price: priceId, quantity: 1 }],
+        customer_email: email,
+        client_reference_id: email,
+        metadata: { kind: BF_TRIPWIRE_KIND },
+        success_url: `${url}/black-friday/pack?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${url}/black-friday/youre-in`,
+      });
+      if (!session.url) throw new Error("Could not start checkout. Try again.");
+      return { url: session.url };
+    },
+  },
+
+  /**
+   * The pack download gate (public, but grants nothing on its own):
+   * hands back the PDF path ONLY when Stripe — re-read live, never
+   * the redirect or a webhook — confirms this session is a paid
+   * captions-pack purchase. See verifyBfPackSession in billing.ts.
+   */
+  getBfPackAccess: {
+    request: z.object({
+      sessionId: z.string().min(10).max(200),
+    }),
+    async handler(ctx, args): Promise<{ ok: boolean; email: string | null; downloadPath: string | null }> {
+      return verifyBfPackSession(ctx.db, args.sessionId);
+    },
+  },
+
+  /**
+   * BLACK FRIDAY DEAL CHECKOUT — PREP ONLY. A separate subscription
+   * checkout that applies the Black Friday coupon ($10.00 off, once:
+   * first month $9.88, then the regular $19.88) — deliberately NOT
+   * the regular createCheckoutSession, which is untouched and never
+   * sees the coupon. Two gates, both server-side: the cart window
+   * (Fri Nov 27 – Mon Nov 30, 2026, America/New_York) must be open,
+   * and STRIPE_BF_COUPON_ID must be configured. There is NO trial on
+   * this path — a trial would push the coupon onto the post-trial
+   * invoice and the first month would not be $9.88. Nothing in the
+   * client links here yet; the action exists so the window can open
+   * on a tested path, not a launch-day build.
+   */
+  createBfCheckoutSession: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+    }),
+    async handler(ctx, args): Promise<{ url: string }> {
+      if (!isBfWindowOpen()) {
+        throw new Error("The Black Friday checkout is not open — it runs Friday, November 27 to Monday, November 30.");
+      }
+      const user = await billingUserSynced(ctx, args.sessionToken);
+      if (!user) throw new Error("Your session expired. Sign in again.");
+      const couponId = bfCouponId();
+      if (!couponId) throw new Error("Billing is not configured yet.");
+      const stripe = getStripe();
+      const priceId = process.env.STRIPE_PRICE_ID;
+      if (!priceId) throw new Error("Billing is not configured yet.");
+      if (["trialing", "active", "past_due"].includes(user.subscriptionStatus) && user.stripeCustomerId) {
+        throw new Error("You already have a subscription — use Manage billing to update it.");
+      }
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: String(user.id) },
+        });
+        customerId = customer.id;
+        await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
+      }
+      const url = baseUrl(ctx.origin);
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer: customerId,
+        client_reference_id: String(user.id),
+        line_items: [{ price: priceId, quantity: 1 }],
+        discounts: [{ coupon: couponId }],
+        metadata: { kind: "bf_deal" },
+        success_url: `${url}/?billing=success`,
+        cancel_url: `${url}/?billing=cancelled`,
+      });
+      if (!session.url) throw new Error("Could not start checkout. Try again.");
+      return { url: session.url };
+    },
+  },
+
+  /**
+   * Admin-only: captions-pack sales for the owner — count, total, and
+   * every purchase row (newest first), from bf_pack_purchases (the
+   * webhook + read-time-verification record). Follows the
+   * generatePasswordResetLink admin pattern.
+   */
+  getBfTripwireSales: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; count: number; totalCents: number; sales: Array<{ id: number; email: string; amountCents: number; createdAt: string }> }> {
+      const admin = await requireUser(ctx, args.sessionToken);
+      if (!admin || admin.role !== "admin") return { ok: false, message: "Admin access required.", count: 0, totalCents: 0, sales: [] };
+      const rows = await ctx.db
+        .select()
+        .from(schema.bfPackPurchases)
+        .orderBy(desc(schema.bfPackPurchases.createdAt));
+      return {
+        ok: true,
+        message: "",
+        count: rows.length,
+        totalCents: rows.reduce((sum, row) => sum + row.amountCents, 0),
+        sales: rows.map((row) => ({
+          id: row.id,
+          email: row.email,
+          amountCents: row.amountCents,
+          createdAt: row.createdAt.toISOString(),
+        })),
+      };
+    },
+  },
+
+  /**
+   * Admin-only: the Black Friday waitlist for the owner — count plus
+   * every entry, oldest first, so the weekly email/text sends can be
+   * exported (the client builds the CSV / copy lists from this).
+   * Follows the generatePasswordResetLink admin pattern.
+   */
+  getBfWaitlist: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; count: number; entries: Array<{ id: number; email: string; phone: string | null; firstName: string | null; createdAt: string }> }> {
+      const admin = await requireUser(ctx, args.sessionToken);
+      if (!admin || admin.role !== "admin") return { ok: false, message: "Admin access required.", count: 0, entries: [] };
+      const rows = await ctx.db
+        .select()
+        .from(schema.bfWaitlist)
+        .orderBy(schema.bfWaitlist.createdAt);
+      return {
+        ok: true,
+        message: "",
+        count: rows.length,
+        entries: rows.map((row) => ({
+          id: row.id,
+          email: row.email,
+          phone: row.phone,
+          firstName: row.firstName,
+          createdAt: row.createdAt.toISOString(),
+        })),
+      };
     },
   },
 

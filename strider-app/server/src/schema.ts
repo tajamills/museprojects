@@ -205,6 +205,42 @@ export const setupBookings = pgTable("setup_bookings", {
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
 });
 
+/**
+ * Black Friday waitlist signups from the public /black-friday page
+ * (waitlist-playbook launch, Oct 2026). Email is unique — a repeat
+ * signup is a no-op answered "already on the list". Phone is optional
+ * (for the weekly launch text), first name optional. Capture only:
+ * no billing fields, no Stripe references — the deal and the
+ * confirmation-page tripwire are Layla-approval-gated and unbuilt.
+ */
+export const bfWaitlist = pgTable("bf_waitlist", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  email: text("email").notNull().unique(),
+  phone: text("phone"),
+  firstName: text("first_name"),
+  source: text("source").notNull().default("black-friday"),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
+/**
+ * Paid purchases of the Black Friday tripwire — the one-time $8.88
+ * "90 Plug-and-Post Captions" pack. One row per PAID Stripe checkout
+ * session; recorded by the completion webhook AND repaired by the
+ * pack page's read-time verification from Stripe (same self-healing
+ * rule as setup_bookings). No user_id: pack buyers need no account,
+ * the email Stripe collected is the identity.
+ */
+export const bfPackPurchases = pgTable("bf_pack_purchases", {
+  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+  email: text("email").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id").notNull().unique(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  amountCents: integer("amount_cents").notNull(),
+  currency: text("currency").notNull().default("usd"),
+  status: text("status").notNull().default("paid"),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
+});
+
 export const tiktokMonthlyUsage = pgTable("tiktok_monthly_usage", {
   userId: integer("user_id").notNull(),
   yearMonth: text("year_month").notNull(),

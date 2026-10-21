@@ -1229,6 +1229,96 @@ function AdminResetTool({ token }: { token: string }) {
   </section>;
 }
 
+/**
+ * Admin-only Black Friday launch panel (Settings → Owner setup): the
+ * waitlist count and entries with CSV download + copyable email /
+ * phone lists for the weekly launch sends, and the captions-pack
+ * sales record. Data comes from getBfWaitlist / getBfTripwireSales,
+ * which re-check the admin role server-side.
+ */
+function BfWaitlistAdmin({ token }: { token: string }) {
+  const [copied, setCopied] = useState("");
+  const waitlist = useQuery({ queryKey: ["bf-waitlist", token], queryFn: () => api.getBfWaitlist({ sessionToken: token }) });
+  const sales = useQuery({ queryKey: ["bf-tripwire-sales", token], queryFn: () => api.getBfTripwireSales({ sessionToken: token }) });
+  const entries = waitlist.data?.entries ?? [];
+  const saleRows = sales.data?.sales ?? [];
+  const copyList = async (kind: "emails" | "phones") => {
+    const values = entries
+      .map((entry) => (kind === "emails" ? entry.email : entry.phone))
+      .filter((value): value is string => Boolean(value));
+    if (values.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(values.join(", "));
+      setCopied(kind);
+    } catch {
+      setCopied("");
+    }
+  };
+  const downloadCsv = () => {
+    const esc = (value: string | null) => `"${(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      "email,phone,first_name,joined_at",
+      ...entries.map((entry) => [esc(entry.email), esc(entry.phone), esc(entry.firstName), esc(entry.createdAt)].join(",")),
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "black-friday-waitlist.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <section className="settings-card admin-reset bf-admin">
+      <h2>Black Friday waitlist (admin)</h2>
+      <p className="secret-note">
+        {waitlist.isPending
+          ? "Loading the list…"
+          : waitlist.data?.ok
+            ? `${waitlist.data.count} ${waitlist.data.count === 1 ? "signup" : "signups"} for the Nov 27 cart open. Export for the weekly email and text sends.`
+            : (waitlist.data?.message ?? "The list could not be loaded.")}
+      </p>
+      {entries.length > 0 && (
+        <>
+          <div className="admin-reset-row">
+            <button className="secondary-button" onClick={downloadCsv}>Download CSV</button>
+            <button className="secondary-button" onClick={() => copyList("emails")}>{copied === "emails" ? "Emails copied" : "Copy emails"}</button>
+            <button className="secondary-button" onClick={() => copyList("phones")}>{copied === "phones" ? "Phones copied" : "Copy phones"}</button>
+          </div>
+          <div className="bf-entry-list">
+            {entries.map((entry) => (
+              <div className="bf-entry" key={entry.id}>
+                <strong>{entry.firstName ?? entry.email}</strong>
+                <span>{entry.email}</span>
+                <span>{entry.phone ?? "no phone"}</span>
+                <span className="bf-entry-date">{formatDate(entry.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <h2 className="bf-sales-head">Captions pack sales (admin)</h2>
+      <p className="secret-note">
+        {sales.isPending
+          ? "Loading sales…"
+          : sales.data?.ok
+            ? `${sales.data.count} ${sales.data.count === 1 ? "sale" : "sales"} · $${((sales.data.totalCents ?? 0) / 100).toFixed(2)} total, recorded from Stripe.`
+            : (sales.data?.message ?? "Sales could not be loaded.")}
+      </p>
+      {saleRows.length > 0 && (
+        <div className="bf-entry-list">
+          {saleRows.map((sale) => (
+            <div className="bf-entry" key={sale.id}>
+              <strong>{sale.email}</strong>
+              <span>${(sale.amountCents / 100).toFixed(2)}</span>
+              <span className="bf-entry-date">{formatDate(sale.createdAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, xVisible, onMessage, onSignOut, go }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; xVisible: boolean; onMessage: (message: string) => void; onSignOut: () => void; go: (page: Page) => void }) {
   const isAdmin = user.role === "admin";
   const [showCredentials, setShowCredentials] = useState(false);
@@ -1304,6 +1394,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
       <div className="page-heading"><h2>Owner setup</h2><p>Admin only — platform app credentials and setup steps. Customers never see this section.</p></div>
       <section className="settings-list">{settings.filter((setting) => setting.platform !== "x" || xVisible).map((setting) => <OwnerPlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
       <AdminResetTool token={token} />
+      <BfWaitlistAdmin token={token} />
     </section>}
 
     {showCredentials && <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="How credentials work" onClick={() => setShowCredentials(false)}>
@@ -1597,6 +1688,324 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
   </div>;
 }
 
+/** Shared header/footer chrome for the public Black Friday pages —
+ *  mirrors the /services chrome exactly so the pages sit in the same
+ *  family. No auth actions here beyond the same Log in / Get Started. */
+function BfChrome({ children, current }: { children: ReactNode; current: "landing" | "confirmation" }) {
+  return (
+    <div className="landing-shell">
+      <SafeAreaTopScrim backgroundColor="var(--bg)" />
+      <header className="landing-header">
+        <div className="landing-brand"><a href="/" className="brand-home"><BrandMark className="brand-mark" /><strong>zepostia</strong></a></div>
+        <nav className="landing-nav" aria-label="Primary">
+          <a href="/services">Services</a>
+          <a href="/#how-it-works">Product</a>
+          <a href="/#pricing">Pricing</a>
+          <a href="/black-friday" aria-current={current === "landing" ? "page" : undefined}>Black Friday</a>
+        </nav>
+        <div className="landing-actions">
+          <a className="quiet-button" href="/?auth=login">Log in</a>
+          <a className="primary-button" href="/?auth=signup">Get Started</a>
+        </div>
+      </header>
+      {children}
+      <footer className="landing-footer">
+        <div className="footer-brand"><BrandMark className="brand-mark" /><strong>zepostia</strong></div>
+        <p>&copy; 2026 zepostia. All rights reserved.</p>
+        <nav aria-label="Footer"><a href="/services">Services</a><a href="/black-friday">Black Friday</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * Public /black-friday page — the waitlist for zepostia's Black
+ * Friday launch (waitlist playbook, Oct 2026). One job: capture an
+ * email (phone optional, for the weekly text) onto the bf_waitlist
+ * table. Copy rules: the cart-open date is stated outright — Friday,
+ * November 27, 2026 — because the date IS the promise; no bare
+ * "coming soon", and no deal price is quoted anywhere (the Black
+ * Friday price is Layla-approval-gated and undecided here). A repeat
+ * email is answered "you're already on the list" by the server and
+ * lands on the same confirmation page.
+ */
+function BlackFridayPage() {
+  const [message, setMessage] = useState("");
+  const join = useMutation({
+    mutationFn: (payload: { email: string; phone?: string; firstName?: string }) => api.joinBfWaitlist(payload),
+  });
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
+    const phone = String(form.get("phone") ?? "").trim();
+    const firstName = String(form.get("firstName") ?? "").trim();
+    try {
+      const result = await join.mutateAsync({ email, phone: phone || undefined, firstName: firstName || undefined });
+      if (result.ok) {
+        window.location.href = result.alreadyOnList ? "/black-friday/youre-in?already=1" : "/black-friday/youre-in";
+        return;
+      }
+      setMessage(result.message);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message.replace(/^action \w+ error: /, "") : "";
+      setMessage(raw && raw !== "Invalid request arguments." ? raw : "That didn't go through — check the email address and try again.");
+    }
+  };
+  const cards: Array<{ Icon: ComponentType; title: string; body: string }> = [
+    {
+      Icon: IconCompose,
+      title: "Write once, post everywhere",
+      body: "Write your post a single time — zepostia fits it to each platform's rules and sends it to Facebook, Instagram, TikTok, and YouTube for you.",
+    },
+    {
+      Icon: IconClock,
+      title: "A date, not a tease",
+      body: "Cart opens Friday, November 27, 2026 and closes Monday, November 30. When the window closes, the Black Friday offer closes with it.",
+    },
+    {
+      Icon: IconShield,
+      title: "Your passwords stay yours",
+      body: "You connect each account on the platform's own website. Zepostia stores an encrypted token — never your password.",
+    },
+  ];
+  return (
+    <BfChrome current="landing">
+      <main className="landing-main services-main">
+        <section className="svc-hero">
+          <span className="hero-badge">Black Friday · Waitlist open</span>
+          <h1>The Black Friday deal goes to the waitlist.</h1>
+          <p>Zepostia posts your business content for you — one post, written once, out to every channel. This year the Black Friday offer is for waitlist members only. Joining the list is free.</p>
+          <p className="bf-date"><strong>Cart opens Black Friday — Friday, November 27, 2026</strong> · closes Monday, November 30</p>
+        </section>
+
+        <section className="bf-form-card" id="join" aria-label="Join the waitlist">
+          <h2>Join the waitlist</h2>
+          <p className="bf-form-note">One email a week while you wait — and one text a week if you leave a number. That is the whole cadence.</p>
+          <form onSubmit={submit} className="bf-form">
+            <label className="field-label">First name <span className="bf-optional">optional</span>
+              <input name="firstName" type="text" autoComplete="given-name" maxLength={60} placeholder="Your first name" />
+            </label>
+            <label className="field-label">Email
+              <input name="email" type="email" autoComplete="email" required maxLength={200} placeholder="you@example.com" />
+            </label>
+            <label className="field-label">Phone <span className="bf-optional">optional — for text updates</span>
+              <input name="phone" type="tel" autoComplete="tel" maxLength={40} placeholder="(555) 123-4567" />
+            </label>
+            <button className="primary-button wide" type="submit" disabled={join.isPending}>{join.isPending ? "Joining…" : "Join the waitlist"}</button>
+          </form>
+          {message && <p className="form-message" role="status">{message}</p>}
+          <p className="bf-form-note">We only ever email and text about this launch. No daily blasts, no sharing your details.</p>
+        </section>
+
+        <section className="svc-section" aria-label="What zepostia does">
+          <div className="svc-heading"><h2>What you&apos;re waiting for</h2><p>The plan is $19.88/month with a 14-day free trial. The Black Friday price is waitlist-only.</p></div>
+          <div className="svc-feature-grid">
+            {cards.map((card) => (
+              <article className="svc-feature-card" key={card.title}>
+                <span className="svc-feature-icon"><card.Icon /></span>
+                <div><h3>{card.title}</h3><p>{card.body}</p></div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="how-section" aria-label="How the waitlist works">
+          <h2>How the waitlist works</h2>
+          <p>Three steps, all of them dated.</p>
+          <div className="steps-grid">
+            <div className="step-card">
+              <span className="step-num">1</span>
+              <h3>Join the list</h3>
+              <p>Email is all it takes. Add a phone number if you want the weekly text as well.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">2</span>
+              <h3>Hear from us weekly</h3>
+              <p>One email — and one text, if you left a number — each week while the list builds.</p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">3</span>
+              <h3>Buy at cart open</h3>
+              <p>Friday, November 27 to Monday, November 30, 2026. The Black Friday offer is in that window only.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="svc-cta">
+          <h2>Write once. Post everywhere.</h2>
+          <p>Get on the list now — cart opens Friday, November 27, 2026.</p>
+          <a className="primary-button hero-cta" href="#join">Join the waitlist</a>
+          <p className="svc-support">Questions first? Contact support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
+        </section>
+      </main>
+    </BfChrome>
+  );
+}
+
+/**
+ * Public /black-friday/youre-in page — the waitlist confirmation.
+ * Says plainly what happens next: one email a week, one text a week
+ * (phone permitting), cart opens Friday, November 27, 2026. Below
+ * that sits the launch's tripwire: the "90 Plug-and-Post Captions"
+ * pack, $8.88 one-time, sold during the runway. Its purchase block
+ * renders ONLY when the server reports the pack's Stripe price
+ * configured — until then the pack is not mentioned at all, so the
+ * page never shows a price with a dead button behind it. Checkout is
+ * a real Stripe session (guest checkout, no account needed); after
+ * payment Stripe returns the buyer to /black-friday/pack, which
+ * grants the download only after the server re-reads the session
+ * from Stripe and sees it paid.
+ */
+function BlackFridayConfirmationPage() {
+  const already = new URLSearchParams(window.location.search).get("already") === "1";
+  const config = useQuery({ queryKey: ["bf-config"], queryFn: () => api.getBfConfig({}), staleTime: 60000 });
+  const tripwireConfigured = config.data?.tripwireConfigured ?? false;
+  const [packEmail, setPackEmail] = useState("");
+  const [packMessage, setPackMessage] = useState("");
+  const buyPack = useMutation({
+    mutationFn: (email: string) => api.createBfTripwireCheckoutSession({ email }),
+    onSuccess: (result) => { window.location.href = result.url; },
+    onError: (error) => setPackMessage(error instanceof Error ? error.message.replace(/^action \w+ error: /, "") : "Could not start checkout. Try again."),
+  });
+  const nextSteps: Array<{ Icon: ComponentType; title: string; body: string }> = [
+    {
+      Icon: IconMail,
+      title: "One email a week",
+      body: "A short launch note each week while the waitlist builds. Nothing daily, nothing extra.",
+    },
+    {
+      Icon: IconComment,
+      title: "One text a week",
+      body: "The same news, shorter — and only if you left a phone number. No number, no texts.",
+    },
+    {
+      Icon: IconClock,
+      title: "Cart opens Fri, Nov 27",
+      body: "The Black Friday offer runs Friday, November 27 to Monday, November 30, 2026 — waitlist only.",
+    },
+  ];
+  return (
+    <BfChrome current="confirmation">
+      <main className="landing-main services-main">
+        <section className="svc-hero">
+          <span className="hero-badge">Waitlist</span>
+          <h1>{already ? "You're already on the list." : "You're on the list."}</h1>
+          <p>{already
+            ? "That email is already signed up — no need to join twice. Here's what happens between now and cart open."
+            : "Your spot is saved. Here's exactly what happens between now and cart open — no surprises."}</p>
+        </section>
+
+        <section className="svc-section" aria-label="What happens next">
+          <div className="svc-feature-grid">
+            {nextSteps.map((card) => (
+              <article className="svc-feature-card" key={card.title}>
+                <span className="svc-feature-icon"><card.Icon /></span>
+                <div><h3>{card.title}</h3><p>{card.body}</p></div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {tripwireConfigured && (
+          <section className="svc-section" aria-label="Captions pack">
+            <div className="x-addon-card bf-tripwire">
+              <div className="billing-card-icon" aria-hidden="true"><IconBook /></div>
+              <div className="x-addon-main">
+                <h3>90 Plug-and-Post Captions</h3>
+                <p className="billing-price">$8.88 <small>one-time</small></p>
+                <p>Ninety ready-to-post captions for your business — copy one, fill in the brackets, post it. Or let zepostia post them for you once your plan starts.</p>
+                <form
+                  className="bf-pack-buy"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setPackMessage("");
+                    buyPack.mutate(packEmail.trim());
+                  }}
+                >
+                  <label className="field-label">Email for your download
+                    <input type="email" required maxLength={200} autoComplete="email" placeholder="you@example.com" value={packEmail} onChange={(event) => setPackEmail(event.target.value)} />
+                  </label>
+                  <button className="primary-button" type="submit" disabled={buyPack.isPending || !packEmail.trim()}>{buyPack.isPending ? "Opening checkout…" : "Get the pack — $8.88"}</button>
+                </form>
+                {packMessage && <p className="form-message" role="status">{packMessage}</p>}
+                <p className="x-addon-line">Checkout is handled by Stripe. Your download opens the moment your payment confirms — no account needed.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        <section className="svc-cta">
+          <h2>While you wait, see the whole product.</h2>
+          <p>Every platform, every feature, and the regular pricing — on the Services page.</p>
+          <a className="primary-button hero-cta" href="/services">See what zepostia does</a>
+          <p className="svc-support">Questions? Contact support at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
+        </section>
+      </main>
+    </BfChrome>
+  );
+}
+
+/**
+ * Public /black-friday/pack page — where Stripe sends captions-pack
+ * buyers after checkout. The session_id in the URL is NOT proof of
+ * payment: this page asks the server, the server re-reads the
+ * checkout session from Stripe, and only a session Stripe reports
+ * as paid returns the download path. Anything else — a typed URL, a
+ * cancelled checkout, an unpaid session — gets a plain "not
+ * confirmed" message and no link.
+ */
+function BlackFridayPackPage() {
+  const sessionId = new URLSearchParams(window.location.search).get("session_id") ?? "";
+  const access = useQuery({
+    queryKey: ["bf-pack-access", sessionId],
+    queryFn: () => api.getBfPackAccess({ sessionId }),
+    enabled: sessionId.length >= 10,
+    staleTime: 60000,
+    retry: false,
+  });
+  const downloadPath = access.data?.ok ? access.data.downloadPath : null;
+  const granted = Boolean(downloadPath);
+  return (
+    <BfChrome current="confirmation">
+      <main className="landing-main services-main">
+        <section className="svc-hero">
+          <span className="hero-badge">Captions pack</span>
+          <h1>{granted ? "Your pack is ready." : "Your captions pack"}</h1>
+          <p>
+            {!sessionId
+              ? "This page opens after you check out — your payment confirmation link brings you here with your download ready."
+              : access.isPending
+                ? "Confirming your payment with Stripe…"
+                : granted
+                  ? "Payment confirmed. Download the pack below — it's yours to keep, and the same link works from your Stripe receipt session."
+                  : "We couldn't confirm a completed payment for that link. If you just paid, give it a moment and refresh; if you cancelled checkout, the pack is still on the confirmation page whenever you're ready."}
+          </p>
+          {granted && (
+            <div className="hero-ctas">
+              <a className="primary-button hero-cta" href={downloadPath ?? "#"} download>Download the pack (PDF)</a>
+              <a className="secondary-button hero-cta" href="/services">See what zepostia does</a>
+            </div>
+          )}
+        </section>
+        <section className="svc-section" aria-label="Using the pack">
+          <div className="svc-feature-grid">
+            <article className="svc-feature-card">
+              <span className="svc-feature-icon"><IconBook /></span>
+              <div><h3>90 captions, six themes</h3><p>Promotions, tips, questions, behind-the-scenes, seasonal, and calls to action — each with [BRACKETS] where your business fills in its own details.</p></div>
+            </article>
+            <article className="svc-feature-card">
+              <span className="svc-feature-icon"><IconCompose /></span>
+              <div><h3>Or let zepostia post them</h3><p>The pack works by hand — and it&apos;s the same captions a zepostia plan can schedule and post for you. Cart opens Friday, November 27.</p></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </BfChrome>
+  );
+}
+
 /**
  * Public /services page — the "what exactly do I get" explainer for
  * logged-out visitors, in the Accounts page pattern: every platform and
@@ -1858,6 +2267,9 @@ export function App() {
   const pathname = window.location.pathname;
   const demoMode = useServerDemoMode();
   if (pathname === "/services") return <ServicesPage />;
+  if (pathname === "/black-friday") return <BlackFridayPage />;
+  if (pathname === "/black-friday/youre-in") return <BlackFridayConfirmationPage />;
+  if (pathname === "/black-friday/pack") return <BlackFridayPackPage />;
   if (pathname === "/terms") return <TermsPage />;
   if (pathname === "/privacy") return <PrivacyPage />;
   if (pathname === "/reset") return <ResetPasswordPage />;

@@ -105,8 +105,30 @@ type ConnectInstagramResult = BasicResult & { mode: "oauth" | "demo"; authUrl: s
 type InstagramAccountsResult = { ok: boolean; accounts: Array<{ igUserId: string; username: string; pageId: string; pageName: string }>; selectedIgUserId: string | null; error?: string };
 
 type PublicConfigResult = { demoMode: boolean };
+type BfJoinResult = { ok: boolean; alreadyOnList: boolean; message: string };
+type BfConfigResult = { tripwireConfigured: boolean };
+type BfPackAccessResult = { ok: boolean; email: string | null; downloadPath: string | null };
+type BfTripwireSalesResult = {
+  ok: boolean;
+  message: string;
+  count: number;
+  totalCents: number;
+  sales: Array<{ id: number; email: string; amountCents: number; createdAt: string }>;
+};
+type BfWaitlistResult = {
+  ok: boolean;
+  message: string;
+  count: number;
+  entries: Array<{ id: number; email: string; phone: string | null; firstName: string | null; createdAt: string }>;
+};
 type ClientApi = {
   getPublicConfig(args: Record<string, never>): Promise<PublicConfigResult>;
+  joinBfWaitlist(args: { email: string; phone?: string; firstName?: string }): Promise<BfJoinResult>;
+  getBfConfig(args: Record<string, never>): Promise<BfConfigResult>;
+  getBfWaitlist(args: { sessionToken: string }): Promise<BfWaitlistResult>;
+  createBfTripwireCheckoutSession(args: { email: string }): Promise<RedirectResult>;
+  getBfPackAccess(args: { sessionId: string }): Promise<BfPackAccessResult>;
+  getBfTripwireSales(args: { sessionToken: string }): Promise<BfTripwireSalesResult>;
   createDemoSession(args: Record<string, never>): Promise<AuthResult>;
   signup(args: { email: string; displayName: string; password: string }): Promise<AuthResult>;
   login(args: { email: string; password: string }): Promise<AuthResult>;

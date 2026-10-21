@@ -55,4 +55,9 @@ await cp(path.join(root, "getting-started-poster.png"), path.join(outdir, "getti
 await cp(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
 await cp(path.join(root, "sitemap.xml"), path.join(outdir, "sitemap.xml"));
 await cp(path.join(root, "robots.txt"), path.join(outdir, "robots.txt"));
+// Black Friday captions-pack PDF, served under an unguessable path
+// segment; the path is only handed out by the server after a Stripe
+// read-back verifies payment (see BF_PACK_DOWNLOAD_PATH in
+// server/src/billing.ts — keep the two in sync).
+await cp(path.join(root, "bf-pack-f111d5619e2e249b"), path.join(outdir, "bf-pack-f111d5619e2e249b"), { recursive: true });
 console.log("[build:client] dist/client ready");

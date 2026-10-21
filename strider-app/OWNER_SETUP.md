@@ -138,6 +138,30 @@ load even if the webhook was never registered. The webhook is still
 worth registering so changes made inside Stripe (portal cancellations,
 failed payments) show up instantly instead of on the next billing read.
 
+## 6b. Black Friday launch — captions pack + deal coupon (optional)
+
+The Black Friday waitlist lives at `/black-friday` (capture) and
+`/black-friday/youre-in` (confirmation). Two Stripe objects power the
+money side; both are optional and each gates its own feature:
+
+- **Captions pack (tripwire):** product **"90 Plug-and-Post Captions"**
+  with a one-time **$8.88** price. Put that price's ID in Railway as
+  `STRIPE_TRIPWIRE_PRICE_ID` and the confirmation page offers the pack
+  (guest checkout; the download at `/black-friday/pack` is granted only
+  after the server re-reads the checkout session from Stripe and sees
+  it paid — `verifyBfPackSession`). Leave the variable unset and the
+  pack is not mentioned anywhere. Sales land in `bf_pack_purchases`
+  (webhook + read-time verification) and show in Settings → Owner
+  setup, next to the waitlist export.
+- **Black Friday deal (prep only):** a coupon of **$10.00 off,
+  duration "once"** (first month $19.88 − $10.00 = **$9.88**, renewals
+  $19.88). Put its ID in Railway as `STRIPE_BF_COUPON_ID`. It is
+  applied ONLY by the separate `createBfCheckoutSession` action, ONLY
+  inside the cart window **Fri Nov 27 – Mon Nov 30, 2026
+  (America/New_York)** — the server refuses outside the window, and
+  the regular checkout never sees the coupon. Nothing links to the BF
+  checkout yet; wiring a button is a launch-window step.
+
 ## Railway variables — full list
 
 | Variable | Platform |

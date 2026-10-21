@@ -1152,3 +1152,28 @@ html, body { overflow-x: hidden; }
   .help-table th, .help-table td { overflow-wrap: anywhere; padding: 10px 8px; }
   .help-table-wrap { overflow-x: visible; }
 }
+
+/* Black Friday pages (/black-friday, /youre-in, /pack): the waitlist
+   form is a single raised card in the family surface language; the
+   admin panel reuses .settings-card/.admin-reset and adds a simple
+   entry list. All colors are theme vars — both themes are served by
+   the same rules. */
+.bf-date { margin: 0 0 26px; color: var(--text); font-size: 15px; line-height: 1.55; }
+.bf-form-card { max-width: 560px; margin: 10px auto 44px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lift); padding: 30px 30px 24px; display: grid; gap: 14px; text-align: left; }
+.bf-form-card h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.015em; }
+.bf-form { display: grid; gap: 14px; }
+.bf-form-note { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+.bf-optional { color: var(--dim); font-weight: 600; font-size: 12px; }
+.bf-pack-buy { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 14px; }
+.bf-pack-buy .field-label { flex: 1 1 240px; }
+.bf-admin .bf-sales-head { margin-top: 26px; }
+.bf-entry-list { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; max-height: 320px; overflow-y: auto; }
+.bf-entry { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.bf-entry:last-child { border-bottom: 0; }
+.bf-entry strong { font-weight: 700; color: var(--text); }
+.bf-entry span { color: var(--dim); overflow-wrap: anywhere; }
+.bf-entry .bf-entry-date { margin-left: auto; color: var(--dim); white-space: nowrap; }
+@media (max-width: 640px) {
+  .bf-form-card { padding: 24px 20px 20px; }
+  .bf-entry .bf-entry-date { margin-left: 0; }
+}
