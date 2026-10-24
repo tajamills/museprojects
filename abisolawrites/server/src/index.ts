@@ -174,7 +174,7 @@ async function main() {
   });
 
   app.get("/robots.txt", (_req, res) => {
-    res.type("text/plain").send(`User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+    res.type("text/plain").send(`# Meta AI training crawler — blocked by owner's decision (Oct 24, 2026).\n# Link previews (facebookexternalhit) intentionally left allowed.\nUser-agent: meta-externalagent\nDisallow: /\n\nUser-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
   });
 
   app.get("/sitemap.xml", (_req, res) => {

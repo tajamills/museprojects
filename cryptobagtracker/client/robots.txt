@@ -1,3 +1,8 @@
+# Meta AI training crawler — blocked by owner's decision (Oct 24, 2026).
+# Link previews (facebookexternalhit) intentionally left allowed.
+User-agent: meta-externalagent
+Disallow: /
+
 User-agent: *
 Allow: /
 
