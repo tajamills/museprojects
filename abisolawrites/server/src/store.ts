@@ -41,13 +41,14 @@ export interface Store {
   createSession(tokenHash: string, userId: string, expiresAt: Date): Promise<void>;
   findUserBySession(tokenHash: string): Promise<User | null>;
   deleteSession(tokenHash: string): Promise<void>;
+  /** Returns true when a NEW grant was inserted, false when deduped. */
   grantEntitlement(opts: {
     userId?: string | null;
     email?: string | null;
     bookId: string;
     source: string;
     stripeSessionId?: string | null;
-  }): Promise<void>;
+  }): Promise<boolean>;
   revokeEntitlement(user: User, bookId: string): Promise<void>;
   listEntitlements(user: User): Promise<Entitlement[]>;
   hasEntitlement(user: User, bookId: string): Promise<boolean>;
@@ -133,14 +134,14 @@ class PgStore implements Store {
     bookId: string;
     source: string;
     stripeSessionId?: string | null;
-  }): Promise<void> {
+  }): Promise<boolean> {
     // Idempotent per Stripe session; also skip if an equivalent grant exists.
     if (opts.stripeSessionId) {
       const dup = await this.pool.query(
         "SELECT 1 FROM entitlements WHERE stripe_session_id = $1",
         [opts.stripeSessionId],
       );
-      if (dup.rowCount) return;
+      if (dup.rowCount) return false;
     }
     const existing = await this.pool.query(
       `SELECT 1 FROM entitlements WHERE book_id = $1 AND (
@@ -148,11 +149,12 @@ class PgStore implements Store {
          ($3::text IS NOT NULL AND lower(email) = lower($3)))`,
       [opts.bookId, opts.userId ?? null, opts.email ?? null],
     );
-    if (existing.rowCount) return;
+    if (existing.rowCount) return false;
     await this.pool.query(
       "INSERT INTO entitlements (id, user_id, email, book_id, source, stripe_session_id) VALUES ($1, $2, $3, $4, $5, $6)",
       [randomUUID(), opts.userId ?? null, opts.email ?? null, opts.bookId, opts.source, opts.stripeSessionId ?? null],
     );
+    return true;
   }
   async revokeEntitlement(user: User, bookId: string): Promise<void> {
     await this.pool.query(
@@ -254,9 +256,9 @@ class FileStore implements Store {
     bookId: string;
     source: string;
     stripeSessionId?: string | null;
-  }): Promise<void> {
-    if (opts.stripeSessionId && this.data.entitlements.some((e) => e.stripeSessionId === opts.stripeSessionId)) return;
-    if (this.data.entitlements.some((e) => e.bookId === opts.bookId && this.matches(e, opts.userId, opts.email))) return;
+  }): Promise<boolean> {
+    if (opts.stripeSessionId && this.data.entitlements.some((e) => e.stripeSessionId === opts.stripeSessionId)) return false;
+    if (this.data.entitlements.some((e) => e.bookId === opts.bookId && this.matches(e, opts.userId, opts.email))) return false;
     this.data.entitlements.push({
       userId: opts.userId ?? null,
       email: opts.email ?? null,
@@ -266,6 +268,7 @@ class FileStore implements Store {
       grantedAt: new Date().toISOString(),
     });
     await this.persist();
+    return true;
   }
   async revokeEntitlement(user: User, bookId: string): Promise<void> {
     this.data.entitlements = this.data.entitlements.filter(
