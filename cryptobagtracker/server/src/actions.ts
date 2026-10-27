@@ -18,7 +18,7 @@ import { fetchTransactions as fetchCoinbaseTransactions } from "./exchanges/coin
 import { fetchTransactions as fetchKrakenTransactions } from "./exchanges/kraken.js";
 import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold.js";
 import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
-import { baseUrl, getStripe } from "./billing.js";
+import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
 import {
   build8949,
   buildScheduleD,
@@ -599,7 +599,15 @@ export const Actions = {
     request: tokenRequest,
     response: billingStatusResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>): Promise<z.infer<typeof billingStatusResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      let user = await requireUser(ctx, args.token);
+      // Self-heal: reconcile the local row from Stripe's actual state
+      // (throttled) so a completed checkout stranded by a lost webhook
+      // delivery is repaired on this read; re-read the row when the
+      // reconcile changed anything.
+      const changed = await reconcileSubscriptionFromStripe(ctx.db, user);
+      if (changed) {
+        user = await requireUser(ctx, args.token);
+      }
       const status = user.subscriptionStatus || "none";
       const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
       return {
