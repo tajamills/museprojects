@@ -13,12 +13,23 @@ import {
 
 function BookCard({ book }: { book: Book }) {
   const CoverIcon = book.id === "doors1" ? DoorIcon : ShieldIcon;
-  const freeLabel = book.id === "doors1" ? "Read the Prologue free" : "Read Chapter One free";
+  const freeLabel =
+    book.id === "doors1"
+      ? "Read the Prologue free"
+      : book.id === "trust"
+        ? "Read Chapter One free"
+        : book.freeLabel;
   return (
     <article className="book-card">
-      <div className="book-cover" aria-hidden="true">
-        <CoverIcon className="book-cover-icon" />
-      </div>
+      {book.coverSrc ? (
+        <div className="book-cover book-cover-photo" aria-hidden="true">
+          <img className="book-cover-img" src={book.coverSrc} alt="" />
+        </div>
+      ) : (
+        <div className="book-cover" aria-hidden="true">
+          <CoverIcon className="book-cover-icon" />
+        </div>
+      )}
       <div className="book-card-body">
         <p className="eyebrow">{book.genre}</p>
         <h2 className="book-title">
@@ -87,11 +98,11 @@ export function HomePage() {
       <section className="hero">
         <p className="hero-badge">The Abisola Writes Library</p>
         <h1 className="hero-title">The doors remember you.</h1>
-        <p className="hero-sub">Two books. One threshold.</p>
+        <p className="hero-sub">Three books. One threshold.</p>
         <p className="hero-copy">
-          A spiritual mystery and a personal blueprint for lasting wealth. Read the
-          opening of each for free — unlock the rest whenever you're ready. Yours
-          to keep, forever.
+          A spiritual mystery, a personal blueprint for lasting wealth, and a calm,
+          staged guide to household preparedness. Read the opening of each for free —
+          unlock the rest whenever you're ready. Yours to keep, forever.
         </p>
       </section>
 

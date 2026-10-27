@@ -16,7 +16,7 @@ export interface Chapter {
 }
 
 export interface Book {
-  id: "doors1" | "trust";
+  id: "doors1" | "trust" | "quietlyready";
   bookPath: string;
   readerPath: string;
   genre: string;
@@ -27,6 +27,10 @@ export interface Book {
   wordsLabel: string;
   priceLabel: string;
   priceCents: number;
+  /** Book-page label for the free-opening button. */
+  freeLabel: string;
+  /** Optional cover image (public path). Books without one use the icon tile. */
+  coverSrc?: string;
   chapters: Chapter[];
 }
 
@@ -56,6 +60,7 @@ export const DOORS: Book = {
   wordsLabel: "63k Words",
   priceLabel: "$2.99",
   priceCents: 299,
+  freeLabel: "Start with the free Prologue",
   chapters: [
     ch("Prologue", true),
     ...DOORS_NUMBERS.map((n) => ch(`Chapter ${n}`, false)),
@@ -75,6 +80,7 @@ export const TRUST: Book = {
   wordsLabel: "7k Words",
   priceLabel: "$18.88",
   priceCents: 1888,
+  freeLabel: "Start with free Chapter One",
   chapters: [
     ch("Chapter One", true, "The Day I Started Planning for Success"),
     ch("Chapter Two", false, "The Day I Realized Wealth Is an Operating System"),
@@ -89,8 +95,45 @@ export const TRUST: Book = {
   ],
 };
 
-export const BOOKS: Book[] = [DOORS, TRUST];
+export const QUIETLY_READY: Book = {
+  id: "quietlyready",
+  bookPath: "/book/quietly-ready",
+  readerPath: "/reader/quietlyready",
+  genre: "Household Preparedness · A Practical Guide",
+  title: "Quietly Ready",
+  tagline:
+    "A Calm, Staged Guide to Household Preparedness — Food, Water, and the Layers That Matter",
+  blurb:
+    "Preparedness built in layers, not panic: food and water first, then cooking without power, documents, and the monthly rhythm that keeps it all alive — one calm stage at a time, on an ordinary grocery budget.",
+  chaptersLabel: "14 Chapters + Appendix",
+  wordsLabel: "9.3k Words",
+  priceLabel: "$18.88",
+  priceCents: 1888,
+  freeLabel: "Read the opening free",
+  coverSrc: "/quietly-ready-cover.jpg",
+  chapters: [
+    ch("A Note Before We Start", true),
+    ch("Introduction", true, "Why I Prep"),
+    ch("Chapter One", false, "The staging system — layers, not a haul"),
+    ch("Chapter Two", false, "How to buy it — let the sales cycle do the saving"),
+    ch("Chapter Three", false, "Water — the honest math"),
+    ch("Chapter Four", false, "Food — the dry core"),
+    ch("Chapter Five", false, "The canned layer, the fats, and the small things"),
+    ch("Chapter Six", false, "Cooking without power"),
+    ch("Chapter Seven", false, "The animals"),
+    ch("Chapter Eight", false, "Hygiene and the sickness layer"),
+    ch("Chapter Nine", false, "The medical layer — staged, and handled with your doctor"),
+    ch("Chapter Ten", false, "Power and communications — the works-without-it principle"),
+    ch("Chapter Eleven", false, "Documents and money readiness"),
+    ch("Chapter Twelve", false, "Low profile — the quiet rule"),
+    ch("Chapter Thirteen", false, "The go-bag, and staying put vs. leaving"),
+    ch("Chapter Fourteen", false, "Keeping it alive — rotation and the monthly rhythm"),
+    ch("Appendix", false, "Worksheets and Checklists"),
+  ],
+};
+
+export const BOOKS: Book[] = [DOORS, TRUST, QUIETLY_READY];
 
 export function bookByReaderId(id: string): Book {
-  return id === "trust" ? TRUST : DOORS;
+  return BOOKS.find((b) => b.id === id) ?? DOORS;
 }

@@ -22,8 +22,8 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 interface RouteMeta { title: string; description: string; }
 const ROUTE_META: Record<string, RouteMeta> = {
   "/": {
-    title: "The Abisola Writes Library — Two books. One threshold.",
-    description: "A spiritual mystery and a personal blueprint for lasting wealth. Read the opening of each for free — unlock the rest whenever you're ready. Yours to keep, forever.",
+    title: "The Abisola Writes Library — Three books. One threshold.",
+    description: "A spiritual mystery, a personal blueprint for lasting wealth, and a calm guide to household preparedness. Read the opening of each for free — unlock the rest whenever you're ready. Yours to keep, forever.",
   },
   "/book/doors": {
     title: "Doors — Book One | A Spiritual Mystery — Abisola Writes",
@@ -40,6 +40,14 @@ const ROUTE_META: Record<string, RouteMeta> = {
   "/reader/trust": {
     title: "Read The Trust I Built Before I Needed It — Abisola Writes",
     description: "Read The Trust I Built Before I Needed It in the Abisola Writes Library. Chapter One is free; unlock all 10 chapters for $18.88, one-time.",
+  },
+  "/book/quietly-ready": {
+    title: "Quietly Ready — A Calm, Staged Guide to Household Preparedness — Abisola Writes",
+    description: "A calm, staged guide to household preparedness — food, water, and the layers that matter, built one layer at a time on an ordinary budget. 14 chapters plus worksheets. Read the opening free; unlock the full guide for $18.88, one-time.",
+  },
+  "/reader/quietlyready": {
+    title: "Read Quietly Ready — Abisola Writes",
+    description: "Read Quietly Ready in the Abisola Writes Library. The opening is free; unlock all 14 chapters plus the appendix worksheets for $18.88, one-time.",
   },
   "/services": {
     title: "Services — Choose your kind of magic. — Abisola Writes",
@@ -63,7 +71,7 @@ const ROUTE_META: Record<string, RouteMeta> = {
   },
 };
 const DEFAULT_META: RouteMeta = ROUTE_META["/"];
-const SITEMAP_PATHS = ["/", "/book/doors", "/book/trust", "/reader/doors1", "/reader/trust", "/services", "/resume", "/music", "/booking"];
+const SITEMAP_PATHS = ["/", "/book/doors", "/book/trust", "/book/quietly-ready", "/reader/doors1", "/reader/trust", "/reader/quietlyready", "/services", "/resume", "/music", "/booking"];
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

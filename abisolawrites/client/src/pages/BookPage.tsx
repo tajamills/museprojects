@@ -4,11 +4,14 @@ import { CheckoutBanner, ReadFreeButton, UnlockButton } from "../components";
 import { BookOpenIcon, CheckIcon, LockIcon, ScrollIcon } from "../icons";
 
 export function BookPage({ book, search }: { book: Book; search: string }) {
-  const freeLabel = book.id === "doors1" ? "Start with the free Prologue" : "Start with free Chapter One";
+  const freeLabel = book.freeLabel;
   return (
     <main className="page">
       <CheckoutBanner search={search} />
       <section className="book-hero card">
+        {book.coverSrc ? (
+          <img className="book-hero-cover" src={book.coverSrc} alt={`Cover of ${book.title}`} />
+        ) : null}
         <p className="eyebrow">{book.genre}</p>
         <h1 className="page-title">{book.title}</h1>
         <p className="book-tagline large">{book.tagline}</p>

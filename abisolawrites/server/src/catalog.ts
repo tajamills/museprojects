@@ -24,6 +24,13 @@ export const CATALOG: Record<string, CatalogItem> = {
     amountCents: 1888,
     returnPath: "/reader/trust",
   },
+  quietlyready: {
+    id: "quietlyready",
+    name: "Quietly Ready (full unlock)",
+    description: "All 14 chapters plus the appendix worksheets, yours to keep, forever.",
+    amountCents: 1888,
+    returnPath: "/reader/quietlyready",
+  },
   "service-strategy": {
     id: "service-strategy",
     name: "Strategy Session",

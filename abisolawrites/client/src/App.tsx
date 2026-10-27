@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DOORS, TRUST } from "./data/books";
+import { DOORS, QUIETLY_READY, TRUST } from "./data/books";
 import { handleLinkClick, useLocation } from "./nav";
 import { DoorIcon, MoonIcon, SunIcon } from "./icons";
 import { HomePage } from "./pages/Home";
@@ -94,7 +94,7 @@ function Footer() {
           </span>
           <div>
             <p className="footer-name">The Abisola Writes Library</p>
-            <p className="footer-line">Two books. One threshold. Yours to keep, forever.</p>
+            <p className="footer-line">Three books. One threshold. Yours to keep, forever.</p>
           </div>
         </div>
         <nav className="footer-nav" aria-label="Footer">
@@ -128,11 +128,17 @@ export function App() {
     case "/book/trust":
       page = <BookPage book={TRUST} search={search} />;
       break;
+    case "/book/quietly-ready":
+      page = <BookPage book={QUIETLY_READY} search={search} />;
+      break;
     case "/reader/doors1":
       page = <ReaderPage book={DOORS} search={search} />;
       break;
     case "/reader/trust":
       page = <ReaderPage book={TRUST} search={search} />;
+      break;
+    case "/reader/quietlyready":
+      page = <ReaderPage book={QUIETLY_READY} search={search} />;
       break;
     case "/services":
       page = <ServicesPage search={search} />;
