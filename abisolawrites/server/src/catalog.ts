@@ -9,16 +9,18 @@ export interface CatalogItem {
   returnPath: string;
 }
 
-// Book sales are DISABLED (Layla's ruling, Oct 27, 2026): a buyer who paid
-// could not read what they bought. The delivery seam (accounts +
-// entitlements + server-served chapters) was built Oct 27, 2026 — but book
-// checkout stays OFF until a separate real test purchase passes end-to-end.
+// Book sales were DISABLED (Layla's ruling, Oct 27, 2026) after the audit
+// found a buyer who paid could not read what they bought. The delivery seam
+// (accounts + entitlements + server-served chapters) was built Oct 27, 2026,
+// the Postgres store was connected, and the Trust manuscript was loaded.
 //
-// >>> THE SINGLE RE-ENABLE FLIP: set BOOK_CHECKOUT_ENABLED to true. <<<
-// That one change makes /api/checkout create Stripe sessions for books
-// (signed-in buyers only, entitlement granted by the Stripe webhook) and
-// /api/config tell the client to render the unlock buttons again.
-export const BOOK_CHECKOUT_ENABLED = false;
+// >>> RE-ENABLED Oct 27, 2026 on Layla's instruction ("put checkout up —
+// how will I test without it being live"): she runs the real end-to-end
+// test purchase against the live checkout. <<<
+// /api/checkout creates Stripe sessions for books (signed-in buyers only,
+// entitlement granted by the Stripe webhook) and /api/config tells the
+// client to render the unlock buttons again.
+export const BOOK_CHECKOUT_ENABLED = true;
 
 export const BOOK_ITEM_IDS: ReadonlySet<string> = new Set([
   "doors1",
