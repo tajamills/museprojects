@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { MANUSCRIPT_PLACEHOLDER, type Book } from "../data/books";
 import { handleLinkClick } from "../nav";
-import { CheckoutBanner, UnlockButton } from "../components";
+import { CheckoutBanner } from "../components";
 import { ArrowLeftIcon, ArrowRightIcon, FeatherIcon, LockIcon } from "../icons";
 
 function initialChapter(book: Book, search: string): number {
@@ -92,15 +92,17 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
               <LockIcon className="locked-panel-icon" />
               <p className="locked-panel-title">This chapter is locked.</p>
               <p>
-                Sign in to unlock — one one-time purchase of {book.priceLabel}{" "}
-                opens every chapter of {book.title}, yours to keep, forever.
+                Locked chapters open with the full-book unlock of {book.title}{" "}
+                ({book.priceLabel}, one-time, yours to keep). Library accounts
+                are being reconnected during our move, so unlocks are paused —
+                the free opening chapters stay open to everyone, no sign-in
+                needed.
               </p>
               <div className="cta-row">
                 {/* Sign-in is a server seam (Google) — a real link, not a fake state. */}
                 <a href="/auth/google" className="secondary-button">
-                  Sign in to unlock
+                  Sign in
                 </a>
-                <UnlockButton itemId={book.id} label={`Unlock — ${book.priceLabel}`} />
               </div>
             </div>
           )}

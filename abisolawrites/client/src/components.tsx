@@ -1,42 +1,10 @@
-import { useState } from "react";
-import { startCheckout } from "./api";
-import { go, handleLinkClick } from "./nav";
-import { ArrowRightIcon, KeyIcon } from "./icons";
+import { handleLinkClick } from "./nav";
+import { ArrowRightIcon } from "./icons";
 
-/**
- * Purchase button wired to the Stripe seam. If checkout isn't connected,
- * the reader lands on the honest "being reconnected" notice — never a
- * fake success.
- */
-export function UnlockButton({
-  itemId,
-  label,
-  className = "primary-button",
-}: {
-  itemId: string;
-  label: string;
-  className?: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <button
-      type="button"
-      className={className}
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        const result = await startCheckout(itemId);
-        if (result === "unavailable") {
-          setBusy(false);
-          go("/checkout-unavailable");
-        }
-      }}
-    >
-      <KeyIcon className="btn-icon" />
-      {busy ? "Opening checkout…" : label}
-    </button>
-  );
-}
+// NOTE (Oct 27, 2026): the book UnlockButton was removed entirely. Book
+// sales are disabled until the delivery seam (accounts + entitlements)
+// exists — the server also refuses book ids at /api/checkout. When
+// delivery ships, restore a purchase button here and on the book pages.
 
 export function ReadFreeButton({ href, label }: { href: string; label: string }) {
   return (

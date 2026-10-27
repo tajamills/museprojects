@@ -1,6 +1,6 @@
 import type { Book } from "../data/books";
 import { handleLinkClick } from "../nav";
-import { CheckoutBanner, ReadFreeButton, UnlockButton } from "../components";
+import { CheckoutBanner, ReadFreeButton } from "../components";
 import { BookOpenIcon, CheckIcon, LockIcon, ScrollIcon } from "../icons";
 
 export function BookPage({ book, search }: { book: Book; search: string }) {
@@ -31,7 +31,6 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
         </ul>
         <div className="cta-row">
           <ReadFreeButton href={book.readerPath} label={freeLabel} />
-          <UnlockButton itemId={book.id} label={`Unlock the full book — ${book.priceLabel}`} />
         </div>
       </section>
 
@@ -63,8 +62,9 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
           ))}
         </ol>
         <p className="fine-print">
-          Read the opening free. One one-time unlock opens every chapter — no
-          subscription, and the book stays yours.
+          The opening chapters above are free to read — no sign-in needed.
+          The rest of the book is listed chapter by chapter so you can see
+          exactly what's inside.
         </p>
       </section>
     </main>

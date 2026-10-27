@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { z } from "zod";
-import { CATALOG } from "./catalog.js";
+import { BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // When bundled to dist/server.js: dist layout is dist/server.js + dist/client/.
@@ -137,6 +137,14 @@ async function main() {
     const item = CATALOG[parsed.data.itemId];
     if (!item) {
       res.status(404).json({ error: "Unknown item." });
+      return;
+    }
+    if (BOOK_ITEM_IDS.has(item.id)) {
+      // Defense in depth (Oct 27, 2026): the buy buttons are removed from
+      // the book pages, and the endpoint independently refuses to create a
+      // Stripe session for a book — no way to pay for a book until the
+      // delivery seam exists.
+      res.status(403).json({ error: "book_checkout_disabled" });
       return;
     }
     if (!stripe) {

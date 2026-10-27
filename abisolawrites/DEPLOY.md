@@ -40,7 +40,16 @@ npm start          # http://localhost:3000
 
 - **Manuscript text** — chapter bodies are placeholder slots in
   `client/src/data/books.ts` ("CONTENT FROM MANUSCRIPT — TO BE INSERTED").
-  Paste each chapter's text into its `text` field; no other code changes.
+  Free chapters (Doors Prologue, Trust Chapter One) may be pasted into their
+  `text` fields as-is. **LOCKED chapters must NOT be pasted into the client
+  bundle** (Layla's anti-sharing decision, 2026-10-15): anything in
+  `books.ts` ships inside the public JS where it can be lifted without
+  paying. Build step before locked text goes in: serve locked chapter text
+  from the server only, behind a per-account entitlement check (buyer's
+  Google sign-in + confirmed purchase); the client bundle keeps only
+  metadata, free chapters, and locked-panel placeholders. Activates with
+  the Google sign-in + Stripe steps above; needs Postgres for entitlements
+  (see the Railway setup note).
 - **Stripe** — env-var only; see `.env.example`.
 - **Google sign-in** — `/auth/google` placeholder page; entitlements are not
   enforced yet because there are no accounts.

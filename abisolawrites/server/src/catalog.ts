@@ -9,6 +9,17 @@ export interface CatalogItem {
   returnPath: string;
 }
 
+// Book sales are DISABLED (Layla's ruling, Oct 27, 2026): the delivery
+// seam (accounts + entitlements that open paid chapters) is not built yet,
+// so a buyer who paid could not read what they bought. /api/checkout
+// refuses these ids server-side until delivery works. Services and the
+// 1-to-1 booking are NOT books and stay purchasable.
+export const BOOK_ITEM_IDS: ReadonlySet<string> = new Set([
+  "doors1",
+  "trust",
+  "quietlyready",
+]);
+
 export const CATALOG: Record<string, CatalogItem> = {
   doors1: {
     id: "doors1",
