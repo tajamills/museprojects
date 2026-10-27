@@ -115,8 +115,14 @@ async function startSession(res: express.Response, userId: string): Promise<void
  * client_reference_id / metadata.userId (set by /api/checkout for signed-in
  * buyers); the fallback is the email Stripe collected, so the entitlement
  * still lands when that buyer creates an account with the same email.
+ * `via` is "webhook" for the Stripe webhook and "reconciled" for the
+ * self-healing lookup below — the grant itself (store call + idempotency
+ * on stripe_session_id) is identical either way.
  */
-async function grantFromCheckoutSession(session: Stripe.Checkout.Session): Promise<void> {
+async function grantFromCheckoutSession(
+  session: Stripe.Checkout.Session,
+  via: "webhook" | "reconciled" = "webhook",
+): Promise<void> {
   const itemId = session.metadata?.itemId ?? "";
   if (!BOOK_ITEM_IDS.has(itemId)) return; // only books are entitlements
   const userId = session.client_reference_id || session.metadata?.userId || null;
@@ -130,7 +136,76 @@ async function grantFromCheckoutSession(session: Stripe.Checkout.Session): Promi
     source: "stripe",
     stripeSessionId: session.id,
   });
-  console.log(`[abisolawrites] entitlement granted: ${itemId} -> ${userId ?? email ?? "?"}`);
+  console.log(
+    `[abisolawrites] entitlement granted via ${via}: ${itemId} -> ${userId ?? email ?? "?"} (session ${session.id})`,
+  );
+}
+
+/**
+ * Self-healing reconciliation (Oct 27, 2026): a completed purchase must not
+ * depend solely on the webhook arriving. When a signed-in user is missing
+ * a book, look up their completed Stripe Checkout sessions — FIRST those
+ * carrying their user id as client_reference_id, SECOND those Stripe
+ * recorded under their account email — and grant any book they paid for
+ * but don't own yet, through the same grant path as the webhook.
+ *
+ * Cost control: an in-memory per-user throttle (at most one scan per user
+ * per RECONCILE_MIN_INTERVAL_MS) plus an early exit when the user already
+ * owns every book, so this is never a Stripe call on every page load. The
+ * buyer's post-checkout return (?checkout=success) hits /api/me, which
+ * reconciles before answering, so the unlock heals on that first load.
+ * Failures are logged and swallowed — reconciliation must never break the
+ * request that triggered it.
+ */
+const RECONCILE_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const lastReconcileAtByUser = new Map<string, number>();
+
+async function reconcileEntitlements(user: User): Promise<void> {
+  if (!stripe) return;
+  const now = Date.now();
+  if (now - (lastReconcileAtByUser.get(user.id) ?? 0) < RECONCILE_MIN_INTERVAL_MS) return;
+  lastReconcileAtByUser.set(user.id, now); // set before awaiting: no stampede
+  try {
+    const owned = new Set((await store.listEntitlements(user)).map((e) => e.bookId));
+    const missing = [...BOOK_ITEM_IDS].filter((id) => !owned.has(id));
+    if (missing.length === 0) return;
+
+    const byId = new Map<string, Stripe.Checkout.Session>();
+    const refMatches: Stripe.Checkout.Session[] = [];
+    const recent = await stripe.checkout.sessions.list({ status: "complete", limit: 100 });
+    for (const s of recent.data) {
+      byId.set(s.id, s);
+      if (s.client_reference_id === user.id) refMatches.push(s);
+    }
+    const emailMatches: Stripe.Checkout.Session[] = [];
+    const byEmail = await stripe.checkout.sessions.list({
+      status: "complete",
+      customer_details: { email: user.email },
+      limit: 100,
+    });
+    for (const s of byEmail.data) {
+      if (!byId.has(s.id)) byId.set(s.id, s);
+      emailMatches.push(s);
+    }
+
+    // client_reference_id matches first, then email matches; a session seen
+    // in both lists is granted from once (the store dedupes regardless).
+    const seen = new Set<string>();
+    for (const s of [...refMatches, ...emailMatches]) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      const itemId = s.metadata?.itemId ?? "";
+      if (!BOOK_ITEM_IDS.has(itemId) || owned.has(itemId)) continue;
+      try {
+        await grantFromCheckoutSession(s, "reconciled");
+        owned.add(itemId);
+      } catch (err) {
+        console.error(`[abisolawrites] reconcile grant failed for session ${s.id}`, err);
+      }
+    }
+  } catch (err) {
+    console.error("[abisolawrites] entitlement reconciliation failed", err);
+  }
 }
 
 async function main() {
@@ -165,7 +240,7 @@ async function main() {
     try {
       const event = stripe.webhooks.constructEvent(req.body as Buffer, signature, STRIPE_WEBHOOK_SECRET);
       if (event.type === "checkout.session.completed") {
-        await grantFromCheckoutSession(event.data.object as Stripe.Checkout.Session);
+        await grantFromCheckoutSession(event.data.object as Stripe.Checkout.Session, "webhook");
       }
       res.json({ received: true });
     } catch (err) {
@@ -247,6 +322,9 @@ async function main() {
       res.json({ user: null, entitlements: [] });
       return;
     }
+    // Heal first (throttled): if Stripe says this user completed a book
+    // checkout the webhook never delivered, grant it before answering.
+    await reconcileEntitlements(user);
     const entitlements = await store.listEntitlements(user);
     res.json({ user: { email: user.email }, entitlements: entitlements.map((e) => e.bookId) });
   });
@@ -266,9 +344,18 @@ async function main() {
     const meta = { label: chapter.label, title: chapter.title ?? null, free: chapter.free };
     if (!chapter.free) {
       const user = await currentUser(req);
-      if (!user || !(await store.hasEntitlement(user, req.params.bookId))) {
+      if (!user) {
         res.status(403).json({ error: "locked", ...meta });
         return;
+      }
+      if (!(await store.hasEntitlement(user, req.params.bookId))) {
+        // One heal attempt (throttled) before refusing: the buyer may have
+        // completed checkout while the webhook didn't land.
+        await reconcileEntitlements(user);
+        if (!(await store.hasEntitlement(user, req.params.bookId))) {
+          res.status(403).json({ error: "locked", ...meta });
+          return;
+        }
       }
     }
     if (chapter.text == null) {
