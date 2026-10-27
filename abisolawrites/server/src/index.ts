@@ -382,6 +382,12 @@ async function main() {
     try {
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
+        // Let buyers enter a Stripe promotion code at checkout (Oct 27, 2026:
+        // enables a 100%-off code so the purchase chain can be test-run
+        // without a card). A $0 session completes as
+        // payment_status "no_payment_required" — the webhook grant does not
+        // gate on payment_status, so the entitlement still lands.
+        allow_promotion_codes: true,
         line_items: [
           {
             quantity: 1,
