@@ -41,7 +41,9 @@ export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
       req.headers["stripe-signature"] as string | undefined,
     );
     if (!result.ok) {
-      res.status(400).json({ error: result.error ?? "Webhook error" });
+      // Signature/config problems stay 400; a failed grant application
+      // carries status 500 so Stripe retries the delivery.
+      res.status(result.status ?? 400).json({ error: result.error ?? "Webhook error" });
       return;
     }
     res.json({ received: true });

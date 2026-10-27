@@ -15,7 +15,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
-import { baseUrl, getStripe } from "./billing.js";
+import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
 
 export interface Ctx {
   db: Db;
@@ -427,7 +427,15 @@ export const actionDefs = {
         request: z.object({ token: z.string() }),
         response: z.object({ status: z.string(), currentPeriodEnd: z.string().nullable() }),
         async handler(ctx: Ctx, args: { token: string }): Promise<{ status: string; currentPeriodEnd: string | null }> {
-            const account = await accountRecord(ctx.db, args.token);
+            let account = await accountRecord(ctx.db, args.token);
+            // Self-heal: reconcile the local row from Stripe's actual
+            // state (throttled) so a completed checkout stranded by a
+            // lost webhook delivery is repaired on this read; re-read
+            // the row when the reconcile changed anything.
+            const changed = await reconcileSubscriptionFromStripe(ctx.db, account);
+            if (changed) {
+                account = await accountRecord(ctx.db, args.token);
+            }
             const status = account.subscriptionStatus || "none";
             return {
                 status,
