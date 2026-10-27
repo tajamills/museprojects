@@ -88,9 +88,18 @@ function HeaderAccount() {
   if (me === undefined) return null; // still loading — render nothing yet
   if (!me.user) {
     return (
-      <a href="/signin" className="secondary-button signin-button" onClick={(e) => handleLinkClick(e, "/signin")}>
-        Sign in
-      </a>
+      <>
+        <a
+          href="/signin?mode=signup"
+          className="primary-button signin-button"
+          onClick={(e) => handleLinkClick(e, "/signin?mode=signup")}
+        >
+          Create account
+        </a>
+        <a href="/signin" className="secondary-button signin-button" onClick={(e) => handleLinkClick(e, "/signin")}>
+          Sign in
+        </a>
+      </>
     );
   }
   return (

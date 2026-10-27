@@ -8,8 +8,11 @@ import { handleLinkClick } from "../nav";
  * granted by the server when Stripe confirms payment).
  */
 export function SignInPage({ search }: { search: string }) {
-  const next = new URLSearchParams(search).get("next") || "/";
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const params = new URLSearchParams(search);
+  const next = params.get("next") || "/";
+  const [mode, setMode] = useState<"signin" | "signup">(
+    params.get("mode") === "signup" ? "signup" : "signin",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,6 +35,30 @@ export function SignInPage({ search }: { search: string }) {
   return (
     <main className="page">
       <section className="card booking-details" aria-label="Sign in">
+        <div className="mode-toggle" role="group" aria-label="Sign in or create an account">
+          <button
+            type="button"
+            className={mode === "signin" ? "mode-toggle-button active" : "mode-toggle-button"}
+            aria-pressed={mode === "signin"}
+            onClick={() => {
+              setMode("signin");
+              setError(null);
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={mode === "signup" ? "mode-toggle-button active" : "mode-toggle-button"}
+            aria-pressed={mode === "signup"}
+            onClick={() => {
+              setMode("signup");
+              setError(null);
+            }}
+          >
+            Create account
+          </button>
+        </div>
         <h1 className="page-title">{mode === "signin" ? "Welcome back." : "Create your account."}</h1>
         <p className="lead">
           {mode === "signin"
