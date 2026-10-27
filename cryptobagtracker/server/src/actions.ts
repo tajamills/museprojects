@@ -14,6 +14,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
+import { normalizePhoneNumber, smsAlertsEnabled } from "./sms.js";
 import { fetchTransactions as fetchCoinbaseTransactions } from "./exchanges/coinbase.js";
 import { fetchTransactions as fetchKrakenTransactions } from "./exchanges/kraken.js";
 import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold.js";
@@ -186,7 +187,7 @@ const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY",
 const addTransactionResponse = z.object({ ok: z.literal(true), classification: z.string() });
 const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum(["FIFO", "LIFO", "HIFO"]) });
 const savePayoutInfoRequest = z.object({ token: z.string(), payoutMethod: z.enum(["zelle", "stripe"]), payoutZelleInfo: z.string().max(128).optional(), payoutTaxName: z.string().max(128), payoutTaxAddress: z.string().max(256) });
-const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), pushEnabled: z.boolean() });
+const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), smsConsent: z.boolean().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
 const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable() });
@@ -287,7 +288,7 @@ export const Actions = {
         exchanges: exchanges.map((e) => ({ id: e.id, provider: e.provider, label: e.label, keyHint: e.keyHint, status: e.status, lastSyncedAt: e.lastSyncedAt ? e.lastSyncedAt.toISOString() : null, syncError: e.syncError, createdAt: e.createdAt.toISOString() })),
         alerts: alerts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), lastTriggeredAt: a.lastTriggeredAt?.toISOString() ?? null, episodeStartedAt: a.episodeStartedAt?.toISOString() ?? null, channels: a.channels.split(",").filter(Boolean) })),
         alertHistory: history.map((h) => ({ ...h, deliveredAt: h.deliveredAt.toISOString() })),
-        alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false },
+        alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled, smsEnabled: smsAlertsEnabled(), phoneSaved: Boolean(settings[0].phoneNumberEnc), smsConsentAt: settings[0].smsConsentAt?.toISOString() ?? null, smsOptedOut: settings[0].smsOptedOut } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false, smsEnabled: smsAlertsEnabled(), phoneSaved: false, smsConsentAt: null, smsOptedOut: false },
         portfolio: { assets: [...assetMap.entries()].filter(([, v]) => Math.abs(v.amount) > 1e-10).map(([asset, v]) => ({ asset, amount: Number(v.amount.toFixed(10)), value: money(v.value) })), totalValue: money([...assetMap.values()].reduce((s, v) => s + v.value, 0)) },
         tax, selfTest: runSelfTest(), affiliate: { count: user.affiliateReferralCount, earnings: money(user.affiliateEarnings) },
       };
@@ -450,8 +451,27 @@ export const Actions = {
       const telegramHint = args.telegramToken ? `••••${args.telegramToken.slice(-4)}` : existing[0]?.telegramHint ?? null;
       const telegramChatId = args.telegramChatId?.trim() ? args.telegramChatId.trim() : existing[0]?.telegramChatId ?? null;
       const phoneHint = args.phone ? `••••${args.phone.replace(/\D/g, "").slice(-4)}` : existing[0]?.phoneHint ?? null;
-      if (existing[0]) await db.update(schema.alertSettings).set({ telegramHint, telegramChatId, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() }).where(eq(schema.alertSettings.userId, user.id));
-      else await db.insert(schema.alertSettings).values({ userId: user.id, telegramHint, telegramChatId, phoneHint, pushEnabled: args.pushEnabled, updatedAt: new Date() });
+      // SMS columns (migration 0009): carried through untouched unless the
+      // SMS flag is on AND a phone number is being saved — then the number
+      // is validated, normalized to E.164, and stored encrypted, and an
+      // explicit consent tick is required (it stamps the TCPA opt-in
+      // record and clears any earlier STOP opt-out). With the flag off this
+      // keeps the historical hint-only behavior exactly.
+      let phoneNumberEnc = existing[0]?.phoneNumberEnc ?? null;
+      let smsConsentAt = existing[0]?.smsConsentAt ?? null;
+      let smsOptedOut = existing[0]?.smsOptedOut ?? false;
+      let smsOptedOutAt = existing[0]?.smsOptedOutAt ?? null;
+      if (args.phone && smsAlertsEnabled()) {
+        const normalized = normalizePhoneNumber(args.phone);
+        if (!normalized) throw new Error("That phone number doesn't look valid — enter it like +1 555 555 5555.");
+        if (!args.smsConsent) throw new Error("Please tick the SMS consent box so we can save your number for text alerts.");
+        phoneNumberEnc = encryptSecret(normalized);
+        smsConsentAt = new Date();
+        smsOptedOut = false;
+        smsOptedOutAt = null;
+      }
+      if (existing[0]) await db.update(schema.alertSettings).set({ telegramHint, telegramChatId, phoneHint, phoneNumberEnc, smsConsentAt, smsOptedOut, smsOptedOutAt, pushEnabled: args.pushEnabled, updatedAt: new Date() }).where(eq(schema.alertSettings.userId, user.id));
+      else await db.insert(schema.alertSettings).values({ userId: user.id, telegramHint, telegramChatId, phoneHint, phoneNumberEnc, smsConsentAt, smsOptedOut, smsOptedOutAt, pushEnabled: args.pushEnabled, updatedAt: new Date() });
       ctx.invalidateQueries();
       return { ok: true };
     },

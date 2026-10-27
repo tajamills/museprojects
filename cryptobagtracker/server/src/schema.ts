@@ -6,7 +6,7 @@
 //   integer (mode "boolean") -> boolean
 //   real -> doublePrecision
 //   text -> text
-import { boolean, doublePrecision, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -91,11 +91,34 @@ export const alertSettings = pgTable("alert_settings", {
   telegramHint: text("telegram_hint"),
   telegramChatId: text("telegram_chat_id"),
   phoneHint: text("phone_hint"),
+  // Real per-customer SMS (phase 1, migration 0009) — only read/written
+  // when SMS_ALERTS_ENABLED=true. phoneNumberEnc is the full E.164 number,
+  // AES-256-GCM encrypted (see crypto.ts); smsConsentAt is the TCPA opt-in
+  // record; smsOptedOut is set by the Twilio inbound webhook on STOP.
+  phoneNumberEnc: text("phone_number_enc"),
+  smsConsentAt: timestamp("sms_consent_at", { withTimezone: true, mode: "date" }),
+  smsOptedOut: boolean("sms_opted_out").notNull().default(false),
+  smsOptedOutAt: timestamp("sms_opted_out_at", { withTimezone: true, mode: "date" }),
   pushEnabled: boolean("push_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+/** One row per attempted provider SMS send (sent / failed / capped). */
+export const smsSends = pgTable(
+  "sms_sends",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    userId: integer("user_id").notNull(),
+    alertId: integer("alert_id").notNull(),
+    providerSid: text("provider_sid"),
+    status: text("status").notNull(),
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sms_sends_user_created_idx").on(t.userId, t.createdAt)],
+);
 
 export const priceAlerts = pgTable("price_alerts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

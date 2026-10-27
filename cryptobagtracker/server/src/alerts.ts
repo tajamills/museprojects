@@ -13,14 +13,20 @@
 //     a 0.25% hysteresis band, so a fresh crossing fires immediately.
 //   - Telegram delivery via the app-level TELEGRAM_BOT_TOKEN and each user's
 //     telegram_chat_id (from alert_settings).
+//   - SMS delivery (phase 1, Oct 2026) via Twilio to the alert owner's own
+//     stored number — only when SMS_ALERTS_ENABLED=true; see sms.ts and
+//     ~/workspace/audits/cbt-real-sms-spec-oct27.md. With the flag off, SMS
+//     channels are recorded as "SMS (not enabled)" and nothing is sent.
 //   - Generic outbound webhook: if ALERT_WEBHOOK_URL is set, every trigger
 //     POSTs a JSON payload there (e.g. a Zapier "Catch Hook") fire-and-forget.
 //
 // checkPriceAlerts() is called on an interval from server.ts. It never throws
 // for per-alert problems: undeliverable alerts are recorded in alert_history.
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { decryptSecret } from "./crypto.js";
 import * as schema from "./schema.js";
+import { sendSmsMessage, smsAlertsEnabled, smsMonthlyCap, twilioConfig, type SmsSendResult } from "./sms.js";
 
 type Db = NodePgDatabase<typeof schema>;
 type AlertRow = typeof schema.priceAlerts.$inferSelect;
@@ -364,6 +370,7 @@ export function alertCooldownMs(): number {
 export interface AlertCheckDeps {
   fetchPrices?: (symbols: string[]) => Promise<Map<string, number>>;
   sendTelegram?: (chatId: string, text: string) => Promise<void>;
+  sendSms?: (to: string, text: string) => Promise<SmsSendResult>;
 }
 
 /** One scheduler tick: check every active alert, deliver, record, re-arm. */
@@ -395,6 +402,13 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
     : [];
   const settingsByUser = new Map(settingsRows.map((s) => [s.userId, s]));
   const send = deps.sendTelegram ?? sendTelegramMessage;
+  const sendSms =
+    deps.sendSms ??
+    ((to: string, text: string) => {
+      const cfg = twilioConfig();
+      if (!cfg) throw new Error("Twilio is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER).");
+      return sendSmsMessage(to, text, cfg);
+    });
 
   let triggered = 0;
   for (const { alert, price, kind } of due) {
@@ -424,8 +438,66 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
         console.warn(`price alerts: alert ${alert.id} wants Telegram but ${reason}.`);
       }
     }
+    if (channels.includes("SMS")) {
+      // Per-customer SMS (sms.ts). Every branch records the honest outcome:
+      // a delivery, or the specific reason no text left the building. The
+      // old blanket "SMS (not implemented)" is retired with this block.
+      if (!smsAlertsEnabled()) {
+        skipped.push("SMS (not enabled)");
+      } else if (!settings?.phoneNumberEnc) {
+        skipped.push("SMS (no phone number saved)");
+      } else if (!settings.smsConsentAt) {
+        skipped.push("SMS (no consent on file)");
+      } else if (settings.smsOptedOut) {
+        skipped.push("SMS (opted out)");
+      } else if (!twilioConfig()) {
+        skipped.push("SMS (provider not configured)");
+      } else {
+        const logSend = async (status: string, providerSid: string | null, error: string | null) => {
+          try {
+            await db.insert(schema.smsSends).values({ userId: alert.userId, alertId: alert.id, providerSid, status, error });
+          } catch (err) {
+            console.error(`price alerts: failed to log SMS send for alert ${alert.id}:`, err instanceof Error ? err.message : err);
+          }
+        };
+        const cap = smsMonthlyCap();
+        let sentThisMonth = 0;
+        if (cap > 0) {
+          const monthStart = new Date(now);
+          monthStart.setUTCDate(1);
+          monthStart.setUTCHours(0, 0, 0, 0);
+          const sentRows = await db
+            .select({ id: schema.smsSends.id })
+            .from(schema.smsSends)
+            .where(
+              and(
+                eq(schema.smsSends.userId, alert.userId),
+                eq(schema.smsSends.status, "sent"),
+                gte(schema.smsSends.createdAt, monthStart),
+              ),
+            );
+          sentThisMonth = sentRows.length;
+        }
+        if (cap > 0 && sentThisMonth >= cap) {
+          skipped.push(`SMS (monthly limit of ${cap} reached)`);
+          await logSend("capped", null, `monthly cap of ${cap} reached`);
+        } else {
+          try {
+            const to = decryptSecret(settings.phoneNumberEnc);
+            const result = await sendSms(to, message);
+            delivered.push("SMS");
+            await logSend("sent", result.sid, null);
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            skipped.push("SMS (send failed)");
+            console.warn(`price alerts: SMS send failed for alert ${alert.id}:`, reason);
+            await logSend("failed", null, reason.slice(0, 500));
+          }
+        }
+      }
+    }
     for (const c of channels) {
-      if (c !== "Telegram") skipped.push(`${c} (not implemented)`);
+      if (c !== "Telegram" && c !== "SMS") skipped.push(`${c} (not implemented)`);
     }
 
     const historyMessage =

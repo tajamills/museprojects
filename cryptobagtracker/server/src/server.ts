@@ -14,6 +14,7 @@ import { z } from "zod";
 import { Actions, type Ctx } from "./actions.js";
 import { checkPriceAlerts } from "./alerts.js";
 import { stripeWebhookHandler } from "./billing.js";
+import { handleTwilioInbound, smsAlertsEnabled, twilioConfig, twilioWebhookUrl, validateTwilioSignature } from "./sms.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
 
@@ -68,6 +69,39 @@ async function main(): Promise<void> {
       return;
     }
     res.json({ received: true });
+  });
+
+  // Twilio inbound SMS webhook (STOP / START keywords). Twilio POSTs
+  // form-encoded fields, so this route carries its own urlencoded parser.
+  // Inert — 404 — unless SMS alerts are enabled AND Twilio credentials are
+  // configured, so with the flag off this route does not exist in practice.
+  app.post("/webhooks/twilio", express.urlencoded({ extended: false }), async (req, res) => {
+    const cfg = twilioConfig();
+    if (!smsAlertsEnabled() || !cfg) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const params = (req.body ?? {}) as Record<string, string>;
+    const signature = req.headers["x-twilio-signature"] as string | undefined;
+    const webhookUrl = twilioWebhookUrl();
+    if (signature && webhookUrl) {
+      if (!validateTwilioSignature(cfg.authToken, signature, webhookUrl, params)) {
+        res.status(403).json({ error: "Invalid Twilio signature" });
+        return;
+      }
+    } else {
+      console.warn("twilio webhook: signature not validated (no signature header, or set TWILIO_WEBHOOK_URL / APP_BASE_URL to enable strict validation).");
+    }
+    try {
+      const result = await handleTwilioInbound(db, params);
+      if (result.matched) console.log(`twilio webhook: ${result.action} for user ${result.userId}`);
+    } catch (err) {
+      // Never 5xx a carrier webhook for a bookkeeping failure: Twilio and
+      // the carriers still honor STOP at the network level, and a retry
+      // storm helps nobody. Log and acknowledge.
+      console.error("twilio webhook: inbound handling failed:", err instanceof Error ? err.message : err);
+    }
+    res.type("text/xml").send("<Response></Response>");
   });
 
   app.use(express.json({ limit: "1mb" }));

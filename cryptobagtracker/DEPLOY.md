@@ -144,7 +144,8 @@ Stripe's test card `4242 4242 4242 4242` before going live.
    `TELEGRAM_BOT_TOKEN` + each user's chat ID), fires an optional generic
    webhook (`ALERT_WEBHOOK_URL`, e.g. Zapier Catch Hook), and records every
    trigger in `alert_history`. See "Telegram alerts + Zapier webhook setup"
-   above. SMS/push remain TODO.
+   above. SMS delivery is implemented behind the `SMS_ALERTS_ENABLED` flag
+   (default off — see "Not yet wired up" below); push remains TODO.
 7. **Exchange API import** — the source stored only a key hint and discarded
    the secret; no import/sync logic existed. Ported as-is.
 8. **Billing ($8.88/mo from day 8)** — was UI/marketing copy only in the
@@ -184,8 +185,15 @@ so a price sitting past the target doesn't spam.
 None of these are referenced by the current server code — they are listed here
 so the gaps are explicit, not as required env vars:
 
-- `SMS_PROVIDER_API_KEY` (e.g. Twilio) — TODO: required if/when SMS alert
-  delivery is implemented.
+- SMS alert delivery — **implemented** (phase 1, Oct 27, 2026) but inert
+  until enabled; see "SMS alerts (Twilio)" below and the spec at
+  `~/workspace/audits/cbt-real-sms-spec-oct27.md`. Env vars:
+  `SMS_ALERTS_ENABLED` (`true` to enable; anything else = off),
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (E.164),
+  optional `TWILIO_WEBHOOK_URL` (strict inbound-signature validation) and
+  `SMS_MONTHLY_CAP_PER_USER` (default 300, 0 = uncapped). Sending also
+  requires completed A2P 10DLC brand + campaign registration in Twilio's
+  Trust Hub (legal business name + EIN) — do not enable before approval.
 - Push delivery provider credentials — TODO: the app stores a
   `pushEnabled` flag only.
 - Price-feed API key (e.g. CoinGecko) + a scheduled worker — TODO: required
