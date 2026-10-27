@@ -9,9 +9,10 @@
 //                  (canonical DOORS v2, 42,153 words: Prologue + Ch 1–14.
 //                  Chapters 15–17 exist in the catalog but their v2 text is
 //                  not in any file we hold -> text: null -> "unavailable".)
-//   Trust          NO manuscript file exists anywhere in the workspace
-//                  (verified Oct 27, 2026) -> every chapter text: null until
-//                  Layla supplies the manuscript.
+//   Trust          ~/workspace/abisolawrites-rescue/manuscripts/Trust.md
+//                  (extracted Oct 27, 2026 from the docx Layla uploaded,
+//                  "The-Trust-I-Built-Before-I-Needed-It": all 10 chapters,
+//                  ~7.1k words.)
 //   Quietly Ready  ~/workspace/goals/30-day-household-preparedness-build/files/survival-guide-draft.md
 //
 // Chapter order/labels/free flags mirror client/src/data/books.ts exactly.
@@ -129,9 +130,11 @@ async function buildQuietlyReady() {
   return chapters;
 }
 
-function buildTrust() {
-  // Manuscript gap (Oct 27, 2026): no Trust text exists in the workspace.
-  // Structure mirrors books.ts so chapters unlock the moment text arrives.
+async function buildTrust() {
+  const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/Trust.md"), "utf8");
+  const map = sectionMap(md);
+  // Chapter titles mirror books.ts exactly; headings in the source are
+  // "Chapter One — <title>". Split: Chapter One free, the rest paid.
   const titles = [
     "The Day I Started Planning for Success", "The Day I Realized Wealth Is an Operating System",
     "Revocable vs. Irrevocable: The First Decision That Changed Everything", "The Rule That Changed Everything",
@@ -139,12 +142,17 @@ function buildTrust() {
     "Building My Trust on Paper Before Paying an Attorney", "The Blueprint Was Never About Me",
     "The States Everyone Watches", "The Trust I Built Before I Needed It",
   ];
-  return titles.map((title, i) => ({ label: `Chapter ${NUM[i]}`, title, free: i === 0, text: null }));
+  return titles.map((title, i) => ({
+    label: `Chapter ${NUM[i]}`,
+    title,
+    free: i === 0,
+    text: findSection(map, (h) => h.startsWith(`chapter ${NUM[i].toLowerCase()} —`), `Trust Chapter ${NUM[i]}`),
+  }));
 }
 
 const content = {
   doors1: { chapters: await buildDoors() },
-  trust: { chapters: buildTrust() },
+  trust: { chapters: await buildTrust() },
   quietlyready: { chapters: await buildQuietlyReady() },
 };
 
