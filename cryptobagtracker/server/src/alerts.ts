@@ -310,6 +310,16 @@ export interface AlertWebhookPayload {
    */
   messageShort: string;
   messageFull: string;
+  /**
+   * Snake_case aliases of the two fields above. The live Zap's SMS step is
+   * mapped to `message_short` (proven Oct 27, 2026 from Zapier's own error
+   * detail: "Required field 'message' is missing" because the mapped key
+   * `message_short` never arrived — the payload only sent `messageShort`).
+   * Both spellings are sent so either mapping resolves; pure addition, no
+   * existing field renamed or removed.
+   */
+  message_short: string;
+  message_full: string;
 }
 
 export async function postAlertWebhook(payload: AlertWebhookPayload): Promise<void> {
@@ -452,6 +462,8 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
       kind,
       messageShort: message,
       messageFull: message,
+      message_short: message,
+      message_full: message,
     });
   }
   return { checked: alerts.length, triggered, reset: resets.length };
