@@ -5,14 +5,16 @@
 // entitled (signed-in, purchased) accounts.
 //
 // Sources:
-//   Doors          ~/workspace/abisolawrites-rescue/manuscripts/Doors-complete-oct27.md
-//                  (COMPLETE manuscript, 63,021 words: Prologue + Ch 1–17,
-//                  extracted Oct 27, 2026 from the docx Layla uploaded
-//                  (Doors_11_k4nf.docx). Supersedes the Oct 14 cleaned v2,
-//                  which held only Prologue + Ch 1–14 (42,153 words) in an
-//                  earlier draft — this file also carries expanded,
-//                  revised text for Ch 9–14. Every catalog chapter now has
-//                  real text; nothing ships as "unavailable".))
+//   Doors          ~/workspace/abisolawrites-rescue/manuscripts/Doors-FINAL-oct27.md
+//                  (FINAL edition, Oct 27, 2026: the tightened edition of
+//                  the complete manuscript (Doors-complete-oct27.md, 63,021
+//                  words: Prologue + Ch 1–17, extracted Oct 27, 2026 from
+//                  the docx Layla uploaded, Doors_11_k4nf.docx) with the
+//                  edit log's author flags fixed on Layla's ruling — see
+//                  Doors-TIGHTENED-oct27-EDITLOG.md, "Flag fixes" section.
+//                  Supersedes the raw complete text as the store text.
+//                  Every catalog chapter has real text; nothing ships as
+//                  "unavailable".)
 //   Trust          ~/workspace/abisolawrites-rescue/manuscripts/Trust.md
 //                  (extracted Oct 27, 2026 from the docx Layla uploaded,
 //                  "The-Trust-I-Built-Before-I-Needed-It": all 10 chapters,
@@ -96,7 +98,7 @@ const ROMAN = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
   sixteen:16, seventeen:17 };
 
 async function buildDoors() {
-  const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/Doors-complete-oct27.md"), "utf8");
+  const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/Doors-FINAL-oct27.md"), "utf8");
   const map = sectionMap(md);
   // Access model (Layla, Oct 27, 2026): Prologue AND Chapter One free,
   // Chapters Two..Seventeen paid (mirrors client/src/data/books.ts). The
