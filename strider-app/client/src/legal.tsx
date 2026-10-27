@@ -40,7 +40,7 @@ export function TermsPage() {
         <p>
           zepostia (&ldquo;we&rdquo;, &ldquo;us&rdquo;) provides a social media scheduling and publishing tool.
           After you connect your accounts, you can write a post once and publish it to any combination of
-          Facebook, Instagram, TikTok, YouTube, and X, either immediately or on a schedule you choose.
+          Facebook, Instagram, YouTube, and X, either immediately or on a schedule you choose.
           The service is provided through our website at zepostia.com.
         </p>
       </section>
@@ -72,7 +72,6 @@ export function TermsPage() {
         </p>
         <ul>
           <li><strong>X:</strong> 60 successful posts per calendar month.</li>
-          <li><strong>TikTok:</strong> 60 successful posts per calendar month.</li>
         </ul>
         <p>
           Scheduled posts and posts to Facebook, Instagram, and YouTube are not subject to these caps.
@@ -115,7 +114,7 @@ export function TermsPage() {
         <p>
           We work to keep zepostia reliable, but the service is provided on a best-effort basis. We are not
           liable for interruptions caused by third-party platform outages, API changes, or maintenance on
-          Facebook, Instagram, TikTok, YouTube, or X. Scheduled posts depend on those platforms accepting
+          Facebook, Instagram, YouTube, or X. Scheduled posts depend on those platforms accepting
           them at publish time.
         </p>
       </section>
@@ -195,7 +194,7 @@ export function PrivacyPage() {
         <h2>4. Who we share data with</h2>
         <p>We share data only as needed to provide the service:</p>
         <ul>
-          <li><strong>The platforms you connect</strong> (Meta/Facebook and Instagram, TikTok, Google/YouTube, X) receive your post content when you publish, as you instructed.</li>
+          <li><strong>The platforms you connect</strong> (Meta/Facebook and Instagram, Google/YouTube, X) receive your post content when you publish, as you instructed.</li>
           <li><strong>Stripe</strong> processes your subscription payments.</li>
         </ul>
         <p>
