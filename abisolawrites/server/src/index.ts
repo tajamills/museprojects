@@ -433,7 +433,7 @@ async function main() {
     }
     if (chapter.text == null) {
       // Structure exists but the manuscript text is not loaded yet
-      // (Doors Ch 15–17; all of Trust — see scripts/build-content.mjs).
+      // (see scripts/build-content.mjs).
       res.json({ ...meta, available: false, text: null });
       return;
     }

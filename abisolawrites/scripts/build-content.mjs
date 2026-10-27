@@ -5,10 +5,14 @@
 // entitled (signed-in, purchased) accounts.
 //
 // Sources:
-//   Doors          ~/workspace/abisolawrites-rescue/manuscripts/DOORS-v2-CLEANED-deduped.md
-//                  (canonical DOORS v2, 42,153 words: Prologue + Ch 1–14.
-//                  Chapters 15–17 exist in the catalog but their v2 text is
-//                  not in any file we hold -> text: null -> "unavailable".)
+//   Doors          ~/workspace/abisolawrites-rescue/manuscripts/Doors-complete-oct27.md
+//                  (COMPLETE manuscript, 63,021 words: Prologue + Ch 1–17,
+//                  extracted Oct 27, 2026 from the docx Layla uploaded
+//                  (Doors_11_k4nf.docx). Supersedes the Oct 14 cleaned v2,
+//                  which held only Prologue + Ch 1–14 (42,153 words) in an
+//                  earlier draft — this file also carries expanded,
+//                  revised text for Ch 9–14. Every catalog chapter now has
+//                  real text; nothing ships as "unavailable".))
 //   Trust          ~/workspace/abisolawrites-rescue/manuscripts/Trust.md
 //                  (extracted Oct 27, 2026 from the docx Layla uploaded,
 //                  "The-Trust-I-Built-Before-I-Needed-It": all 10 chapters,
@@ -92,16 +96,17 @@ const ROMAN = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
   sixteen:16, seventeen:17 };
 
 async function buildDoors() {
-  const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/DOORS-v2-CLEANED-deduped.md"), "utf8");
+  const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/Doors-complete-oct27.md"), "utf8");
   const map = sectionMap(md);
+  // Access model unchanged: Prologue free, Chapters One..Seventeen paid
+  // (mirrors client/src/data/books.ts). The complete manuscript holds all
+  // 18 units — every chapter resolves to real text via findSection, which
+  // throws if a section is missing, so a partial file fails the build.
   const chapters = [{ label: "Prologue", free: true, text: findSection(map, (h) => h === "prologue", "Doors Prologue") }];
-  NUM.slice(0, 14).forEach((name) => {
+  NUM.forEach((name) => {
     const text = findSection(map, (h) => h === `chapter ${name.toLowerCase()}`, `Doors Chapter ${name}`);
     chapters.push({ label: `Chapter ${name}`, free: false, text });
   });
-  // The catalog lists 18 chapters (Prologue + 17). Cleaned v2 holds only
-  // Prologue + 14 — Chapters Fifteen..Seventeen have no text anywhere.
-  for (const n of [15, 16, 17]) chapters.push({ label: `Chapter ${NUM[n - 1]}`, free: false, text: null });
   return chapters;
 }
 
