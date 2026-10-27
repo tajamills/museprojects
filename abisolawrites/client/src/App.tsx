@@ -5,6 +5,9 @@ import { DoorIcon, MoonIcon, SunIcon } from "./icons";
 import { HomePage } from "./pages/Home";
 import { BookPage } from "./pages/BookPage";
 import { ReaderPage } from "./pages/Reader";
+import { SignInPage } from "./pages/SignIn";
+import { signOut } from "./api";
+import { useMe } from "./auth";
 import { ServicesPage } from "./pages/Services";
 import { ResumePage } from "./pages/Resume";
 import { MusicPage } from "./pages/Music";
@@ -73,13 +76,38 @@ function Header({ pathname }: { pathname: string }) {
         </nav>
         <div className="header-actions">
           <ThemeToggle />
-          {/* Google sign-in seam — a real server route, never a fake state. */}
-          <a href="/auth/google" className="secondary-button signin-button">
-            Sign in
-          </a>
+          <HeaderAccount />
         </div>
       </div>
     </header>
+  );
+}
+
+function HeaderAccount() {
+  const me = useMe();
+  if (me === undefined) return null; // still loading — render nothing yet
+  if (!me.user) {
+    return (
+      <a href="/signin" className="secondary-button signin-button" onClick={(e) => handleLinkClick(e, "/signin")}>
+        Sign in
+      </a>
+    );
+  }
+  return (
+    <>
+      <span className="header-email" title={me.user.email}>
+        {me.user.email}
+      </span>
+      <button
+        type="button"
+        className="secondary-button signin-button"
+        onClick={() => {
+          void signOut().then(() => window.location.assign("/"));
+        }}
+      >
+        Sign out
+      </button>
+    </>
   );
 }
 
@@ -151,6 +179,9 @@ export function App() {
       break;
     case "/booking":
       page = <BookingPage search={search} />;
+      break;
+    case "/signin":
+      page = <SignInPage search={search} />;
       break;
     case "/checkout-unavailable":
       page = <CheckoutUnavailablePage />;

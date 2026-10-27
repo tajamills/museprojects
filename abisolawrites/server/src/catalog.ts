@@ -9,15 +9,31 @@ export interface CatalogItem {
   returnPath: string;
 }
 
-// Book sales are DISABLED (Layla's ruling, Oct 27, 2026): the delivery
-// seam (accounts + entitlements that open paid chapters) is not built yet,
-// so a buyer who paid could not read what they bought. /api/checkout
-// refuses these ids server-side until delivery works. Services and the
-// 1-to-1 booking are NOT books and stay purchasable.
+// Book sales are DISABLED (Layla's ruling, Oct 27, 2026): a buyer who paid
+// could not read what they bought. The delivery seam (accounts +
+// entitlements + server-served chapters) was built Oct 27, 2026 — but book
+// checkout stays OFF until a separate real test purchase passes end-to-end.
+//
+// >>> THE SINGLE RE-ENABLE FLIP: set BOOK_CHECKOUT_ENABLED to true. <<<
+// That one change makes /api/checkout create Stripe sessions for books
+// (signed-in buyers only, entitlement granted by the Stripe webhook) and
+// /api/config tell the client to render the unlock buttons again.
+export const BOOK_CHECKOUT_ENABLED = false;
+
 export const BOOK_ITEM_IDS: ReadonlySet<string> = new Set([
   "doors1",
   "trust",
   "quietlyready",
+]);
+
+// 1-to-1 booking checkout is DISABLED (audit finding, Oct 27, 2026): the
+// $48.88 payment delivered nothing — no booking record, no confirmation,
+// no session link, and slots could be double-sold. /api/checkout refuses
+// this id server-side and the booking page shows availability with no pay
+// path. Re-enable only with the separate booking-delivery build (records,
+// confirmation email, slot inventory).
+export const BOOKING_ITEM_IDS: ReadonlySet<string> = new Set([
+  "booking-1to1",
 ]);
 
 export const CATALOG: Record<string, CatalogItem> = {

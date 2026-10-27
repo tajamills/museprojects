@@ -1,10 +1,9 @@
-import { handleLinkClick } from "./nav";
+import { useEffect, useState } from "react";
+import type { Book } from "./data/books";
+import { getConfig, startCheckout } from "./api";
+import { useMe } from "./auth";
+import { go, handleLinkClick } from "./nav";
 import { ArrowRightIcon } from "./icons";
-
-// NOTE (Oct 27, 2026): the book UnlockButton was removed entirely. Book
-// sales are disabled until the delivery seam (accounts + entitlements)
-// exists — the server also refuses book ids at /api/checkout. When
-// delivery ships, restore a purchase button here and on the book pages.
 
 export function ReadFreeButton({ href, label }: { href: string; label: string }) {
   return (
@@ -15,16 +14,61 @@ export function ReadFreeButton({ href, label }: { href: string; label: string })
   );
 }
 
-/** Shown when Stripe sends a buyer back. Honest about the accounts seam. */
+/**
+ * Full-book unlock button. Renders ONLY when the server says book checkout
+ * is enabled (/api/config -> bookCheckoutEnabled, driven by
+ * BOOK_CHECKOUT_ENABLED in server/src/catalog.ts). While book sales are
+ * paused it renders nothing — no dead buttons, no fake purchase paths.
+ * Signed-out visitors are sent to sign in first, because the purchase is
+ * tied to their account before payment so the unlock lands on them.
+ */
+export function UnlockButton({ book }: { book: Book }) {
+  const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const me = useMe();
+
+  useEffect(() => {
+    let live = true;
+    getConfig().then((c) => {
+      if (live) setEnabled(c.bookCheckoutEnabled);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!enabled) return null;
+
+  const click = async () => {
+    if (!me?.user) {
+      go(`/signin?next=${encodeURIComponent(book.readerPath)}`);
+      return;
+    }
+    setBusy(true);
+    const result = await startCheckout(book.id);
+    if (result === "unavailable") {
+      setBusy(false);
+      go("/checkout-unavailable");
+    }
+  };
+
+  return (
+    <button type="button" className="primary-button" disabled={busy} onClick={() => void click()}>
+      {busy ? "Opening checkout…" : `Unlock the full book — ${book.priceLabel}`}
+    </button>
+  );
+}
+
+/** Shown when Stripe sends a buyer back. */
 export function CheckoutBanner({ search }: { search: string }) {
   const params = new URLSearchParams(search);
   const state = params.get("checkout");
   if (state === "success") {
     return (
       <div className="notice-banner" role="status">
-        Payment confirmed by Stripe — thank you. Library accounts are being reconnected
-        during our move; if your chapters don't unlock right away, keep your Stripe
-        receipt and we will honor it.
+        Payment confirmed by Stripe — thank you. If you bought a book, sign in
+        with the email you used at checkout and your chapters will be open in
+        the reader — yours to keep, forever.
       </div>
     );
   }

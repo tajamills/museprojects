@@ -1,9 +1,14 @@
 import { useMemo, useState } from "react";
 import { BOOKING } from "../data/site";
-import { startCheckout } from "../api";
-import { go } from "../nav";
 import { CheckoutBanner } from "../components";
-import { ArrowLeftIcon, CalendarIcon, CheckIcon, ClockIcon } from "../icons";
+import { CalendarIcon, ClockIcon } from "../icons";
+
+// NOTE (Oct 27, 2026): the pay path is REMOVED. The old flow took $48.88
+// at Stripe and delivered nothing — no booking record, no confirmation,
+// no session link, and the same slot could be sold twice. The server also
+// refuses booking-1to1 at /api/checkout. This page now shows Abisola's
+// standing availability only; booking returns with the separate
+// booking-delivery build (records, confirmation email, slot inventory).
 
 interface DayCell {
   date: Date;
@@ -47,27 +52,8 @@ export function BookingPage({ search }: { search: string }) {
     return [m1, m2].map((m) => ({ ...m, label: MONTH_FMT.format(new Date(m.year, m.month, 1)), cells: monthCells(m.year, m.month, today) }));
   }, [today]);
 
-  const [step, setStep] = useState<1 | 2>(1);
   const [day, setDay] = useState<DayCell | null>(null);
   const [slot, setSlot] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const canContinue = day !== null && slot !== null;
-  const canConfirm = name.trim().length > 1 && /.+@.+\..+/.test(email);
-
-  const confirm = async () => {
-    if (!day || !slot) return;
-    setBusy(true);
-    const note = `1:1 booking — ${DAY_FMT.format(day.date)} at ${slot} (${BOOKING.timezoneLabel}) for ${name.trim()} <${email.trim()}>${notes.trim() ? ` — ${notes.trim()}` : ""}`;
-    const result = await startCheckout(BOOKING.itemId, note);
-    if (result === "unavailable") {
-      setBusy(false);
-      go("/checkout-unavailable");
-    }
-  };
 
   return (
     <main className="page">
@@ -75,8 +61,9 @@ export function BookingPage({ search }: { search: string }) {
       <section className="page-head">
         <h1 className="page-title">Book a 1-to-1 with Abisola.</h1>
         <p className="lead">
-          A private 30-minute session, one to one. Pick a weekday and a time —
-          sessions run 9:00 AM–2:00 PM Eastern.
+          A private 30-minute session, one to one. Sessions run weekdays
+          9:00 AM–2:00 PM Eastern — the calendar below shows the standing
+          availability.
         </p>
         <ul className="chip-row">
           <li className="chip chip-price">
@@ -91,137 +78,75 @@ export function BookingPage({ search }: { search: string }) {
         </ul>
       </section>
 
-      <ol className="steps" aria-label="Booking steps">
-        <li className={step === 1 ? "active" : "done"}>
-          {step === 2 ? <CheckIcon className="steps-icon" /> : "1"} Day &amp; time
-        </li>
-        <li className={step === 2 ? "active" : ""}>2 Your details</li>
-      </ol>
-
-      {step === 1 ? (
-        <div className="booking-grid">
-          <section className="card" aria-label="Choose a day">
-            {months.map((m) => (
-              <div key={m.label} className="calendar-month">
-                <h2 className="calendar-title">{m.label}</h2>
-                <div className="calendar-grid" role="grid" aria-label={m.label}>
-                  {WEEKDAYS.map((w) => (
-                    <span key={w} className="calendar-dow" aria-hidden="true">
-                      {w}
-                    </span>
-                  ))}
-                  {m.cells.map((cell, i) =>
-                    cell === null ? (
-                      <span key={`blank-${i}`} className="calendar-blank" />
-                    ) : (
-                      <button
-                        key={cell.key}
-                        type="button"
-                        className={`calendar-day${day?.key === cell.key ? " selected" : ""}${cell.isToday ? " today" : ""}`}
-                        disabled={cell.disabled}
-                        onClick={() => setDay(cell)}
-                        aria-pressed={day?.key === cell.key}
-                      >
-                        {cell.dayNum}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
-            ))}
-            <p className="fine-print">Weekends and past days are unavailable.</p>
-          </section>
-
-          <section className="card" aria-label="Choose a time">
-            <h2 className="section-title">Pick a time</h2>
-            {day ? (
-              <>
-                <p className="booking-day-label">{DAY_FMT.format(day.date)}</p>
-                <div className="slot-grid">
-                  {BOOKING.slots.map((s) => (
+      <div className="booking-grid">
+        <section className="card" aria-label="Choose a day">
+          {months.map((m) => (
+            <div key={m.label} className="calendar-month">
+              <h2 className="calendar-title">{m.label}</h2>
+              <div className="calendar-grid" role="grid" aria-label={m.label}>
+                {WEEKDAYS.map((w) => (
+                  <span key={w} className="calendar-dow" aria-hidden="true">
+                    {w}
+                  </span>
+                ))}
+                {m.cells.map((cell, i) =>
+                  cell === null ? (
+                    <span key={`blank-${i}`} className="calendar-blank" />
+                  ) : (
                     <button
-                      key={s}
+                      key={cell.key}
                       type="button"
-                      className={`slot${slot === s ? " selected" : ""}`}
-                      onClick={() => setSlot(s)}
-                      aria-pressed={slot === s}
+                      className={`calendar-day${day?.key === cell.key ? " selected" : ""}${cell.isToday ? " today" : ""}`}
+                      disabled={cell.disabled}
+                      onClick={() => setDay(cell)}
+                      aria-pressed={day?.key === cell.key}
                     >
-                      {s}
+                      {cell.dayNum}
                     </button>
-                  ))}
-                </div>
-                <p className="fine-print">30-minute sessions · {BOOKING.timezoneLabel}</p>
-              </>
-            ) : (
-              <p className="dim-text">Choose a day first — times will appear here.</p>
-            )}
-            <button
-              type="button"
-              className="primary-button wide"
-              disabled={!canContinue}
-              onClick={() => setStep(2)}
-            >
-              Continue
-            </button>
-          </section>
-        </div>
-      ) : (
-        <section className="card booking-details" aria-label="Your details">
-          <h2 className="section-title">Your details</h2>
-          <p className="booking-summary">
-            <CalendarIcon className="chip-icon" /> {day ? DAY_FMT.format(day.date) : ""} · {slot}{" "}
-            · {BOOKING.durationLabel} · {BOOKING.priceLabel}
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (canConfirm) void confirm();
-            }}
-          >
-            <label className="field">
-              <span>Your name</span>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="name"
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Anything Abisola should know? (optional)</span>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
-                maxLength={400}
-              />
-            </label>
-            <div className="cta-row">
-              <button type="button" className="quiet-button" onClick={() => setStep(1)}>
-                <ArrowLeftIcon className="btn-icon" /> Back
-              </button>
-              <button type="submit" className="primary-button" disabled={!canConfirm || busy}>
-                {busy ? "Opening checkout…" : `Confirm & pay — ${BOOKING.priceLabel}`}
-              </button>
+                  ),
+                )}
+              </div>
             </div>
-            <p className="fine-print">
-              Payment is taken securely at checkout. Your session link arrives
-              by email after payment.
-            </p>
-          </form>
+          ))}
+          <p className="fine-print">Weekends and past days are unavailable.</p>
         </section>
-      )}
+
+        <section className="card" aria-label="Choose a time">
+          <h2 className="section-title">Pick a time</h2>
+          {day ? (
+            <>
+              <p className="booking-day-label">{DAY_FMT.format(day.date)}</p>
+              <div className="slot-grid">
+                {BOOKING.slots.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`slot${slot === s ? " selected" : ""}`}
+                    onClick={() => setSlot(s)}
+                    aria-pressed={slot === s}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <p className="fine-print">30-minute sessions · {BOOKING.timezoneLabel}</p>
+            </>
+          ) : (
+            <p className="dim-text">Choose a day first — times will appear here.</p>
+          )}
+          {day && slot ? (
+            <p className="booking-summary">
+              <CalendarIcon className="chip-icon" /> {DAY_FMT.format(day.date)} · {slot} ·{" "}
+              {BOOKING.durationLabel} · {BOOKING.priceLabel}
+            </p>
+          ) : null}
+          <p className="fine-print">
+            Online booking is paused while the Library finishes its move —
+            this calendar shows the standing weekly availability so you can
+            plan around it.
+          </p>
+        </section>
+      </div>
     </main>
   );
 }

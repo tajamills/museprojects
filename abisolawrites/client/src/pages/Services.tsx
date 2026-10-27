@@ -36,8 +36,8 @@ function ServiceCard({ service }: { service: Service }) {
         </>
       ) : (
         <>
-          {/* Booking is sign-in-gated on the live site; sign-in is a seam. */}
-          <a href="/auth/google" className="primary-button wide link-button">
+          {/* Booking is sign-in-gated; email sign-in is live at /signin. */}
+          <a href="/signin" className="primary-button wide link-button">
             Sign in to book
           </a>
           <p className="fine-print">1:1 · private · recorded</p>

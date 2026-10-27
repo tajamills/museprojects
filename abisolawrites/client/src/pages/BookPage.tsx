@@ -1,6 +1,6 @@
 import type { Book } from "../data/books";
 import { handleLinkClick } from "../nav";
-import { CheckoutBanner, ReadFreeButton } from "../components";
+import { CheckoutBanner, ReadFreeButton, UnlockButton } from "../components";
 import { BookOpenIcon, CheckIcon, LockIcon, ScrollIcon } from "../icons";
 
 export function BookPage({ book, search }: { book: Book; search: string }) {
@@ -31,6 +31,8 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
         </ul>
         <div className="cta-row">
           <ReadFreeButton href={book.readerPath} label={freeLabel} />
+          {/* Renders only while book checkout is enabled server-side. */}
+          <UnlockButton book={book} />
         </div>
       </section>
 

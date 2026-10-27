@@ -131,6 +131,7 @@ a { color: inherit; }
 .icon-button:hover { transform: translateY(-1px); }
 .toggle-icon { width: 20px; height: 20px; }
 .signin-button { text-decoration: none; min-height: 42px; padding: 8px 18px; font-size: 14px; display: inline-flex; align-items: center; }
+.header-email { font-size: 13px; color: var(--muted, #666); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .site-footer { border-top: 1px solid var(--border); margin-top: auto; }
 .footer-inner {

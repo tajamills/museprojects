@@ -1,6 +1,6 @@
 import { BOOKS, type Book } from "../data/books";
 import { handleLinkClick } from "../nav";
-import { ReadFreeButton } from "../components";
+import { ReadFreeButton, UnlockButton } from "../components";
 import {
   BookOpenIcon,
   CalendarIcon,
@@ -54,6 +54,8 @@ function BookCard({ book }: { book: Book }) {
         </ul>
         <div className="cta-row">
           <ReadFreeButton href={book.readerPath} label={freeLabel} />
+          {/* Renders only while book checkout is enabled server-side. */}
+          <UnlockButton book={book} />
         </div>
       </div>
     </article>

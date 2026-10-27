@@ -1,22 +1,39 @@
-import express from "express";
+import express, { type Request } from "express";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { z } from "zod";
-import { BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
+import { BOOK_CHECKOUT_ENABLED, BOOKING_ITEM_IDS, BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
+import { CONTENT } from "./content-data.js";
+import { createStore, type Store, type User } from "./store.js";
+import {
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  clearSessionCookie,
+  hashPassword,
+  isValidEmail,
+  newSessionToken,
+  normalizeEmail,
+  parseCookies,
+  sessionCookie,
+  sessionTokenHash,
+  verifyPassword,
+} from "./auth.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // When bundled to dist/server.js: dist layout is dist/server.js + dist/client/.
 const CLIENT_DIR = process.env.CLIENT_DIR ?? path.join(here, "client");
 const SITE_URL = (process.env.SITE_URL ?? "https://abisolawrites.com").replace(/\/$/, "");
 const PORT = Number(process.env.PORT ?? 3000);
+const COOKIE_SECURE = SITE_URL.startsWith("https://");
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+const store: Store = createStore();
 
 // Per-route SEO. Titles/descriptions come from the live site's captured copy.
 interface RouteMeta { title: string; description: string; }
@@ -65,6 +82,10 @@ const ROUTE_META: Record<string, RouteMeta> = {
     title: "Book a 1-to-1 with Abisola — Abisola Writes",
     description: "Book a 30-minute 1-to-1 session with Abisola — $48.88, weekdays 9:00 AM–2:00 PM EDT.",
   },
+  "/signin": {
+    title: "Sign in — Abisola Writes",
+    description: "Sign in to the Abisola Writes Library to read the books you've unlocked — yours to keep, forever.",
+  },
   "/checkout-unavailable": {
     title: "Checkout is being reconnected — Abisola Writes",
     description: "Abisola Writes is moving to a new home and checkout is being reconnected. Nothing was charged.",
@@ -77,19 +98,61 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+async function currentUser(req: Request): Promise<User | null> {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (!token) return null;
+  return store.findUserBySession(sessionTokenHash(token));
+}
+
+async function startSession(res: express.Response, userId: string): Promise<void> {
+  const token = newSessionToken();
+  await store.createSession(sessionTokenHash(token), userId, new Date(Date.now() + SESSION_TTL_MS));
+  res.setHeader("Set-Cookie", sessionCookie(token, COOKIE_SECURE));
+}
+
+/**
+ * Grant the book a completed Stripe checkout paid for. Identity comes from
+ * client_reference_id / metadata.userId (set by /api/checkout for signed-in
+ * buyers); the fallback is the email Stripe collected, so the entitlement
+ * still lands when that buyer creates an account with the same email.
+ */
+async function grantFromCheckoutSession(session: Stripe.Checkout.Session): Promise<void> {
+  const itemId = session.metadata?.itemId ?? "";
+  if (!BOOK_ITEM_IDS.has(itemId)) return; // only books are entitlements
+  const userId = session.client_reference_id || session.metadata?.userId || null;
+  const email = normalizeEmail(
+    session.customer_details?.email ?? session.customer_email ?? session.metadata?.email ?? "",
+  );
+  await store.grantEntitlement({
+    userId,
+    email: email || null,
+    bookId: itemId,
+    source: "stripe",
+    stripeSessionId: session.id,
+  });
+  console.log(`[abisolawrites] entitlement granted: ${itemId} -> ${userId ?? email ?? "?"}`);
+}
+
 async function main() {
+  await store.init();
+  if (store.kind === "file") {
+    console.warn(
+      "[abisolawrites] WARNING: DATABASE_URL is not set — accounts/entitlements use the local file store. " +
+      "On Railway this is ephemeral; add Postgres (DATABASE_URL) for durable lifetime entitlements.",
+    );
+  }
   const template = await readFile(path.join(CLIENT_DIR, "index.html"), "utf8");
 
   const app = express();
   app.disable("x-powered-by");
 
-  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  app.get("/healthz", (_req, res) => res.json({ ok: true, store: store.kind }));
 
   // Stripe webhook: signature covers the raw request bytes, so this route
   // MUST use express.raw() and be registered before express.json(). Without
   // a webhook secret configured there is nothing trustworthy to verify
   // against, so the endpoint refuses rather than pretending.
-  app.post("/webhooks/stripe", express.raw({ type: "application/json" }), (req, res) => {
+  app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
     if (!stripe || !STRIPE_WEBHOOK_SECRET) {
       res.status(503).json({ error: "Stripe webhook is not configured yet." });
       return;
@@ -101,26 +164,171 @@ async function main() {
     }
     try {
       const event = stripe.webhooks.constructEvent(req.body as Buffer, signature, STRIPE_WEBHOOK_SECRET);
-      // Entitlement grants land here once accounts exist (see /auth/google
-      // seam). For now, acknowledge verified events so Stripe stops retrying.
-      void event;
+      if (event.type === "checkout.session.completed") {
+        await grantFromCheckoutSession(event.data.object as Stripe.Checkout.Session);
+      }
       res.json({ received: true });
-    } catch {
-      res.status(400).json({ error: "Webhook signature verification failed." });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("signature")) {
+        res.status(400).json({ error: "Webhook signature verification failed." });
+      } else {
+        console.error("[abisolawrites] webhook handling failed", err);
+        res.status(500).json({ error: "Webhook handling failed." });
+      }
     }
   });
 
   app.use(express.json({ limit: "256kb" }));
 
   // Public capability flags — the client uses these to choose between real
-  // checkout and the honest "being reconnected" notice.
+  // checkout/buttons and the honest paused states.
   app.get("/api/config", (_req, res) => {
     res.json({
       checkoutEnabled: stripe !== null,
-      signInEnabled: GOOGLE_CLIENT_ID !== "",
+      // Email sign-in is live (accounts + entitlements, Oct 27, 2026).
+      // Google sign-in stays a seam until an OAuth client exists.
+      signInEnabled: true,
+      authEnabled: true,
+      bookCheckoutEnabled: BOOK_CHECKOUT_ENABLED,
     });
   });
 
+  // ------------------------------------------------------------- accounts
+  const credentials = z.object({
+    email: z.string().min(3).max(254),
+    password: z.string().min(8).max(128),
+  });
+
+  app.post("/api/auth/signup", async (req, res) => {
+    const parsed = credentials.safeParse(req.body);
+    if (!parsed.success || !isValidEmail(normalizeEmail(parsed.success ? parsed.data.email : ""))) {
+      res.status(400).json({ error: "Enter a valid email and a password of at least 8 characters." });
+      return;
+    }
+    const email = normalizeEmail(parsed.data.email);
+    if (await store.findUserByEmail(email)) {
+      res.status(409).json({ error: "An account with that email already exists — sign in instead." });
+      return;
+    }
+    const user = await store.createUser(email, await hashPassword(parsed.data.password));
+    await startSession(res, user.id);
+    res.json({ user: { email: user.email }, entitlements: [] });
+  });
+
+  app.post("/api/auth/signin", async (req, res) => {
+    const parsed = credentials
+      .extend({ password: z.string().min(1).max(128) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Enter your email and password." });
+      return;
+    }
+    const email = normalizeEmail(parsed.data.email);
+    const user = await store.findUserByEmail(email);
+    if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+      res.status(401).json({ error: "Email or password is incorrect." });
+      return;
+    }
+    await startSession(res, user.id);
+    const entitlements = await store.listEntitlements(user);
+    res.json({ user: { email: user.email }, entitlements: entitlements.map((e) => e.bookId) });
+  });
+
+  app.post("/api/auth/signout", async (req, res) => {
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    if (token) await store.deleteSession(sessionTokenHash(token));
+    res.setHeader("Set-Cookie", clearSessionCookie());
+    res.json({ ok: true });
+  });
+
+  app.get("/api/me", async (req, res) => {
+    const user = await currentUser(req);
+    if (!user) {
+      res.json({ user: null, entitlements: [] });
+      return;
+    }
+    const entitlements = await store.listEntitlements(user);
+    res.json({ user: { email: user.email }, entitlements: entitlements.map((e) => e.bookId) });
+  });
+
+  // ------------------------------------------------------- chapter delivery
+  // Free chapters: served publicly (real text, server-side only).
+  // Paid chapters: served ONLY to a signed-in account with a lifetime
+  // entitlement for that book. Chapter text is never in the client bundle.
+  app.get("/api/books/:bookId/chapters/:index", async (req, res) => {
+    const book = CONTENT[req.params.bookId];
+    const index = Number(req.params.index);
+    if (!book || !Number.isInteger(index) || index < 0 || index >= book.chapters.length) {
+      res.status(404).json({ error: "Unknown chapter." });
+      return;
+    }
+    const chapter = book.chapters[index];
+    const meta = { label: chapter.label, title: chapter.title ?? null, free: chapter.free };
+    if (!chapter.free) {
+      const user = await currentUser(req);
+      if (!user || !(await store.hasEntitlement(user, req.params.bookId))) {
+        res.status(403).json({ error: "locked", ...meta });
+        return;
+      }
+    }
+    if (chapter.text == null) {
+      // Structure exists but the manuscript text is not loaded yet
+      // (Doors Ch 15–17; all of Trust — see scripts/build-content.mjs).
+      res.json({ ...meta, available: false, text: null });
+      return;
+    }
+    res.json({ ...meta, available: true, text: chapter.text });
+  });
+
+  // ------------------------------------------------------------ admin seam
+  // Manual grants/revokes (e.g. honoring a past buyer) — Bearer ADMIN_TOKEN.
+  // Disabled entirely when ADMIN_TOKEN is not set.
+  const adminBody = z.object({ email: z.string().min(3).max(254), bookId: z.string().min(1).max(64) });
+  const adminGuard = (req: Request): boolean =>
+    ADMIN_TOKEN !== "" && req.headers.authorization === `Bearer ${ADMIN_TOKEN}`;
+
+  app.post("/api/admin/grant", async (req, res) => {
+    if (!adminGuard(req)) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    const parsed = adminBody.safeParse(req.body);
+    if (!parsed.success || !BOOK_ITEM_IDS.has(parsed.data.bookId)) {
+      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready)." });
+      return;
+    }
+    const email = normalizeEmail(parsed.data.email);
+    const user = await store.findUserByEmail(email);
+    await store.grantEntitlement({
+      userId: user?.id ?? null,
+      email,
+      bookId: parsed.data.bookId,
+      source: "manual",
+    });
+    res.json({ ok: true, bookId: parsed.data.bookId, email, accountExisted: user !== null });
+  });
+
+  app.post("/api/admin/revoke", async (req, res) => {
+    if (!adminGuard(req)) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    const parsed = adminBody.safeParse(req.body);
+    if (!parsed.success || !BOOK_ITEM_IDS.has(parsed.data.bookId)) {
+      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready)." });
+      return;
+    }
+    const email = normalizeEmail(parsed.data.email);
+    const user = await store.findUserByEmail(email);
+    if (!user) {
+      res.status(404).json({ error: "No account with that email." });
+      return;
+    }
+    await store.revokeEntitlement(user, parsed.data.bookId);
+    res.json({ ok: true, bookId: parsed.data.bookId, email });
+  });
+
+  // -------------------------------------------------------------- checkout
   const checkoutBody = z.object({
     itemId: z.string().min(1).max(64),
     // Booking details are carried into Stripe metadata only; they never
@@ -139,11 +347,19 @@ async function main() {
       res.status(404).json({ error: "Unknown item." });
       return;
     }
-    if (BOOK_ITEM_IDS.has(item.id)) {
-      // Defense in depth (Oct 27, 2026): the buy buttons are removed from
-      // the book pages, and the endpoint independently refuses to create a
-      // Stripe session for a book — no way to pay for a book until the
-      // delivery seam exists.
+    if (BOOKING_ITEM_IDS.has(item.id)) {
+      // Audit fix (Oct 27, 2026): booking payment delivered nothing — no
+      // record, no confirmation, no session link. Refused server-side
+      // until the booking-delivery build exists.
+      res.status(403).json({ error: "booking_checkout_disabled" });
+      return;
+    }
+    const isBook = BOOK_ITEM_IDS.has(item.id);
+    if (isBook && !BOOK_CHECKOUT_ENABLED) {
+      // Defense in depth (Oct 27, 2026): the buy buttons are hidden in the
+      // client (driven by /api/config), and the endpoint independently
+      // refuses book sessions until the test purchase passes and
+      // BOOK_CHECKOUT_ENABLED is flipped in catalog.ts.
       res.status(403).json({ error: "book_checkout_disabled" });
       return;
     }
@@ -151,6 +367,17 @@ async function main() {
       // Honest seam: no keys yet -> no fake checkout, no fake success.
       res.status(503).json({ error: "checkout_unavailable" });
       return;
+    }
+    // Book purchases must be tied to an account BEFORE payment so the
+    // webhook grant lands on the buyer: the session carries the user id as
+    // client_reference_id plus metadata the webhook reads back.
+    let buyer: User | null = null;
+    if (isBook) {
+      buyer = await currentUser(req);
+      if (!buyer) {
+        res.status(401).json({ error: "sign_in_required" });
+        return;
+      }
     }
     try {
       const session = await stripe.checkout.sessions.create({
@@ -165,7 +392,15 @@ async function main() {
             },
           },
         ],
-        metadata: parsed.data.note ? { note: parsed.data.note.slice(0, 500) } : undefined,
+        ...(buyer
+          ? {
+              client_reference_id: buyer.id,
+              customer_email: buyer.email,
+              metadata: { itemId: item.id, userId: buyer.id, email: buyer.email },
+            }
+          : {
+              metadata: parsed.data.note ? { note: parsed.data.note.slice(0, 500) } : undefined,
+            }),
         success_url: `${SITE_URL}${item.returnPath}?checkout=success`,
         cancel_url: `${SITE_URL}${item.returnPath}?checkout=cancelled`,
       });
@@ -175,18 +410,15 @@ async function main() {
     }
   });
 
-  // --- Google sign-in seam -------------------------------------------------
-  // The Emergent site used Google sign-in only. Until a Google Cloud OAuth
-  // client exists (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in Railway), this
-  // route serves an honest placeholder — it never fakes a logged-in state.
+  // --- Sign-in -------------------------------------------------------------
+  // Email sign-in lives at /signin (client page, /api/auth/* above).
+  // /auth/google is kept as a route because older pages link to it: Google
+  // sign-in itself is NOT connected (no Google Cloud OAuth client exists —
+  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in Railway is the owner step),
+  // so the route lands visitors on the working email sign-in instead of a
+  // dead placeholder. It never fakes a Google login.
   app.get("/auth/google", (_req, res) => {
-    res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign-in is being reconnected — Abisola Writes</title></head>
-<body style="font-family: system-ui, sans-serif; max-width: 560px; margin: 12vh auto; padding: 0 20px; line-height: 1.6;">
-<h1>Sign-in is being reconnected</h1>
-<p>Abisola Writes just moved to a new home. Google sign-in is being reconnected during the move, so accounts and library unlocks are paused for a short while.</p>
-<p>The free opening chapters are still open to everyone — no sign-in needed.</p>
-<p><a href="/">← Back to the Library</a></p>
-</body></html>`);
+    res.redirect(302, "/signin");
   });
 
   app.get("/robots.txt", (_req, res) => {
@@ -214,7 +446,10 @@ async function main() {
   });
 
   app.listen(PORT, () => {
-    console.log(`[abisolawrites] listening on :${PORT} (checkout ${stripe ? "enabled" : "in reconnect mode"}, sign-in ${GOOGLE_CLIENT_ID ? "enabled" : "placeholder"})`);
+    console.log(
+      `[abisolawrites] listening on :${PORT} (store ${store.kind}, checkout ${stripe ? "enabled" : "in reconnect mode"}, ` +
+      `book checkout ${BOOK_CHECKOUT_ENABLED ? "ENABLED" : "disabled"}, email sign-in enabled, google sign-in not connected)`,
+    );
   });
 }
 
