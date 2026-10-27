@@ -98,14 +98,15 @@ const ROMAN = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
 async function buildDoors() {
   const md = await readFile(path.join(HOME, "workspace/abisolawrites-rescue/manuscripts/Doors-complete-oct27.md"), "utf8");
   const map = sectionMap(md);
-  // Access model unchanged: Prologue free, Chapters One..Seventeen paid
-  // (mirrors client/src/data/books.ts). The complete manuscript holds all
-  // 18 units — every chapter resolves to real text via findSection, which
-  // throws if a section is missing, so a partial file fails the build.
+  // Access model (Layla, Oct 27, 2026): Prologue AND Chapter One free,
+  // Chapters Two..Seventeen paid (mirrors client/src/data/books.ts). The
+  // complete manuscript holds all 18 units — every chapter resolves to
+  // real text via findSection, which throws if a section is missing, so
+  // a partial file fails the build.
   const chapters = [{ label: "Prologue", free: true, text: findSection(map, (h) => h === "prologue", "Doors Prologue") }];
-  NUM.forEach((name) => {
+  NUM.forEach((name, i) => {
     const text = findSection(map, (h) => h === `chapter ${name.toLowerCase()}`, `Doors Chapter ${name}`);
-    chapters.push({ label: `Chapter ${name}`, free: false, text });
+    chapters.push({ label: `Chapter ${name}`, free: i === 0, text });
   });
   return chapters;
 }

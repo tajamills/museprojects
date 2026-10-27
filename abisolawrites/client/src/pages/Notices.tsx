@@ -21,7 +21,7 @@ export function CheckoutUnavailablePage() {
             <ArrowRightIcon className="btn-icon" />
           </a>
           <button type="button" className="quiet-button" onClick={() => go("/reader/doors1")}>
-            Read the free Prologue
+            Read the free Prologue & Chapter One
           </button>
         </div>
       </section>

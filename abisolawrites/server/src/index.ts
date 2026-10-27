@@ -44,7 +44,7 @@ const ROUTE_META: Record<string, RouteMeta> = {
   },
   "/book/doors": {
     title: "Doors — Book One | A Spiritual Mystery — Abisola Writes",
-    description: "A watched child. A hidden inheritance. A door that opens only for the one it recognizes. 18 chapters, ~63k words. Read the Prologue free; unlock the full book for $2.99, one-time.",
+    description: "A watched child. A hidden inheritance. A door that opens only for the one it recognizes. 18 chapters, ~63k words. Read the Prologue and Chapter One free; unlock the full book for $2.99, one-time.",
   },
   "/book/trust": {
     title: "The Trust I Built Before I Needed It — Abisola Writes",
@@ -52,7 +52,7 @@ const ROUTE_META: Record<string, RouteMeta> = {
   },
   "/reader/doors1": {
     title: "Read Doors — Book One — Abisola Writes",
-    description: "Read Doors — Book One in the Abisola Writes Library. The Prologue is free; unlock all 18 chapters for $2.99, one-time.",
+    description: "Read Doors — Book One in the Abisola Writes Library. The Prologue and Chapter One are free; unlock all 18 chapters for $2.99, one-time.",
   },
   "/reader/trust": {
     title: "Read The Trust I Built Before I Needed It — Abisola Writes",

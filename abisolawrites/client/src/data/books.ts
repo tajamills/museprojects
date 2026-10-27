@@ -63,10 +63,10 @@ export const DOORS: Book = {
   wordsLabel: "63k Words",
   priceLabel: "$2.99",
   priceCents: 299,
-  freeLabel: "Start with the free Prologue",
+  freeLabel: "Start with the free Prologue & Chapter One",
   chapters: [
     ch("Prologue", true),
-    ...DOORS_NUMBERS.map((n) => ch(`Chapter ${n}`, false)),
+    ...DOORS_NUMBERS.map((n, i) => ch(`Chapter ${n}`, i === 0)),
   ],
 };
 

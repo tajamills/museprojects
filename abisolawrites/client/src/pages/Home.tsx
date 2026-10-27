@@ -15,7 +15,7 @@ function BookCard({ book }: { book: Book }) {
   const CoverIcon = book.id === "doors1" ? DoorIcon : ShieldIcon;
   const freeLabel =
     book.id === "doors1"
-      ? "Read the Prologue free"
+      ? "Read the Prologue & Chapter One free"
       : book.id === "trust"
         ? "Read Chapter One free"
         : book.freeLabel;
