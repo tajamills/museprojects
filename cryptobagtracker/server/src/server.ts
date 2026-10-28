@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, service: "cryptobagtracker" });
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-28-alert-kill-v2" });
   });
 
   app.post("/actions", async (req, res) => {

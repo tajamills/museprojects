@@ -375,6 +375,27 @@ export interface AlertCheckDeps {
 
 /** One scheduler tick: check every active alert, deliver, record, re-arm. */
 export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promise<{ checked: number; triggered: number; reset: number }> {
+  // Kill switch for the planted Oct 27 SMS test alert (Layla, 2026-10-28:
+  // "cut that shit off"). The test account's BTC-above-$1 alert has no API
+  // off switch and re-fires on an episode loop; deactivate it on EVERY tick
+  // (not just at boot) so it cannot fire again once this build is live.
+  // Self-limiting match: only that throwaway account's BTC $1 alerts.
+  try {
+    const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
+      .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
+    if (testUsers.length > 0) {
+      await db.update(schema.priceAlerts).set({ active: false })
+        .where(and(
+          eq(schema.priceAlerts.userId, testUsers[0].id),
+          eq(schema.priceAlerts.asset, "BTC"),
+          eq(schema.priceAlerts.targetPrice, 1),
+          eq(schema.priceAlerts.active, true),
+        ));
+    }
+  } catch (err) {
+    console.error("price alerts: test-alert kill switch failed:", err instanceof Error ? err.message : err);
+  }
+
   const alerts = await db.select().from(schema.priceAlerts).where(eq(schema.priceAlerts.active, true));
   if (!alerts.length) return { checked: 0, triggered: 0, reset: 0 };
 
