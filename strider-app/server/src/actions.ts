@@ -1531,6 +1531,7 @@ export const actions: Record<string, ActionDef> = {
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer: customerId,
+        allow_promotion_codes: true,
         client_reference_id: String(user.id),
         line_items: lineItems,
         subscription_data: {
