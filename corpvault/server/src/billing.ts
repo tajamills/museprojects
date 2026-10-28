@@ -235,7 +235,7 @@ export async function reconcileSubscriptionFromStripe(db: Db, account: AccountRo
  * at checkout is treated as a server config error, so a transcription
  * slip is diagnosable instead of silently breaking purchases).
  */
-export const BANK_SYNC_PRICE_ID_FALLBACK: string | null = "price_1UVbxVAXuTzNcQX7Ed0li4li";
+export const BANK_SYNC_PRICE_ID_FALLBACK: string | null = "price_1UVbxVAXuTzNcQX7Ed0li4Ii";
 
 export function bankSyncPriceId(): string | null {
   return process.env.STRIPE_BANK_SYNC_PRICE_ID || BANK_SYNC_PRICE_ID_FALLBACK;
