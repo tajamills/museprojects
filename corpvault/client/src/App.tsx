@@ -6,22 +6,23 @@ import { annualCycle, CATEGORIES, dateLabel, daysUntil, entityAttention, relativ
 type Workspace = ApiResponse<typeof api, "getWorkspace">;
 type Entity = Workspace["entities"][number];
 type Reminder = Workspace["reminders"][number];
-type Tab = "overview" | "entities" | "documents" | "calendar" | "minutes" | "billing";
+type Tab = "overview" | "entities" | "books" | "documents" | "calendar" | "minutes" | "billing";
 type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "close" | "check" | "upload" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder" | "flag";
+    name: Tab | "plus" | "close" | "check" | "upload" | "download" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder" | "flag";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
         entities: <><path d="M3 21h18M5 21V8l7-4 7 4v13M9 12h2m2 0h2m-6 4h2m2 0h2"/></>,
+        books: <><path d="M7 3h12v18H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M5 17a2 2 0 0 1 2-2h12"/><path d="M9.5 7.5H16M9.5 11H14"/></>,
         documents: <><path d="M6 3h8l4 4v14H6V3Zm8 0v5h5M9 13h6m-6 4h6"/></>,
         calendar: <><path d="M5 5h14v15H5V5Zm3-2v4m8-4v4M5 9h14M9 13h2m3 0h2m-7 3h2"/></>,
         minutes: <><path d="M7 3h10v18H7V3Zm3 5h4m-4 4h4m-4 4h3"/></>,
         billing: <><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></>,
         plus: <path d="M12 5v14M5 12h14"/>, close: <path d="m6 6 12 12M18 6 6 18"/>, check: <path d="m5 12 4 4L19 6"/>,
-        upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v5h14v-5"/></>, lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
+        upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v5h14v-5"/></>, download: <><path d="M12 4v11m0 0 5-5m-5 5-5-5M5 15v5h14v-5"/></>, lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
         info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.8v.3"/></>,
         user: <><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.4-3.8 4.4-5.5 7.5-5.5s6.1 1.7 7.5 5.5"/></>,
         clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
@@ -330,6 +331,122 @@ function Minutes({ data, token, open }: {
     token: string;
     open: (m: Modal) => void;
 }) { const [expanded, setExpanded] = useState<number | null>(null); const qc = useQueryClient(); const deleteMutation = useMutation({ mutationFn: (id: number) => api.deleteMeeting({ token, id }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) }); const count = data.meetings.length; const latest = count ? data.meetings.map((m) => m.meeting_date).sort().at(-1)! : null; return <div className="page"><header className="page-head"><div><p className="eyebrow">Corporate record</p><h1>Meeting Minutes</h1><p className="page-sub">A durable record of meetings, decisions, and assigned work.</p></div></header><section className="panel-card minutes-lead"><span className="minutes-bubble"><Icon name="minutes"/></span><div className="minutes-lead-main"><h2 className="minutes-lead-title">{count ? `${count} meeting${count === 1 ? "" : "s"} on record` : "No minutes recorded"}</h2><p className="quiet minutes-lead-status">{count ? `Last recorded ${dateLabel(latest!)}` : data.entities.length ? "Create a durable record of meetings, decisions, and assigned work." : "Add a business first, then record its meetings."}</p><button className="primary compact minutes-record" disabled={!data.entities.length} onClick={() => open("meeting")}><Icon name="plus"/>Record minutes</button></div></section>{count > 0 && <div className="minutes-list">{data.meetings.map((m) => <article className="minutes-card" key={m.id}><button className="minutes-summary" onClick={() => setExpanded(expanded === m.id ? null : m.id)} aria-expanded={expanded === m.id}><span className="date-block"><strong>{new Date(`${m.meeting_date}T12:00:00`).getDate()}</strong><small>{new Date(`${m.meeting_date}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</small></span><span><strong>{m.entity_name}</strong><small>{m.meeting_type} · {m.meeting_time} {m.timezone}</small></span><span className={`minutes-chevron${expanded === m.id ? " open" : ""}`} aria-hidden="true"><Icon name="chevron"/></span></button>{expanded === m.id && <div className="minutes-detail"><p><b>Location</b>{m.location || "Not recorded"}</p><p><b>Attendees</b>{m.attendees.map((a) => `${a.name} (${a.role})`).join(", ")}</p><div><b>Agenda</b><ul>{m.agenda_items.map((a, i) => <li key={i}>{a}</li>)}</ul></div><p><b>Discussion</b>{m.discussion_summary}</p>{m.decisions.length > 0 && <div><b>Decisions</b><ul>{m.decisions.map((d, i) => <li key={i}>{d}</li>)}</ul></div>}{m.action_items.length > 0 && <div><b>Action items</b><div className="mini-table">{m.action_items.map((a, i) => <div key={i}><strong>{a.action}</strong><span>{a.owner}</span><time>{dateLabel(a.due_date)}</time><em>{a.status}</em></div>)}</div></div>}<p><b>Recorded by</b>{m.recorded_by}</p>{m.next_meeting_date && <p><b>Next meeting</b>{dateLabel(m.next_meeting_date)}</p>}<button className="text-button" style={{ color: "var(--danger)" }} disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(m.id)}>Delete these minutes</button></div>}</article>)}</div>}</div>; }
+type BooksMonthData = ApiResponse<typeof api, "listBooks">;
+type BkCategory = BooksMonthData["categories"][number];
+type BkTxn = BooksMonthData["transactions"][number];
+const moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const money = (cents: number) => moneyFmt.format(cents / 100);
+const moneyFlow = (cents: number, direction: string) => direction === "in" ? `+${money(cents)}` : `−${money(cents)}`;
+const BK_KIND_OPTIONS: { value: string; label: string }[] = [
+    { value: "income", label: "Income" },
+    { value: "expense", label: "Expense" },
+    { value: "contribution", label: "Owner contribution" },
+    { value: "distribution", label: "Owner draw" },
+];
+function thisMonth(): string { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`; }
+function todayLocal(): string { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`; }
+function monthLabel(month: string): string { const [y, m] = month.split("-").map(Number); return new Date(y ?? 2000, (m ?? 1) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }); }
+function shiftMonth(month: string, delta: number): string { const [y, m] = month.split("-").map(Number); const d = new Date(y ?? 2000, (m ?? 1) - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+function lastDayOfMonth(month: string): string { const [y, m] = month.split("-").map(Number); return `${month}-${String(new Date(y ?? 2000, m ?? 1, 0).getDate()).padStart(2, "0")}`; }
+/** Books root: the all-companies overview, or one business's books when a
+ *  card is opened. Each business's books are a separate ledger end to end —
+ *  the server fences every books query by entity, and this screen never
+ *  blends two businesses' numbers outside the labeled overview rollup. */
+function Books({ data, token }: {
+    data: Workspace;
+    token: string;
+}) {
+    const [entityId, setEntityId] = useState<number | null>(null);
+    const entity = entityId != null ? data.entities.find((e) => e.id === entityId) : undefined;
+    if (entity)
+        return <EntityBooks data={data} token={token} entity={entity} onBack={() => setEntityId(null)}/>;
+    return <BooksOverview token={token} onOpen={setEntityId}/>;
+}
+function BooksOverview({ token, onOpen }: {
+    token: string;
+    onOpen: (id: number) => void;
+}) {
+    const summary = useQuery({ queryKey: ["booksSummary", token], queryFn: () => api.booksSummary({ token }) });
+    const s = summary.data;
+    return <div className="page"><header className="page-head"><div><p className="eyebrow">Bookkeeping</p><h1>Books</h1><p className="page-sub">Money in and out, kept separately for each business.</p></div></header>{summary.isPending ? <p className="quiet">Loading…</p> : summary.isError || !s ? <p className="error-note">Could not load your books. Please try again.</p> : s.entities.length === 0 ? <Empty icon="books" title="Add a business first" body="Each business gets its own books here — one company's money never mixes with another's."/> : <><section className="pulse"><div><strong>{money(s.totals.month.in_cents)}</strong><span>Money in · {monthLabel(s.month)}</span></div><div><strong>{money(s.totals.month.out_cents)}</strong><span>Money out · all businesses</span></div><div><strong>{money(s.totals.month.net_cents)}</strong><span>Left over</span></div></section><div className="books-card-list">{s.entities.map((e) => <article className="panel-card books-card" key={e.entity_id} role="button" tabIndex={0} aria-label={`Open the books for ${e.entity_name}`} onClick={() => onOpen(e.entity_id)} onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onOpen(e.entity_id); } }}><div className="books-card-head"><h2>{e.entity_name}</h2><span className="entity-open-arrow" aria-hidden="true"/></div><div className="books-nums"><div><span>Money in</span><strong>{money(e.month_totals.in_cents)}</strong></div><div><span>Money out</span><strong>{money(e.month_totals.out_cents)}</strong></div><div><span>Left over</span><strong>{money(e.month_totals.net_cents)}</strong></div></div></article>)}</div></>}
+  </div>;
+}
+function EntityBooks({ data, token, entity, onBack }: {
+    data: Workspace;
+    token: string;
+    entity: Entity;
+    onBack: () => void;
+}) {
+    const qc = useQueryClient();
+    const [month, setMonth] = useState(thisMonth);
+    const [editing, setEditing] = useState<BkTxn | "new" | null>(null);
+    const [catsOpen, setCatsOpen] = useState(false);
+    const [notice, setNotice] = useState("");
+    const books = useQuery({ queryKey: ["books", token, entity.id, month], queryFn: () => api.listBooks({ token, entity_id: entity.id, month }) });
+    const invalidate = () => { qc.invalidateQueries({ queryKey: ["books", token, entity.id] }); qc.invalidateQueries({ queryKey: ["booksSummary", token] }); };
+    const deleteMutation = useMutation({ mutationFn: (id: number) => api.deleteTransaction({ token, id }), onSuccess: invalidate, onError: (e) => setNotice(errText(e)) });
+    const importMutation = useMutation({ mutationFn: (csv: string) => api.importTransactionsCsv({ token, entity_id: entity.id, csv }), onSuccess: (r) => { setNotice(`Imported ${r.imported} transaction${r.imported === 1 ? "" : "s"}${r.skipped ? ` · skipped ${r.skipped} row${r.skipped === 1 ? "" : "s"} that could not be read` : ""}.`); invalidate(); }, onError: (e) => setNotice(errText(e)) });
+    const exportMutation = useMutation({ mutationFn: () => api.exportBooksCsv({ token, entity_id: entity.id, from: `${month}-01`, to: lastDayOfMonth(month) }), onSuccess: (r) => { const blob = new Blob([r.csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = r.filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }, onError: (e) => setNotice(errText(e)) });
+    const b = books.data;
+    const docs = data.documents.filter((d) => d.entity_id === entity.id);
+    return <div className="page"><button className="back-button" onClick={onBack}><span className="back-arrow" aria-hidden="true"/>All books</button><header className="page-head books-head"><div><p className="eyebrow">{entity.name}</p><h1>Books</h1></div><div className="books-month-nav"><button className="books-month-btn" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}><span className="back-arrow" aria-hidden="true"/></button><strong className="books-month-label">{monthLabel(month)}</strong><button className="books-month-btn" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}><span className="entity-open-arrow" aria-hidden="true"/></button></div></header>{books.isPending ? <p className="quiet">Loading…</p> : books.isError || !b ? <p className="error-note">Could not load these books. Please try again.</p> : <>
+    <section className="pulse"><div><strong>{money(b.totals.in_cents)}</strong><span>Money in</span></div><div><strong>{money(b.totals.out_cents)}</strong><span>Money out</span></div><div><strong>{money(b.totals.net_cents)}</strong><span>Left over</span></div></section>
+    <div className="books-actions"><button className="primary compact" onClick={() => setEditing("new")}><Icon name="plus"/>Add transaction</button><label className="secondary books-file-btn"><Icon name="upload"/>Import CSV<input aria-label="Import transactions from a CSV file" type="file" accept=".csv,text/csv,text/plain" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) file.text().then((text) => importMutation.mutate(text)).catch(() => setNotice("Could not read that file.")); }}/></label><button className="secondary" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}><Icon name="download"/>Export for CPA</button><button className="secondary" onClick={() => setCatsOpen(true)}>Categories</button></div>
+    {notice && <p className="books-notice" role="status">{notice}</p>}
+    <section className="panel-card"><div className="panel-head"><h2>Where the money went</h2></div>{b.category_totals.length ? b.category_totals.map((c) => { const net = c.in_cents - c.out_cents; return <div className="books-cat-row" key={c.category_id ?? "none"}><span>{c.name}</span><strong className={net < 0 ? "txn-out" : ""}>{net < 0 ? `−${money(-net)}` : `+${money(net)}`}</strong></div>; }) : <p className="quiet">Nothing recorded this month yet.</p>}</section>
+    <section className="panel-card"><div className="panel-head"><h2>Transactions</h2><span className="quiet">{b.transactions.length} this month</span></div>{b.transactions.length ? <div className="txn-list">{b.transactions.map((t) => <div className="txn-row" key={t.id}><span className={`txn-dot ${t.status === "pending" ? "pending" : ""}`} role="img" aria-label={t.status === "pending" ? "Pending" : "Cleared"} title={t.status === "pending" ? "Pending" : "Cleared"}/><span className="txn-date"><strong>{Number(t.date.slice(8))}</strong><small>{new Date(`${t.date}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</small></span><span className="txn-main"><strong>{t.description}</strong><small>{t.category_name ?? "No category"}{t.receipt_filename ? ` · Receipt: ${t.receipt_filename}` : ""}{t.note ? ` · ${t.note}` : ""}</small></span><span className="txn-side"><strong className={t.direction === "in" ? "txn-in" : "txn-out"}>{moneyFlow(t.amount_cents, t.direction)}</strong><span className="txn-actions"><button onClick={() => setEditing(t)}>Edit</button><button className="danger" disabled={deleteMutation.isPending} onClick={() => { if (window.confirm("Delete this transaction? This cannot be undone.")) deleteMutation.mutate(t.id); }}>Delete</button></span></span></div>)}</div> : <p className="quiet">No transactions in {monthLabel(month)}. Add one above, or import a bank CSV.</p>}</section>
+    </>}
+    {editing && b && <Sheet title={editing === "new" ? "Add transaction" : "Edit transaction"} onClose={() => setEditing(null)}><TransactionForm token={token} entity={entity} categories={b.categories} documents={docs} txn={editing === "new" ? undefined : editing} onDone={() => setEditing(null)}/></Sheet>}
+    {catsOpen && b && <Sheet title="Categories" onClose={() => setCatsOpen(false)}><CategoriesForm token={token} entity={entity} categories={b.categories}/></Sheet>}
+  </div>;
+}
+function TransactionForm({ token, entity, categories, documents, txn, onDone }: {
+    token: string;
+    entity: Entity;
+    categories: BkCategory[];
+    documents: Workspace["documents"];
+    txn?: BkTxn;
+    onDone: () => void;
+}) {
+    const qc = useQueryClient();
+    const [direction, setDirection] = useState<"in" | "out">(txn?.direction === "out" ? "out" : "in");
+    const [categoryId, setCategoryId] = useState<string>(txn?.category_id != null ? String(txn.category_id) : "");
+    const [error, setError] = useState("");
+    const mutation = useMutation({ mutationFn: async (form: FormData) => { const dollars = Number(String(form.get("amount")).replace(/[$,\s]/g, "")); if (!Number.isFinite(dollars) || dollars <= 0)
+            throw new Error("Enter an amount above zero."); const payload = { date: String(form.get("date")), description: String(form.get("description")), amount_cents: Math.round(dollars * 100), direction, category_id: categoryId ? Number(categoryId) : null, status: String(form.get("status")) as "cleared" | "pending", receipt_document_id: form.get("receipt") ? Number(form.get("receipt")) : null, note: String(form.get("note") || "") }; if (txn)
+            await api.updateTransaction({ token, id: txn.id, ...payload });
+        else
+            await api.createTransaction({ token, entity_id: entity.id, ...payload }); }, onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["books", token, entity.id] }); await qc.invalidateQueries({ queryKey: ["booksSummary", token] }); onDone(); }, onError: (e) => setError(errText(e)) });
+    const visibleCats = categories.filter((c) => !c.archived && (direction === "in" ? c.kind === "income" || c.kind === "contribution" : c.kind === "expense" || c.kind === "distribution"));
+    const currentCat = txn?.category_id != null ? categories.find((c) => c.id === txn.category_id) : undefined;
+    const catOptions = currentCat && !visibleCats.some((c) => c.id === currentCat.id) ? [currentCat, ...visibleCats] : visibleCats;
+    return <form className="form-grid" onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(new FormData(e.currentTarget)); }}><div className="segmented two" role="group" aria-label="Money in or money out"><button type="button" className={direction === "in" ? "active" : ""} onClick={() => { setDirection("in"); setCategoryId(""); }}>Money in</button><button type="button" className={direction === "out" ? "active" : ""} onClick={() => { setDirection("out"); setCategoryId(""); }}>Money out</button></div><div className="two-col"><Field label="Date"><input name="date" type="date" required defaultValue={txn?.date ?? todayLocal()}/></Field><Field label="Amount"><input name="amount" inputMode="decimal" placeholder="0.00" required defaultValue={txn ? (txn.amount_cents / 100).toFixed(2) : ""}/></Field></div><Field label="Description"><input name="description" required defaultValue={txn?.description} placeholder="What was this?"/></Field><Field label="Category"><select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">No category</option>{catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><div className="two-col"><Field label="Status"><select name="status" defaultValue={txn?.status ?? "cleared"}><option value="cleared">Cleared</option><option value="pending">Pending</option></select></Field><Field label="Receipt"><select name="receipt" defaultValue={txn?.receipt_document_id != null ? String(txn.receipt_document_id) : ""}><option value="">No receipt</option>{documents.map((d) => <option key={d.id} value={d.id}>{d.filename}</option>)}</select></Field></div><Field label="Note"><input name="note" defaultValue={txn?.note ?? ""} placeholder="Optional"/></Field>{error && <p className="error-note">{error}</p>}<PrimaryButton busy={mutation.isPending}>{txn ? "Save changes" : "Add transaction"}</PrimaryButton></form>;
+}
+function CategoryRow({ token, entity, category, onChanged }: {
+    token: string;
+    entity: Entity;
+    category: BkCategory;
+    onChanged: () => Promise<void>;
+}) {
+    const [name, setName] = useState(category.name);
+    const [error, setError] = useState("");
+    const rename = useMutation({ mutationFn: () => api.updateCategory({ token, id: category.id, name }), onSuccess: onChanged, onError: (e) => setError(errText(e)) });
+    const archive = useMutation({ mutationFn: () => api.updateCategory({ token, id: category.id, archived: !category.archived }), onSuccess: onChanged, onError: (e) => setError(errText(e)) });
+    const del = useMutation({ mutationFn: () => api.deleteCategory({ token, id: category.id }), onSuccess: onChanged, onError: (e) => setError(errText(e)) });
+    const kindLabel = BK_KIND_OPTIONS.find((k) => k.value === category.kind)?.label ?? category.kind;
+    return <div className="cat-block"><div className="cat-row"><input aria-label={`Name for ${category.name}`} value={name} onChange={(e) => setName(e.target.value)}/><span className="cat-kind">{kindLabel}{category.archived ? " · Archived" : ""}</span><span className="cat-actions"><button className="fix-button" disabled={rename.isPending || name.trim() === category.name} onClick={() => rename.mutate()}>Save</button><button className="fix-button" disabled={archive.isPending} onClick={() => archive.mutate()}>{category.archived ? "Unarchive" : "Archive"}</button><button className="fix-button cat-delete" disabled={del.isPending} onClick={() => { if (window.confirm(`Delete the category "${category.name}"? Categories with transactions on them can't be deleted — archive those instead.`)) del.mutate(); }}>Delete</button></span></div>{error && <p className="error-note">{error}</p>}</div>;
+}
+function CategoriesForm({ token, entity, categories }: {
+    token: string;
+    entity: Entity;
+    categories: BkCategory[];
+}) {
+    const qc = useQueryClient();
+    const [error, setError] = useState("");
+    const invalidate = async () => { await qc.invalidateQueries({ queryKey: ["books", token, entity.id] }); };
+    const add = useMutation({ mutationFn: (form: FormData) => api.createCategory({ token, entity_id: entity.id, name: String(form.get("name")), kind: String(form.get("kind")) as "income" | "expense" | "contribution" | "distribution" }), onSuccess: async () => { await invalidate(); }, onError: (e) => setError(errText(e)) });
+    return <div className="form-grid"><form className="cat-add" onSubmit={(e) => { e.preventDefault(); setError(""); add.mutate(new FormData(e.currentTarget)); e.currentTarget.reset(); }}><Field label="New category"><input name="name" required placeholder="Category name"/></Field><Field label="Kind"><select name="kind">{BK_KIND_OPTIONS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></Field><button className="primary compact cat-add-btn" type="submit" disabled={add.isPending}>{add.isPending ? "Saving…" : "Add category"}</button></form>{error && <p className="error-note">{error}</p>}<div className="cat-list">{categories.map((c) => <CategoryRow key={c.id} token={token} entity={entity} category={c} onChanged={invalidate}/>)}</div><p className="form-callout">Archived categories keep their history but leave the pickers. A category with transactions on it can't be deleted — archive it instead.</p></div>;
+}
 function Billing({ token }: {
     token: string;
 }) {
@@ -447,5 +564,5 @@ export function App() {
         return <div className="loading"><span></span><p>Opening your records…</p></div>;
     if (workspace.isError || !data)
         return <main className="error-page"><h1>We couldn't open this workspace.</h1><p>{errText(workspace.error)}</p><button className="primary compact" onClick={() => { localStorage.removeItem("bizkeep_token"); localStorage.removeItem("bizkeep_email"); setToken(""); }}>Return to sign in</button></main>;
-    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className={tab === "entities" && selectedEntityId == null ? "content wide" : "content"}>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal}/>}{tab === "billing" && <Billing token={token}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
+    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className={tab === "entities" && selectedEntityId == null ? "content wide" : "content"}>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload}/>}{tab === "books" && <Books data={data} token={token}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal}/>}{tab === "billing" && <Billing token={token}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
 }

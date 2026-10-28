@@ -11,7 +11,7 @@
 // is dropped.
 
 import { z } from "zod";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
@@ -160,6 +160,133 @@ const meetingShape = z.object({
     attendees: z.array(z.object({ name: z.string(), role: z.string() })), agenda_items: z.array(z.string()), discussion_summary: z.string(), decisions: z.array(z.string()),
     action_items: z.array(z.object({ action: z.string(), owner: z.string(), due_date: z.string(), status: z.string() })), next_meeting_date: z.string().nullable(), recorded_by: z.string(),
 });
+// ---------------------------------------------------------------------------
+// Bookkeeping (Phase 1). Books are scoped PER ENTITY: a category or a
+// transaction belongs to exactly one business of one account, and every
+// query below is fenced by both ids so books can never mix. Amounts are
+// integer cents and `direction` carries the sign, so a stored amount is
+// never negative. "Money in / Money out" are the only totals words — the
+// module deliberately avoids accounting jargon (no debit/credit).
+// ---------------------------------------------------------------------------
+const bkKinds = ["income", "expense", "contribution", "distribution"] as const;
+type BkKind = (typeof bkKinds)[number];
+const bkDefaultCategories: { name: string; kind: BkKind }[] = [
+    { name: "Sales", kind: "income" },
+    { name: "Subscriptions", kind: "income" },
+    { name: "Other income", kind: "income" },
+    { name: "Filing & legal", kind: "expense" },
+    { name: "Software & subscriptions", kind: "expense" },
+    { name: "Hosting & services", kind: "expense" },
+    { name: "Marketing", kind: "expense" },
+    { name: "Contractors", kind: "expense" },
+    { name: "Bank fees", kind: "expense" },
+    { name: "Equipment", kind: "expense" },
+    { name: "Other expense", kind: "expense" },
+    { name: "Owner contribution", kind: "contribution" },
+    { name: "Owner draw", kind: "distribution" },
+];
+const bkCategoryShape = z.object({ id: z.number(), name: z.string(), kind: z.string(), sort_order: z.number(), archived: z.boolean() });
+const bkTransactionShape = z.object({
+    id: z.number(), date: z.string(), description: z.string(), amount_cents: z.number(), direction: z.string(),
+    category_id: z.number().nullable(), category_name: z.string().nullable(), status: z.string(),
+    receipt_document_id: z.number().nullable(), receipt_filename: z.string().nullable(), source: z.string(), note: z.string().nullable(),
+});
+const bkTotalsShape = z.object({ in_cents: z.number(), out_cents: z.number(), net_cents: z.number() });
+const bkMonthPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+const bkDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+function bkMonthRange(month: string): { start: string; end: string } {
+    const [y, m] = month.split("-").map(Number) as [number, number];
+    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+    return { start: `${month}-01`, end: `${next}-01` };
+}
+function currentBkMonth(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+async function requireBkEntity(db: Db, accountId: number, entityId: number): Promise<void> {
+    const owned = await db.select({ id: schema.entities.id }).from(schema.entities).where(and(eq(schema.entities.id, entityId), eq(schema.entities.accountId, accountId))).limit(1);
+    if (!owned.length)
+        throw new Error("That business is not available.");
+}
+/** Seed the default category set the first time an entity's books are used. */
+async function ensureBkCategories(db: Db, accountId: number, entityId: number): Promise<void> {
+    const existing = await db.select({ id: schema.bkCategories.id }).from(schema.bkCategories).where(eq(schema.bkCategories.entityId, entityId)).limit(1);
+    if (existing.length)
+        return;
+    await db.insert(schema.bkCategories).values(bkDefaultCategories.map((c, i) => ({ accountId, entityId, name: c.name, kind: c.kind, sortOrder: i })));
+}
+async function requireBkCategory(db: Db, accountId: number, entityId: number, categoryId: number): Promise<void> {
+    const rows = await db.select({ id: schema.bkCategories.id }).from(schema.bkCategories).where(and(eq(schema.bkCategories.id, categoryId), eq(schema.bkCategories.entityId, entityId), eq(schema.bkCategories.accountId, accountId))).limit(1);
+    if (!rows.length)
+        throw new Error("That category is not available for this business.");
+}
+async function requireBkReceipt(db: Db, accountId: number, entityId: number, documentId: number): Promise<void> {
+    const rows = await db.select({ id: schema.documents.id }).from(schema.documents).where(and(eq(schema.documents.id, documentId), eq(schema.documents.entityId, entityId), eq(schema.documents.accountId, accountId))).limit(1);
+    if (!rows.length)
+        throw new Error("That document is not available for this business.");
+}
+/** Minimal CSV row splitter: quoted fields, escaped quotes, CRLF tolerant. */
+function parseCsvRows(text: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = "";
+    let quoted = false;
+    const pushField = () => { row.push(field); field = ""; };
+    const pushRow = () => { pushField(); rows.push(row); row = []; };
+    for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i]!;
+        if (quoted) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') { field += '"'; i += 1; }
+                else
+                    quoted = false;
+            }
+            else
+                field += ch;
+        }
+        else if (ch === '"')
+            quoted = true;
+        else if (ch === ",")
+            pushField();
+        else if (ch === "\n")
+            pushRow();
+        else if (ch !== "\r")
+            field += ch;
+    }
+    if (field.length > 0 || row.length > 0)
+        pushRow();
+    return rows.filter((r) => r.some((c) => c.trim().length > 0));
+}
+/** Normalize 'YYYY-MM-DD' or 'M/D/YYYY' to 'YYYY-MM-DD'; null if unparseable. */
+function normalizeBkDate(raw: string): string | null {
+    const value = raw.trim();
+    if (bkDatePattern.test(value))
+        return value;
+    const m = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (m)
+        return `${m[3]}-${m[1]!.padStart(2, "0")}-${m[2]!.padStart(2, "0")}`;
+    return null;
+}
+/** Parse a CSV amount ("$1,234.56", "-45.50", "(45.50)") → signed cents; null if unparseable or zero. */
+function parseBkAmountCents(raw: string): number | null {
+    let value = raw.trim().replace(/[$,\s]/g, "");
+    if (!value)
+        return null;
+    let negative = false;
+    if (/^\(.*\)$/.test(value)) { negative = true; value = value.slice(1, -1); }
+    if (value.startsWith("-")) { negative = true; value = value.slice(1); }
+    if (value.startsWith("+"))
+        value = value.slice(1);
+    if (!/^\d+(\.\d{1,2})?$/.test(value))
+        return null;
+    const cents = Math.round(Number(value) * 100);
+    if (!Number.isFinite(cents) || cents <= 0)
+        return null;
+    return negative ? -cents : cents;
+}
+function csvCell(value: string): string {
+    return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
 export const actionDefs = {
     authStatus: {
         request: z.object({ token: z.string().optional() }),
@@ -384,6 +511,309 @@ export const actionDefs = {
             const accountId = await accountFor(ctx.db, args.token);
             await ctx.db.delete(schema.meetings).where(and(eq(schema.meetings.id, args.id), eq(schema.meetings.accountId, accountId)));
             return { ok: true };
+        },
+    },
+    /** One business's books for one month: its categories, that month's
+     *  transactions (newest first), the month's Money in / out / Left over,
+     *  and the same split per category. First use seeds the defaults. */
+    listBooks: {
+        request: z.object({ token: z.string(), entity_id: z.number(), month: z.string().regex(bkMonthPattern).optional() }),
+        response: z.object({
+            entity_id: z.number(), month: z.string(),
+            categories: z.array(bkCategoryShape),
+            transactions: z.array(bkTransactionShape),
+            totals: bkTotalsShape,
+            category_totals: z.array(z.object({ category_id: z.number().nullable(), name: z.string(), kind: z.string().nullable(), in_cents: z.number(), out_cents: z.number() })),
+        }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; month?: string }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            await ensureBkCategories(ctx.db, accountId, args.entity_id);
+            const month = args.month ?? currentBkMonth();
+            const { start, end } = bkMonthRange(month);
+            const [categoryRows, txnRows] = await Promise.all([
+                ctx.db.select().from(schema.bkCategories).where(eq(schema.bkCategories.entityId, args.entity_id)).orderBy(asc(schema.bkCategories.sortOrder), asc(schema.bkCategories.name)),
+                ctx.db.select({ txn: schema.bkTransactions, categoryName: schema.bkCategories.name, categoryKind: schema.bkCategories.kind, receiptFilename: schema.documents.filename })
+                    .from(schema.bkTransactions)
+                    .leftJoin(schema.bkCategories, eq(schema.bkTransactions.categoryId, schema.bkCategories.id))
+                    .leftJoin(schema.documents, eq(schema.bkTransactions.receiptDocumentId, schema.documents.id))
+                    .where(and(eq(schema.bkTransactions.entityId, args.entity_id), eq(schema.bkTransactions.accountId, accountId), gte(schema.bkTransactions.txnDate, start), lt(schema.bkTransactions.txnDate, end)))
+                    .orderBy(desc(schema.bkTransactions.txnDate), desc(schema.bkTransactions.id)),
+            ]);
+            let inCents = 0;
+            let outCents = 0;
+            const byCategory = new Map<string, { category_id: number | null; name: string; kind: string | null; in_cents: number; out_cents: number }>();
+            const transactions = txnRows.map(({ txn, categoryName, receiptFilename }) => {
+                if (txn.direction === "in")
+                    inCents += txn.amountCents;
+                else
+                    outCents += txn.amountCents;
+                const key = txn.categoryId != null ? `c${txn.categoryId}` : "none";
+                const bucket = byCategory.get(key) ?? { category_id: txn.categoryId, name: categoryName ?? "No category", kind: null, in_cents: 0, out_cents: 0 };
+                if (txn.direction === "in")
+                    bucket.in_cents += txn.amountCents;
+                else
+                    bucket.out_cents += txn.amountCents;
+                byCategory.set(key, bucket);
+                return {
+                    id: txn.id, date: txn.txnDate, description: txn.description, amount_cents: txn.amountCents, direction: txn.direction,
+                    category_id: txn.categoryId, category_name: categoryName, status: txn.status,
+                    receipt_document_id: txn.receiptDocumentId, receipt_filename: receiptFilename, source: txn.source, note: txn.note,
+                };
+            });
+            const kindById = new Map(categoryRows.map((c) => [c.id, c.kind as string]));
+            const categoryTotals = [...byCategory.values()]
+                .map((b) => ({ ...b, kind: b.category_id != null ? kindById.get(b.category_id) ?? null : null }))
+                .sort((a, b) => (b.in_cents + b.out_cents) - (a.in_cents + a.out_cents));
+            return {
+                entity_id: args.entity_id, month,
+                categories: categoryRows.map((c) => ({ id: c.id, name: c.name, kind: c.kind, sort_order: c.sortOrder, archived: c.archived })),
+                transactions,
+                totals: { in_cents: inCents, out_cents: outCents, net_cents: inCents - outCents },
+                category_totals: categoryTotals,
+            };
+        },
+    },
+    createTransaction: {
+        request: z.object({ token: z.string(), entity_id: z.number(), date: z.string().regex(bkDatePattern), description: z.string().min(1).max(240), amount_cents: z.number().int().positive().max(2000000000), direction: z.enum(["in", "out"]), category_id: z.number().nullable().optional(), status: z.enum(["cleared", "pending"]).optional(), receipt_document_id: z.number().nullable().optional(), note: z.string().max(1000).optional() }),
+        response: z.object({ id: z.number() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; date: string; description: string; amount_cents: number; direction: "in" | "out"; category_id?: number | null; status?: "cleared" | "pending"; receipt_document_id?: number | null; note?: string }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            await ensureBkCategories(ctx.db, accountId, args.entity_id);
+            if (args.category_id != null)
+                await requireBkCategory(ctx.db, accountId, args.entity_id, args.category_id);
+            if (args.receipt_document_id != null)
+                await requireBkReceipt(ctx.db, accountId, args.entity_id, args.receipt_document_id);
+            const inserted = await ctx.db.insert(schema.bkTransactions).values({ accountId, entityId: args.entity_id, txnDate: args.date, description: args.description.trim(), amountCents: args.amount_cents, direction: args.direction, categoryId: args.category_id ?? null, status: args.status ?? "cleared", receiptDocumentId: args.receipt_document_id ?? null, source: "manual", note: args.note?.trim() || null }).returning({ id: schema.bkTransactions.id });
+            const row = inserted[0];
+            if (!row)
+                throw new Error("Could not save the transaction.");
+            return { id: row.id };
+        },
+    },
+    updateTransaction: {
+        request: z.object({ token: z.string(), id: z.number(), date: z.string().regex(bkDatePattern), description: z.string().min(1).max(240), amount_cents: z.number().int().positive().max(2000000000), direction: z.enum(["in", "out"]), category_id: z.number().nullable(), status: z.enum(["cleared", "pending"]), receipt_document_id: z.number().nullable(), note: z.string().max(1000).optional() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number; date: string; description: string; amount_cents: number; direction: "in" | "out"; category_id: number | null; status: "cleared" | "pending"; receipt_document_id: number | null; note?: string }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            const owned = await ctx.db.select({ entityId: schema.bkTransactions.entityId }).from(schema.bkTransactions).where(and(eq(schema.bkTransactions.id, args.id), eq(schema.bkTransactions.accountId, accountId))).limit(1);
+            const txn = owned[0];
+            if (!txn)
+                throw new Error("That transaction is not available.");
+            if (args.category_id != null)
+                await requireBkCategory(ctx.db, accountId, txn.entityId, args.category_id);
+            if (args.receipt_document_id != null)
+                await requireBkReceipt(ctx.db, accountId, txn.entityId, args.receipt_document_id);
+            await ctx.db.update(schema.bkTransactions).set({ txnDate: args.date, description: args.description.trim(), amountCents: args.amount_cents, direction: args.direction, categoryId: args.category_id, status: args.status, receiptDocumentId: args.receipt_document_id, note: args.note?.trim() || null, updatedAt: new Date() }).where(and(eq(schema.bkTransactions.id, args.id), eq(schema.bkTransactions.accountId, accountId)));
+            return { ok: true };
+        },
+    },
+    deleteTransaction: {
+        request: z.object({ token: z.string(), id: z.number() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            await ctx.db.delete(schema.bkTransactions).where(and(eq(schema.bkTransactions.id, args.id), eq(schema.bkTransactions.accountId, accountId)));
+            return { ok: true };
+        },
+    },
+    createCategory: {
+        request: z.object({ token: z.string(), entity_id: z.number(), name: z.string().min(1).max(80), kind: z.enum(bkKinds) }),
+        response: z.object({ id: z.number() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; name: string; kind: BkKind }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            await ensureBkCategories(ctx.db, accountId, args.entity_id);
+            const top = await ctx.db.select({ sortOrder: schema.bkCategories.sortOrder }).from(schema.bkCategories).where(eq(schema.bkCategories.entityId, args.entity_id)).orderBy(desc(schema.bkCategories.sortOrder)).limit(1);
+            const inserted = await ctx.db.insert(schema.bkCategories).values({ accountId, entityId: args.entity_id, name: args.name.trim(), kind: args.kind, sortOrder: (top[0]?.sortOrder ?? -1) + 1 }).returning({ id: schema.bkCategories.id });
+            const row = inserted[0];
+            if (!row)
+                throw new Error("Could not save the category.");
+            return { id: row.id };
+        },
+    },
+    updateCategory: {
+        request: z.object({ token: z.string(), id: z.number(), name: z.string().min(1).max(80).optional(), archived: z.boolean().optional() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number; name?: string; archived?: boolean }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            const owned = await ctx.db.select({ id: schema.bkCategories.id }).from(schema.bkCategories).where(and(eq(schema.bkCategories.id, args.id), eq(schema.bkCategories.accountId, accountId))).limit(1);
+            if (!owned.length)
+                throw new Error("That category is not available.");
+            const patch: Partial<{ name: string; archived: boolean }> = {};
+            if (args.name !== undefined)
+                patch.name = args.name.trim();
+            if (args.archived !== undefined)
+                patch.archived = args.archived;
+            if (Object.keys(patch).length)
+                await ctx.db.update(schema.bkCategories).set(patch).where(and(eq(schema.bkCategories.id, args.id), eq(schema.bkCategories.accountId, accountId)));
+            return { ok: true };
+        },
+    },
+    /** A category with transactions on it cannot be deleted (history would
+     *  lose its labels) — archive it instead; unused ones delete cleanly. */
+    deleteCategory: {
+        request: z.object({ token: z.string(), id: z.number() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            const owned = await ctx.db.select({ id: schema.bkCategories.id }).from(schema.bkCategories).where(and(eq(schema.bkCategories.id, args.id), eq(schema.bkCategories.accountId, accountId))).limit(1);
+            if (!owned.length)
+                throw new Error("That category is not available.");
+            const used = await ctx.db.select({ id: schema.bkTransactions.id }).from(schema.bkTransactions).where(eq(schema.bkTransactions.categoryId, args.id)).limit(1);
+            if (used.length)
+                throw new Error("That category is in use — archive it instead of deleting it.");
+            await ctx.db.delete(schema.bkCategories).where(and(eq(schema.bkCategories.id, args.id), eq(schema.bkCategories.accountId, accountId)));
+            return { ok: true };
+        },
+    },
+    /** Import a bank-style CSV (header row with date / description / amount
+     *  columns; an optional category column is matched by name). Negative
+     *  or parenthesized amounts become money out, positive become money
+     *  in. Rows that don't parse are counted as skipped, never guessed. */
+    importTransactionsCsv: {
+        request: z.object({ token: z.string(), entity_id: z.number(), csv: z.string().min(1).max(2000000) }),
+        response: z.object({ imported: z.number(), skipped: z.number() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; csv: string }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            await ensureBkCategories(ctx.db, accountId, args.entity_id);
+            const rows = parseCsvRows(args.csv);
+            const header = (rows[0] ?? []).map((c) => c.trim().toLowerCase());
+            const dateIdx = header.findIndex((c) => c.includes("date"));
+            const descIdx = header.findIndex((c) => c.includes("desc") || c.includes("memo") || c.includes("payee") || c.includes("name"));
+            const amountIdx = header.findIndex((c) => c.includes("amount"));
+            const categoryIdx = header.findIndex((c) => c.includes("categor"));
+            const statusIdx = header.findIndex((c) => c.includes("status"));
+            if (dateIdx < 0 || amountIdx < 0)
+                throw new Error("That CSV needs a header row with date and amount columns.");
+            const categoryRows = await ctx.db.select({ id: schema.bkCategories.id, name: schema.bkCategories.name }).from(schema.bkCategories).where(eq(schema.bkCategories.entityId, args.entity_id));
+            const categoryByName = new Map(categoryRows.map((c) => [c.name.trim().toLowerCase(), c.id]));
+            let imported = 0;
+            let skipped = 0;
+            const dataRows = rows.slice(1, 1001);
+            skipped += Math.max(0, rows.length - 1 - dataRows.length);
+            for (const row of dataRows) {
+                const date = normalizeBkDate(row[dateIdx] ?? "");
+                const description = descIdx >= 0 ? (row[descIdx] ?? "").trim() : "";
+                const signed = parseBkAmountCents(row[amountIdx] ?? "");
+                if (!date || !description || signed == null) {
+                    skipped += 1;
+                    continue;
+                }
+                const categoryName = categoryIdx >= 0 ? (row[categoryIdx] ?? "").trim().toLowerCase() : "";
+                const status = statusIdx >= 0 && (row[statusIdx] ?? "").trim().toLowerCase() === "pending" ? "pending" as const : "cleared" as const;
+                await ctx.db.insert(schema.bkTransactions).values({ accountId, entityId: args.entity_id, txnDate: date, description: description.slice(0, 240), amountCents: Math.abs(signed), direction: signed < 0 ? "out" : "in", categoryId: categoryName ? categoryByName.get(categoryName) ?? null : null, status, source: "csv", note: null });
+                imported += 1;
+            }
+            return { imported, skipped };
+        },
+    },
+    /** Per-entity totals by category for a month and a year, plus the
+     *  all-companies rollup. Archived businesses are left out, matching
+     *  the default Businesses views. */
+    booksSummary: {
+        request: z.object({ token: z.string(), month: z.string().regex(bkMonthPattern).optional(), year: z.number().int().min(2000).max(2100).optional() }),
+        response: z.object({
+            month: z.string(), year: z.number(),
+            entities: z.array(z.object({
+                entity_id: z.number(), entity_name: z.string(),
+                month_totals: bkTotalsShape, year_totals: bkTotalsShape,
+                categories: z.array(z.object({ category_id: z.number().nullable(), name: z.string(), kind: z.string().nullable(), month_in_cents: z.number(), month_out_cents: z.number(), year_in_cents: z.number(), year_out_cents: z.number() })),
+            })),
+            totals: z.object({ month: bkTotalsShape, year: bkTotalsShape }),
+        }),
+        async handler(ctx: Ctx, args: { token: string; month?: string; year?: number }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            const month = args.month ?? currentBkMonth();
+            const year = args.year ?? Number(month.slice(0, 4));
+            const mRange = bkMonthRange(month);
+            const yStart = `${year}-01-01`;
+            const yEnd = `${year + 1}-01-01`;
+            const from = mRange.start < yStart ? mRange.start : yStart;
+            const to = mRange.end > yEnd ? mRange.end : yEnd;
+            const [entityRows, txnRows] = await Promise.all([
+                ctx.db.select({ id: schema.entities.id, name: schema.entities.name }).from(schema.entities).where(and(eq(schema.entities.accountId, accountId), eq(schema.entities.archived, false))).orderBy(asc(schema.entities.name)),
+                ctx.db.select({ txn: schema.bkTransactions, categoryName: schema.bkCategories.name, categoryKind: schema.bkCategories.kind })
+                    .from(schema.bkTransactions)
+                    .leftJoin(schema.bkCategories, eq(schema.bkTransactions.categoryId, schema.bkCategories.id))
+                    .where(and(eq(schema.bkTransactions.accountId, accountId), gte(schema.bkTransactions.txnDate, from), lt(schema.bkTransactions.txnDate, to))),
+            ]);
+            type CatBucket = { category_id: number | null; name: string; kind: string | null; month_in_cents: number; month_out_cents: number; year_in_cents: number; year_out_cents: number };
+            const perEntity = new Map<number, { month: { in: number; out: number }; year: { in: number; out: number }; cats: Map<string, CatBucket> }>();
+            for (const e of entityRows)
+                perEntity.set(e.id, { month: { in: 0, out: 0 }, year: { in: 0, out: 0 }, cats: new Map() });
+            const rollup = { month: { in: 0, out: 0 }, year: { in: 0, out: 0 } };
+            for (const { txn, categoryName, categoryKind } of txnRows) {
+                const bucket = perEntity.get(txn.entityId);
+                if (!bucket)
+                    continue;
+                const inMonth = txn.txnDate >= mRange.start && txn.txnDate < mRange.end;
+                const inYear = txn.txnDate >= yStart && txn.txnDate < yEnd;
+                const key = txn.categoryId != null ? `c${txn.categoryId}` : "none";
+                const cat = bucket.cats.get(key) ?? { category_id: txn.categoryId, name: categoryName ?? "No category", kind: categoryKind, month_in_cents: 0, month_out_cents: 0, year_in_cents: 0, year_out_cents: 0 };
+                if (txn.direction === "in") {
+                    if (inMonth) { bucket.month.in += txn.amountCents; rollup.month.in += txn.amountCents; cat.month_in_cents += txn.amountCents; }
+                    if (inYear) { bucket.year.in += txn.amountCents; rollup.year.in += txn.amountCents; cat.year_in_cents += txn.amountCents; }
+                }
+                else {
+                    if (inMonth) { bucket.month.out += txn.amountCents; rollup.month.out += txn.amountCents; cat.month_out_cents += txn.amountCents; }
+                    if (inYear) { bucket.year.out += txn.amountCents; rollup.year.out += txn.amountCents; cat.year_out_cents += txn.amountCents; }
+                }
+                bucket.cats.set(key, cat);
+            }
+            const totalsOf = (t: { in: number; out: number }) => ({ in_cents: t.in, out_cents: t.out, net_cents: t.in - t.out });
+            return {
+                month, year,
+                entities: entityRows.map((e) => {
+                    const bucket = perEntity.get(e.id)!;
+                    return {
+                        entity_id: e.id, entity_name: e.name,
+                        month_totals: totalsOf(bucket.month), year_totals: totalsOf(bucket.year),
+                        categories: [...bucket.cats.values()].sort((a, b) => (b.month_in_cents + b.month_out_cents + b.year_in_cents + b.year_out_cents) - (a.month_in_cents + a.month_out_cents + a.year_in_cents + a.year_out_cents)),
+                    };
+                }),
+                totals: { month: totalsOf(rollup.month), year: totalsOf(rollup.year) },
+            };
+        },
+    },
+    /** The CPA handoff: one business's transactions as CSV over an optional
+     *  date range (both bounds inclusive), oldest first. Money in and
+     *  Money out are separate columns so the sheet reads without signs. */
+    exportBooksCsv: {
+        request: z.object({ token: z.string(), entity_id: z.number(), from: z.string().regex(bkDatePattern).optional(), to: z.string().regex(bkDatePattern).optional() }),
+        response: z.object({ csv: z.string(), filename: z.string() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; from?: string; to?: string }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            const entityRows = await ctx.db.select({ name: schema.entities.name }).from(schema.entities).where(eq(schema.entities.id, args.entity_id)).limit(1);
+            const conditions = [eq(schema.bkTransactions.entityId, args.entity_id), eq(schema.bkTransactions.accountId, accountId)];
+            if (args.from)
+                conditions.push(gte(schema.bkTransactions.txnDate, args.from));
+            if (args.to)
+                conditions.push(lt(schema.bkTransactions.txnDate, addUtcDays(args.to, 1)));
+            const rows = await ctx.db.select({ txn: schema.bkTransactions, categoryName: schema.bkCategories.name })
+                .from(schema.bkTransactions)
+                .leftJoin(schema.bkCategories, eq(schema.bkTransactions.categoryId, schema.bkCategories.id))
+                .where(and(...conditions))
+                .orderBy(asc(schema.bkTransactions.txnDate), asc(schema.bkTransactions.id));
+            const dollars = (cents: number) => (cents / 100).toFixed(2);
+            const lines = ["Date,Description,Category,Money in,Money out,Status,Source,Note"];
+            for (const { txn, categoryName } of rows) {
+                lines.push([
+                    txn.txnDate,
+                    csvCell(txn.description),
+                    csvCell(categoryName ?? ""),
+                    txn.direction === "in" ? dollars(txn.amountCents) : "",
+                    txn.direction === "out" ? dollars(txn.amountCents) : "",
+                    txn.status,
+                    txn.source,
+                    csvCell(txn.note ?? ""),
+                ].join(","));
+            }
+            const slug = (entityRows[0]?.name ?? "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "business";
+            return { csv: lines.join("\n"), filename: `kovala-books-${slug}.csv` };
         },
     },
     /**

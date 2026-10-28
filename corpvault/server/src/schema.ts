@@ -64,6 +64,34 @@ export const reminders = pgTable("reminders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
 });
 
+export const bkCategories = pgTable("bk_categories", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  entityId: integer("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: ["income", "expense", "contribution", "distribution"] }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  archived: boolean("archived").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+});
+
+export const bkTransactions = pgTable("bk_transactions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  entityId: integer("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  txnDate: text("txn_date").notNull(),
+  description: text("description").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  direction: text("direction", { enum: ["in", "out"] }).notNull(),
+  categoryId: integer("category_id").references(() => bkCategories.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["cleared", "pending"] }).notNull().default("cleared"),
+  receiptDocumentId: integer("receipt_document_id").references(() => documents.id, { onDelete: "set null" }),
+  source: text("source", { enum: ["manual", "csv"] }).notNull().default("manual"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+});
+
 export const meetings = pgTable("meetings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
