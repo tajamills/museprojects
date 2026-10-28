@@ -103,6 +103,26 @@ export const BF_PACK_DOWNLOAD_PATH = "/bf-pack-f111d5619e2e249b/captions-pack-90
 export const SUBSCRIBED_STATUSES = ["trialing", "active", "past_due"];
 
 /* ------------------------------------------------------------------ */
+/* Complimentary lifetime accounts (owner-granted)                     */
+/*                                                                     */
+/* These emails hold a gifted account: no Stripe subscription exists   */
+/* or is ever required, and no Stripe state may overwrite the grant.   */
+/* Billing reads and syncs short-circuit to "active" for them.         */
+/* COMP_EMAILS (comma-separated) can add more without a code change.   */
+/* ------------------------------------------------------------------ */
+
+const COMP_EMAILS_BUILTIN = ["tam@taminspires.com"];
+
+export function isCompEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  const extra = (process.env.COMP_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return COMP_EMAILS_BUILTIN.includes(normalized) || extra.includes(normalized);
+}
+
+/* ------------------------------------------------------------------ */
 /* X (Twitter) posting add-on: tiered + capped                         */
 /*                                                                     */
 /* Tiers are defined ONLY by the STRIPE_X_TIERS env config (one Stripe */
@@ -529,6 +549,16 @@ export async function syncBillingForCustomer(
     return { changed: false, baseLive: false, baseSubscription: null, xAddonTierPriceId: null };
   }
 
+  if (isCompEmail(user.email)) {
+    // Complimentary lifetime account: Stripe state never applies.
+    let changed = false;
+    if (user.subscriptionStatus !== "active") {
+      await db.update(schema.users).set({ subscriptionStatus: "active" }).where(eq(schema.users.id, user.id));
+      changed = true;
+    }
+    return { changed, baseLive: true, baseSubscription: null, xAddonTierPriceId: user.xAddonTierPriceId ?? null };
+  }
+
   const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
   const addonSubs = subs.filter(isXAddonSubscription);
   const baseCandidates = subs.filter((s) => !isXAddonSubscription(s));
@@ -710,6 +740,15 @@ export async function ensureXAddonSubscription(
  * caller falls back to the local state it already had.
  */
 export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Promise<boolean> {
+  if (isCompEmail(user.email)) {
+    // Complimentary lifetime account: hold "active" and never bind or
+    // consult a Stripe customer for this user.
+    if (user.subscriptionStatus !== "active") {
+      await db.update(schema.users).set({ subscriptionStatus: "active" }).where(eq(schema.users.id, user.id));
+      return true;
+    }
+    return false;
+  }
   if (!process.env.STRIPE_SECRET_KEY) return false;
   try {
     const stripe = getStripe();
