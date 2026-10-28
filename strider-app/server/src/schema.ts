@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, integer, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 // Ported from the original SQLite schema. Epoch-millisecond integer
 // timestamps became timestamptz columns (mode: "date"), so the action
@@ -12,6 +12,22 @@ export const users = pgTable("users", {
   passwordSalt: text("password_salt").notNull(),
   role: text("role").notNull().default("user"),
   demoMode: boolean("demo_mode").notNull().default(true),
+  /** Affiliate program (mirrors CryptoBagTracker): every account has a
+   *  referral code; referredBy records the code this account signed up
+   *  through. Earnings accrue a flat $4.44 per referred signup, credited
+   *  once at signup. affiliatePaidOut tracks what the owner has paid out
+   *  so the owner affiliate report can show the amount still owed.
+   *  referralCode is nullable in the table: accounts predating the
+   *  program get one generated lazily (see getWorkspace). */
+  referralCode: text("referral_code"),
+  referredBy: text("referred_by"),
+  affiliateReferralCount: integer("affiliate_referral_count").notNull().default(0),
+  affiliateEarnings: doublePrecision("affiliate_earnings").notNull().default(0),
+  affiliatePaidOut: doublePrecision("affiliate_paid_out").notNull().default(0),
+  payoutMethod: text("payout_method"),
+  payoutZelleInfo: text("payout_zelle_info"),
+  payoutTaxName: text("payout_tax_name"),
+  payoutTaxAddress: text("payout_tax_address"),
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull(),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),

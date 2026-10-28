@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { z } from "zod";
 import type { AppCtx } from "./ctx.js";
@@ -186,6 +186,16 @@ function adminEmails(): Set<string> {
 function isAdminEmail(email: string): boolean {
   return adminEmails().has(email.toLowerCase());
 }
+
+/** Affiliate program (mirrors CryptoBagTracker): a flat reward per
+ *  referred signup, credited once, at signup. */
+const AFFILIATE_REWARD_USD = 4.44;
+
+function newReferralCode(): string {
+  return `ZEP${crypto.randomUUID().replace(/-/g, "").slice(0, 7).toUpperCase()}`;
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** Server-wide demo mode. Default false (production): demo UI chrome is hidden. */
 export function isDemoMode(): boolean {
@@ -441,6 +451,7 @@ export const actions: Record<string, ActionDef> = {
       email: z.string().email().max(200),
       displayName: z.string().trim().min(2).max(80),
       password: z.string().min(8).max(200),
+      referralCode: z.string().max(40).optional(),
     }),
     async handler(ctx, args): Promise<z.infer<typeof authResponse>> {
       const email = args.email.trim().toLowerCase();
@@ -448,6 +459,14 @@ export const actions: Record<string, ActionDef> = {
       if (existing[0]) return { ok: false, message: "An account already uses that email. Sign in instead.", sessionToken: null, user: null };
       const salt = crypto.randomUUID();
       const role = isAdminEmail(email) ? "admin" : "user";
+      // Affiliate attribution (CBT mechanics): a valid referral code
+      // records who referred this account and credits the referrer once,
+      // here at signup — flat $4.44, one referral count.
+      const referredCode = args.referralCode?.trim().toUpperCase() || null;
+      const referrerRows = referredCode
+        ? await ctx.db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.referralCode, referredCode)).limit(1)
+        : [];
+      const referrer = referrerRows[0];
       const inserted = await ctx.db.insert(schema.users).values({
         email,
         displayName: args.displayName.trim(),
@@ -455,10 +474,18 @@ export const actions: Record<string, ActionDef> = {
         passwordSalt: salt,
         role,
         demoMode: true,
+        referralCode: newReferralCode(),
+        referredBy: referrer ? referredCode : null,
         createdAt: new Date(),
       }).returning({ id: schema.users.id });
       const row = inserted[0];
       if (!row) return { ok: false, message: "Your account could not be created. Try again.", sessionToken: null, user: null };
+      if (referrer) {
+        await ctx.db.update(schema.users).set({
+          affiliateReferralCount: sql`${schema.users.affiliateReferralCount} + 1`,
+          affiliateEarnings: sql`ROUND(${schema.users.affiliateEarnings} + ${AFFILIATE_REWARD_USD}, 2)`,
+        }).where(eq(schema.users.id, referrer.id));
+      }
       await initializeConfigs(ctx, row.id);
       const sessionToken = await createSession(ctx, row.id);
       return { ok: true, message: "Account created.", sessionToken, user: { id: row.id, email, displayName: args.displayName.trim(), demoMode: true, role } };
@@ -582,7 +609,46 @@ export const actions: Record<string, ActionDef> = {
     request: z.object({ sessionToken: z.string().min(1) }),
     async handler(ctx, args) {
       const user = await requireUser(ctx, args.sessionToken);
-      if (!user) return { authenticated: false, user: null, accounts: [], posts: [] };
+      if (!user) return { authenticated: false, user: null, affiliate: null, accounts: [], posts: [] };
+      // Affiliate state for the Affiliates view. Accounts created before
+      // the program launched have no referral code yet — generate one
+      // lazily here so every account always has a shareable link.
+      const affiliateRows = await ctx.db.select({
+        referralCode: schema.users.referralCode,
+        affiliateReferralCount: schema.users.affiliateReferralCount,
+        affiliateEarnings: schema.users.affiliateEarnings,
+        affiliatePaidOut: schema.users.affiliatePaidOut,
+        payoutMethod: schema.users.payoutMethod,
+        payoutZelleInfo: schema.users.payoutZelleInfo,
+        payoutTaxName: schema.users.payoutTaxName,
+        payoutTaxAddress: schema.users.payoutTaxAddress,
+      }).from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
+      const affiliateRow = affiliateRows[0];
+      let referralCode = affiliateRow?.referralCode ?? null;
+      if (!referralCode) {
+        referralCode = newReferralCode();
+        try {
+          await ctx.db.update(schema.users).set({ referralCode }).where(eq(schema.users.id, user.id));
+        } catch {
+          // Unique-index collision on the generated code (vanishingly
+          // unlikely) — re-read whatever is stored and use that.
+          const again = await ctx.db.select({ referralCode: schema.users.referralCode }).from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
+          referralCode = again[0]?.referralCode ?? referralCode;
+        }
+      }
+      const affiliateEarnings = affiliateRow?.affiliateEarnings ?? 0;
+      const affiliatePaidOut = affiliateRow?.affiliatePaidOut ?? 0;
+      const affiliate = {
+        referralCode,
+        referralCount: affiliateRow?.affiliateReferralCount ?? 0,
+        earnings: round2(affiliateEarnings),
+        paidOut: round2(affiliatePaidOut),
+        amountOwed: round2(affiliateEarnings - affiliatePaidOut),
+        payoutMethod: affiliateRow?.payoutMethod ?? null,
+        payoutZelleInfo: affiliateRow?.payoutZelleInfo ?? null,
+        payoutTaxName: affiliateRow?.payoutTaxName ?? null,
+        payoutTaxAddress: affiliateRow?.payoutTaxAddress ?? null,
+      };
       const accounts = await ctx.db.select().from(schema.connectedAccounts).where(eq(schema.connectedAccounts.userId, user.id)).orderBy(schema.connectedAccounts.id);
       const now = new Date();
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -637,6 +703,7 @@ export const actions: Record<string, ActionDef> = {
       return {
         authenticated: true,
         user: { id: user.id, email: user.email, displayName: user.displayName, demoMode: user.demoMode, role: user.role ?? "user" },
+        affiliate,
         xPostsUsed: xUsageRows[0]?.postCount ?? 0,
         xPostsCap: Number(process.env.X_MONTHLY_POST_CAP ?? "60") || 60,
         accounts: accounts.map((account) => ({
@@ -1793,6 +1860,145 @@ export const actions: Record<string, ActionDef> = {
           createdAt: row.createdAt.toISOString(),
         })),
       };
+    },
+  },
+
+  /**
+   * Save the signed-in affiliate's payout details (mirrors
+   * CryptoBagTracker's savePayoutInfo): how to pay them, plus the legal
+   * name/address needed for a 1099. Payouts themselves are processed
+   * quarterly by the owner from the affiliate report — this only stores
+   * where the money should go.
+   */
+  savePayoutInfo: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+      payoutMethod: z.enum(["zelle", "stripe"]),
+      payoutZelleInfo: z.string().max(128).optional(),
+      payoutTaxName: z.string().max(128),
+      payoutTaxAddress: z.string().max(256),
+    }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string }> {
+      const user = await requireUser(ctx, args.sessionToken);
+      if (!user) return { ok: false, message: "Sign in required." };
+      await ctx.db.update(schema.users).set({
+        payoutMethod: args.payoutMethod,
+        payoutZelleInfo: args.payoutMethod === "zelle" ? (args.payoutZelleInfo?.trim() || null) : null,
+        payoutTaxName: args.payoutTaxName.trim(),
+        payoutTaxAddress: args.payoutTaxAddress.trim(),
+      }).where(eq(schema.users.id, user.id));
+      return { ok: true, message: "Payout information saved." };
+    },
+  },
+
+  /**
+   * Admin-only: the owner affiliate report — every account that has
+   * earned referral credit, with the payout math done server-side
+   * (total earned, already paid, still owed, payout readiness). The
+   * client renders it and builds the CSV export. Follows the
+   * generatePasswordResetLink admin pattern.
+   */
+  getAffiliateReport: {
+    request: z.object({ sessionToken: z.string().min(1) }),
+    async handler(ctx, args): Promise<{
+      ok: boolean;
+      message: string;
+      totalEarned: number;
+      totalOwed: number;
+      affiliates: Array<{
+        id: number;
+        email: string;
+        displayName: string;
+        referralCode: string | null;
+        referralCount: number;
+        totalEarned: number;
+        paidOut: number;
+        amountOwed: number;
+        payoutMethod: string | null;
+        payoutZelleInfo: string | null;
+        payoutTaxName: string | null;
+        payoutTaxAddress: string | null;
+        hasPayoutInfo: boolean;
+        status: string;
+      }>;
+    }> {
+      const admin = await requireUser(ctx, args.sessionToken);
+      if (!admin || admin.role !== "admin") return { ok: false, message: "Admin access required.", totalEarned: 0, totalOwed: 0, affiliates: [] };
+      const rows = await ctx.db.select().from(schema.users)
+        .where(gt(schema.users.affiliateReferralCount, 0))
+        .orderBy(desc(schema.users.affiliateEarnings));
+      const affiliates = rows.map((row) => {
+        const totalEarned = round2(row.affiliateEarnings);
+        const paidOut = round2(row.affiliatePaidOut);
+        const amountOwed = round2(row.affiliateEarnings - row.affiliatePaidOut);
+        const hasPayoutInfo = Boolean(row.payoutMethod);
+        const status = amountOwed <= 0
+          ? "Paid in full"
+          : !hasPayoutInfo
+            ? "Owed — no payout info on file"
+            : paidOut > 0
+              ? "Partially paid"
+              : "Owed — ready to pay";
+        return {
+          id: row.id,
+          email: row.email,
+          displayName: row.displayName,
+          referralCode: row.referralCode,
+          referralCount: row.affiliateReferralCount,
+          totalEarned,
+          paidOut,
+          amountOwed,
+          payoutMethod: row.payoutMethod,
+          payoutZelleInfo: row.payoutZelleInfo,
+          payoutTaxName: row.payoutTaxName,
+          payoutTaxAddress: row.payoutTaxAddress,
+          hasPayoutInfo,
+          status,
+        };
+      });
+      return {
+        ok: true,
+        message: "",
+        totalEarned: round2(affiliates.reduce((sum, a) => sum + a.totalEarned, 0)),
+        totalOwed: round2(affiliates.reduce((sum, a) => sum + a.amountOwed, 0)),
+        affiliates,
+      };
+    },
+  },
+
+  /**
+   * Admin-only: record that the owner paid an affiliate some or all of
+   * what they were owed, so the report's amount-owed stays truthful.
+   * This records a payout made outside the app (Zelle/Stripe by hand);
+   * it never moves money itself.
+   */
+  recordAffiliatePayout: {
+    request: z.object({
+      sessionToken: z.string().min(1),
+      userId: z.number().int().positive(),
+      amount: z.number().positive().max(100000),
+    }),
+    async handler(ctx, args): Promise<{ ok: boolean; message: string; paidOut: number | null; amountOwed: number | null }> {
+      const admin = await requireUser(ctx, args.sessionToken);
+      if (!admin || admin.role !== "admin") return { ok: false, message: "Admin access required.", paidOut: null, amountOwed: null };
+      const rows = await ctx.db.select({
+        id: schema.users.id,
+        email: schema.users.email,
+        affiliateEarnings: schema.users.affiliateEarnings,
+        affiliatePaidOut: schema.users.affiliatePaidOut,
+      }).from(schema.users).where(eq(schema.users.id, args.userId)).limit(1);
+      const target = rows[0];
+      if (!target) return { ok: false, message: "That affiliate account was not found.", paidOut: null, amountOwed: null };
+      const owed = round2(target.affiliateEarnings - target.affiliatePaidOut);
+      const amount = round2(args.amount);
+      if (amount > owed + 0.001) {
+        return { ok: false, message: `That is more than the $${owed.toFixed(2)} currently owed to ${target.email}.`, paidOut: round2(target.affiliatePaidOut), amountOwed: owed };
+      }
+      await ctx.db.update(schema.users).set({
+        affiliatePaidOut: sql`ROUND(${schema.users.affiliatePaidOut} + ${amount}, 2)`,
+      }).where(eq(schema.users.id, target.id));
+      const paidOut = round2(target.affiliatePaidOut + amount);
+      return { ok: true, message: `Recorded $${amount.toFixed(2)} paid to ${target.email}.`, paidOut, amountOwed: round2(owed - amount) };
     },
   },
 

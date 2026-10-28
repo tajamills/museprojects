@@ -9,9 +9,21 @@ type AuthResult = BasicResult & {
   sessionToken: string | null;
   user: { id: number; email: string; displayName: string; demoMode: boolean; role: string } | null;
 };
+type AffiliateInfo = {
+  referralCode: string;
+  referralCount: number;
+  earnings: number;
+  paidOut: number;
+  amountOwed: number;
+  payoutMethod: string | null;
+  payoutZelleInfo: string | null;
+  payoutTaxName: string | null;
+  payoutTaxAddress: string | null;
+};
 type WorkspaceResult = {
   authenticated: boolean;
   user: { id: number; email: string; displayName: string; demoMode: boolean; role: string } | null;
+  affiliate: AffiliateInfo | null;
   accounts: Array<{ id: number; platform: Platform; handle: string; status: string; authMode: string; connectedAt: string; retryAfter: string | null }>;
   posts: Array<{
     id: number;
@@ -121,6 +133,28 @@ type BfWaitlistResult = {
   count: number;
   entries: Array<{ id: number; email: string; phone: string | null; firstName: string | null; createdAt: string }>;
 };
+type AffiliateReportResult = {
+  ok: boolean;
+  message: string;
+  totalEarned: number;
+  totalOwed: number;
+  affiliates: Array<{
+    id: number;
+    email: string;
+    displayName: string;
+    referralCode: string | null;
+    referralCount: number;
+    totalEarned: number;
+    paidOut: number;
+    amountOwed: number;
+    payoutMethod: string | null;
+    payoutZelleInfo: string | null;
+    payoutTaxName: string | null;
+    payoutTaxAddress: string | null;
+    hasPayoutInfo: boolean;
+    status: string;
+  }>;
+};
 type ClientApi = {
   getPublicConfig(args: Record<string, never>): Promise<PublicConfigResult>;
   joinBfWaitlist(args: { email: string; phone?: string; firstName?: string }): Promise<BfJoinResult>;
@@ -130,7 +164,7 @@ type ClientApi = {
   getBfPackAccess(args: { sessionId: string }): Promise<BfPackAccessResult>;
   getBfTripwireSales(args: { sessionToken: string }): Promise<BfTripwireSalesResult>;
   createDemoSession(args: Record<string, never>): Promise<AuthResult>;
-  signup(args: { email: string; displayName: string; password: string }): Promise<AuthResult>;
+  signup(args: { email: string; displayName: string; password: string; referralCode?: string }): Promise<AuthResult>;
   login(args: { email: string; password: string }): Promise<AuthResult>;
   requestPasswordReset(args: { email: string }): Promise<BasicResult>;
   resetPassword(args: { token: string; password: string }): Promise<BasicResult>;
@@ -139,6 +173,9 @@ type ClientApi = {
   deleteAccount(args: { sessionToken: string; confirmation: string }): Promise<BasicResult>;
   listBillingInvoices(args: { sessionToken: string }): Promise<BillingInvoicesResult>;
   getWorkspace(args: { sessionToken: string }): Promise<WorkspaceResult>;
+  savePayoutInfo(args: { sessionToken: string; payoutMethod: "zelle" | "stripe"; payoutZelleInfo?: string; payoutTaxName: string; payoutTaxAddress: string }): Promise<BasicResult>;
+  getAffiliateReport(args: { sessionToken: string }): Promise<AffiliateReportResult>;
+  recordAffiliatePayout(args: { sessionToken: string; userId: number; amount: number }): Promise<BasicResult & { paidOut: number | null; amountOwed: number | null }>;
   listPlatformSettings(args: { sessionToken: string }): Promise<SettingsResult>;
   savePlatformConfig(args: { sessionToken: string; platform: Platform; clientId: string; secretReference: string; clientSecret?: string }): Promise<BasicResult>;
   connectDemoAccount(args: { sessionToken: string; platform: Platform }): Promise<BasicResult>;

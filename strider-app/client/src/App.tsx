@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEven
 import { api, type ApiResponse } from "./api";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "x";
-type Page = "dashboard" | "post" | "accounts" | "billing" | "settings" | "help";
+type Page = "dashboard" | "post" | "accounts" | "billing" | "affiliates" | "settings" | "help";
 type Account = ApiResponse<typeof api, "getWorkspace">["accounts"][number];
 type Post = ApiResponse<typeof api, "getWorkspace">["posts"][number];
 type PlatformSetting = ApiResponse<typeof api, "listPlatformSettings">["platforms"][number];
@@ -114,6 +114,7 @@ const NAV: Array<{ id: Page; label: string; Icon: ComponentType }> = [
   { id: "post", label: "Post", Icon: IconCompose },
   { id: "accounts", label: "Accounts", Icon: IconUsers },
   { id: "billing", label: "Billing", Icon: IconCard },
+  { id: "affiliates", label: "Affiliates", Icon: IconShare },
   { id: "settings", label: "Settings", Icon: IconGear },
   { id: "help", label: "Help", Icon: IconHelp },
 ];
@@ -127,6 +128,7 @@ const PAGE_PATHS: Record<Page, string> = {
   post: "/post",
   accounts: "/accounts",
   billing: "/billing",
+  affiliates: "/affiliates",
   settings: "/settings",
   help: "/help",
 };
@@ -187,7 +189,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("signup");
   const [message, setMessage] = useState("");
   const demo = useMutation({ mutationFn: () => api.createDemoSession({}) });
-  const signup = useMutation({ mutationFn: (payload: { email: string; displayName: string; password: string }) => api.signup(payload) });
+  const signup = useMutation({ mutationFn: (payload: { email: string; displayName: string; password: string; referralCode?: string }) => api.signup(payload) });
+  const [storedRef] = useState(() => { try { return localStorage.getItem("zepostia-ref") ?? ""; } catch { return ""; } });
   const login = useMutation({ mutationFn: (payload: { email: string; password: string }) => api.login(payload) });
   const requestReset = useMutation({ mutationFn: (payload: { email: string }) => api.requestPasswordReset(payload) });
 
@@ -204,6 +207,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
         email: String(form.get("email") ?? ""),
         displayName: String(form.get("displayName") ?? ""),
         password: String(form.get("password") ?? ""),
+        referralCode: String(form.get("referralCode") ?? "").trim() || undefined,
       }));
     } else {
       finish(await login.mutateAsync({ email: String(form.get("email") ?? ""), password: String(form.get("password") ?? "") }));
@@ -369,6 +373,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
               {mode === "signup" && <label>Display name<input name="displayName" autoComplete="name" required minLength={2} placeholder="Your name" /></label>}
               <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
               <label>Password<input name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 8 : 1} placeholder="At least 8 characters" /></label>
+              {mode === "signup" && <label>Referral code (optional)<input name="referralCode" defaultValue={storedRef} onChange={(event) => { event.target.value = event.target.value.toUpperCase(); }} placeholder="ZEPXXXXXXX" autoComplete="off" /></label>}
               <button className="primary-button wide" type="submit" disabled={busy}>{busy ? "Working…" : mode === "signup" ? "Create account" : "Sign in"}</button>
             </form>
             {mode === "login" && <button className="text-button forgot-link" onClick={() => { setMode("forgot"); setMessage(""); }}>Forgot password?</button>}
@@ -1325,6 +1330,163 @@ function BfWaitlistAdmin({ token }: { token: string }) {
   );
 }
 
+type AffiliateData = {
+  referralCode: string;
+  referralCount: number;
+  earnings: number;
+  paidOut: number;
+  amountOwed: number;
+  payoutMethod: string | null;
+  payoutZelleInfo: string | null;
+  payoutTaxName: string | null;
+  payoutTaxAddress: string | null;
+};
+
+/**
+ * Affiliate program view (mirrors CryptoBagTracker's): the member's
+ * referral link and code, what they've earned, and the payout-details
+ * form. Earnings are a flat $4.44 per signup through the link, credited
+ * when the account is created; payouts are processed quarterly via the
+ * payout method on file.
+ */
+function AffiliatesPage({ affiliate, token }: { affiliate: AffiliateData | null; token: string }) {
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState("");
+  const [payoutMethod, setPayoutMethod] = useState<"zelle" | "stripe">(affiliate?.payoutMethod === "stripe" ? "stripe" : "zelle");
+  const [zelleInfo, setZelleInfo] = useState(affiliate?.payoutZelleInfo ?? "");
+  const [taxName, setTaxName] = useState(affiliate?.payoutTaxName ?? "");
+  const [taxAddress, setTaxAddress] = useState(affiliate?.payoutTaxAddress ?? "");
+  const [formMessage, setFormMessage] = useState("");
+  const link = affiliate ? `https://zepostia.com/?ref=${affiliate.referralCode}` : "";
+  const copy = async (kind: "link" | "code", value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+    } catch {
+      setCopied("");
+    }
+  };
+  const savePayout = useMutation({
+    mutationFn: () => api.savePayoutInfo({ sessionToken: token, payoutMethod, payoutZelleInfo: payoutMethod === "zelle" ? zelleInfo : undefined, payoutTaxName: taxName, payoutTaxAddress: taxAddress }),
+    onSuccess: (result) => {
+      setFormMessage(result.message);
+      if (result.ok) void queryClient.invalidateQueries({ queryKey: ["workspace", token] });
+    },
+    onError: (e) => setFormMessage(e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not save. Try again."),
+  });
+  if (!affiliate) return <div className="page-heading"><h1>Affiliates</h1><p>Your affiliate details could not be loaded.</p></div>;
+  return (
+    <>
+      <div className="page-heading"><h1>Affiliate program</h1><p>$4.44 for every signup. Share your link — when someone creates an account through it, you earn exactly $4.44, credited right away.</p></div>
+      <section className="settings-card">
+        <h2>Your referral link</h2>
+        <p className="secret-note">{link}</p>
+        <div className="admin-reset-row">
+          <button className="primary-button" onClick={() => void copy("link", link)}>{copied === "link" ? "Link copied" : "Copy referral link"}</button>
+          <button className="secondary-button" onClick={() => void copy("code", affiliate.referralCode)}>{copied === "code" ? "Code copied" : `Copy code ${affiliate.referralCode}`}</button>
+        </div>
+      </section>
+      <section className="stat-tiles" aria-label="Affiliate summary">
+        <div className="stat-tile"><span className="stat-bubble tint-green"><IconUsers /></span><div><strong>{affiliate.referralCount}</strong><span>signups</span></div></div>
+        <div className="stat-tile"><span className="stat-bubble tint-blue"><IconCard /></span><div><strong>${affiliate.earnings.toFixed(2)}</strong><span>earned</span></div></div>
+        <div className="stat-tile"><span className="stat-bubble tint-lav"><IconCheck /></span><div><strong>${affiliate.paidOut.toFixed(2)}</strong><span>paid out</span></div></div>
+        <div className="stat-tile"><span className="stat-bubble tint-green"><IconClock /></span><div><strong>${affiliate.amountOwed.toFixed(2)}</strong><span>still owed</span></div></div>
+      </section>
+      <section className="settings-card">
+        <h2>Payout information</h2>
+        <p className="secret-note">{affiliate.payoutMethod ? "Your payout information is on file. Payouts are processed quarterly via the payout method on file." : "Add your payout information to receive your earnings. Payouts are processed quarterly via the payout method on file."}</p>
+        <form onSubmit={(event) => { event.preventDefault(); savePayout.mutate(); }}>
+          <div className="field"><span>Payout method</span>
+            <div className="admin-reset-row">
+              <button type="button" className={payoutMethod === "zelle" ? "primary-button" : "secondary-button"} onClick={() => setPayoutMethod("zelle")}>Zelle</button>
+              <button type="button" className={payoutMethod === "stripe" ? "primary-button" : "secondary-button"} onClick={() => setPayoutMethod("stripe")}>Stripe</button>
+            </div>
+          </div>
+          {payoutMethod === "zelle" && <label>Zelle email or phone<input aria-label="Zelle email or phone" value={zelleInfo} onChange={(event) => setZelleInfo(event.target.value)} placeholder="you@example.com or +1 555 555 5555" required /></label>}
+          <label>Legal name (for 1099)<input aria-label="Legal name for 1099" value={taxName} onChange={(event) => setTaxName(event.target.value)} required /></label>
+          <label>Mailing address (for 1099)<input aria-label="Mailing address for 1099" value={taxAddress} onChange={(event) => setTaxAddress(event.target.value)} placeholder="Street, City, State ZIP" required /></label>
+          <button className="primary-button" type="submit" disabled={savePayout.isPending}>{savePayout.isPending ? "Saving…" : "Save payout information"}</button>
+        </form>
+        {formMessage && <p className="form-message" role="status">{formMessage}</p>}
+        <p className="secret-note">We need your legal name and mailing address to issue your 1099 tax form.</p>
+      </section>
+    </>
+  );
+}
+
+/**
+ * Admin-only affiliate report (Settings → Owner setup): every affiliate
+ * with the payout math from getAffiliateReport — referrals, total
+ * earned, already paid, still owed, payout details on file, and status —
+ * with a CSV export and a per-affiliate "record payout" control for
+ * payments the owner makes by hand each quarter. Follows the
+ * BfWaitlistAdmin pattern; the actions re-check the admin role
+ * server-side.
+ */
+function AffiliateReportAdmin({ token }: { token: string }) {
+  const queryClient = useQueryClient();
+  const [amounts, setAmounts] = useState<Record<number, string>>({});
+  const [rowMessage, setRowMessage] = useState<Record<number, string>>({});
+  const report = useQuery({ queryKey: ["affiliate-report", token], queryFn: () => api.getAffiliateReport({ sessionToken: token }) });
+  const rows = report.data?.affiliates ?? [];
+  const record = useMutation({
+    mutationFn: (args: { userId: number; amount: number }) => api.recordAffiliatePayout({ sessionToken: token, userId: args.userId, amount: args.amount }),
+    onSuccess: (result, args) => {
+      setRowMessage((prev) => ({ ...prev, [args.userId]: result.message }));
+      if (result.ok) void queryClient.invalidateQueries({ queryKey: ["affiliate-report", token] });
+    },
+    onError: (e, args) => setRowMessage((prev) => ({ ...prev, [args.userId]: e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not record. Try again." })),
+  });
+  const downloadCsv = () => {
+    const esc = (value: string | number | null) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      "email,display_name,referral_code,referrals,total_earned,paid_out,amount_owed,payout_method,payout_detail,tax_name,tax_address,status",
+      ...rows.map((row) => [esc(row.email), esc(row.displayName), esc(row.referralCode), esc(row.referralCount), esc(row.totalEarned.toFixed(2)), esc(row.paidOut.toFixed(2)), esc(row.amountOwed.toFixed(2)), esc(row.payoutMethod), esc(row.payoutZelleInfo), esc(row.payoutTaxName), esc(row.payoutTaxAddress), esc(row.status)].join(",")),
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "zepostia-affiliate-report.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <section className="settings-card admin-reset bf-admin">
+      <h2>Affiliate payouts (admin)</h2>
+      <p className="secret-note">
+        {report.isPending
+          ? "Loading the report…"
+          : report.data?.ok
+            ? `${rows.length} ${rows.length === 1 ? "affiliate" : "affiliates"} · $${report.data.totalEarned.toFixed(2)} earned all-time · $${report.data.totalOwed.toFixed(2)} still owed. Payouts are processed quarterly via each affiliate's method on file; record each payment here after you send it.`
+            : (report.data?.message ?? "The report could not be loaded.")}
+      </p>
+      {rows.length > 0 && (
+        <>
+          <div className="admin-reset-row">
+            <button className="secondary-button" onClick={downloadCsv}>Download CSV</button>
+          </div>
+          <div className="bf-entry-list">
+            {rows.map((row) => (
+              <div className="bf-entry" key={row.id}>
+                <strong>{row.email}</strong>
+                <span>{row.referralCount} {row.referralCount === 1 ? "signup" : "signups"} · earned ${row.totalEarned.toFixed(2)} · paid ${row.paidOut.toFixed(2)} · owed ${row.amountOwed.toFixed(2)}</span>
+                <span>{row.hasPayoutInfo ? `${row.payoutMethod === "stripe" ? "Stripe" : "Zelle"}${row.payoutZelleInfo ? ` · ${row.payoutZelleInfo}` : ""} · ${row.payoutTaxName ?? ""}` : "No payout info on file"} · {row.status}</span>
+                {row.amountOwed > 0 && (
+                  <span className="admin-reset-row">
+                    <input type="number" min="0.01" step="0.01" max={row.amountOwed} aria-label={`Payout amount for ${row.email}`} value={amounts[row.id] ?? row.amountOwed.toFixed(2)} onChange={(event) => setAmounts((prev) => ({ ...prev, [row.id]: event.target.value }))} />
+                    <button className="secondary-button" disabled={record.isPending} onClick={() => record.mutate({ userId: row.id, amount: Number(amounts[row.id] ?? row.amountOwed) })}>Record payout</button>
+                  </span>
+                )}
+                {rowMessage[row.id] && <span className="form-message" role="status">{rowMessage[row.id]}</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function Settings({ settings, token, user, metaConfigured, tiktokConfigured, youtubeConfigured, xConfigured, xPostsUsed, xPostsCap, tiktokPostsUsed, tiktokPostsCap, xVisible, onMessage, onSignOut, go }: { settings: PlatformSetting[]; token: string; user: { email: string; displayName: string; role: string }; metaConfigured: boolean; tiktokConfigured: boolean; youtubeConfigured: boolean; xConfigured: boolean; xPostsUsed: number; xPostsCap: number; tiktokPostsUsed: number; tiktokPostsCap: number; xVisible: boolean; onMessage: (message: string) => void; onSignOut: () => void; go: (page: Page) => void }) {
   const isAdmin = user.role === "admin";
   const [showCredentials, setShowCredentials] = useState(false);
@@ -1401,6 +1563,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
       <section className="settings-list">{settings.filter((setting) => (setting.platform !== "x" || xVisible) && (setting.platform !== "tiktok" || tiktokVisible)).map((setting) => <OwnerPlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
       <AdminResetTool token={token} />
       <BfWaitlistAdmin token={token} />
+      <AffiliateReportAdmin token={token} />
     </section>}
 
     {showCredentials && <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="How credentials work" onClick={() => setShowCredentials(false)}>
@@ -2402,6 +2565,7 @@ export function App() {
       {page === "post" && <PostPage accounts={data.accounts} posts={data.posts} token={sessionToken} onMessage={setToast} goAccounts={() => go("accounts")} xVisible={xVisible} />}
       {page === "accounts" && <Accounts accounts={data.accounts} token={sessionToken} onMessage={setToast} xVisible={xVisible} xNeedsTier={xNeedsTier} goBilling={() => go("billing")} goHelp={() => go("help")} />}
       {page === "billing" && <BillingPage token={sessionToken} onMessage={setToast} go={go} />}
+      {page === "affiliates" && <AffiliatesPage affiliate={data.affiliate} token={sessionToken} />}
       {page === "help" && <HelpPage go={go} xVisible={xVisible} />}
       {page === "settings" && <Settings settings={settings.data?.platforms ?? []} token={sessionToken} user={user} metaConfigured={settings.data?.metaConfigured ?? false} tiktokConfigured={settings.data?.tiktokConfigured ?? false} youtubeConfigured={settings.data?.youtubeConfigured ?? false} xConfigured={settings.data?.xConfigured ?? false} xPostsUsed={settings.data?.xPostsUsed ?? 0} xPostsCap={settings.data?.xPostsCap ?? 60} tiktokPostsUsed={settings.data?.tiktokPostsUsed ?? 0} tiktokPostsCap={settings.data?.tiktokPostsCap ?? 60} xVisible={xVisible} onMessage={setToast} onSignOut={signOut} go={go} />}
     </main>
