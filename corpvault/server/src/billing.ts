@@ -68,6 +68,9 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
 
 /** Copy a Stripe subscription's state onto the matching account row. */
 export async function syncSubscription(db: Db, subscription: Stripe.Subscription): Promise<void> {
+  // Bank Sync add-on subscriptions belong to their per-entity row, never
+  // to the account's base-plan fields.
+  if (await syncBankSyncAddon(db, subscription)) return;
   const customerId =
     typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const rows = await db
@@ -113,14 +116,18 @@ export async function syncBillingForCustomer(
   }
 
   const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
+  // Bank Sync add-on subscriptions are reconciled separately (per entity);
+  // they must never be mistaken for the base plan here.
+  const planSubs = subs.filter((s) => s.metadata?.addon !== "bank_sync");
+  if (!planSubs.length) return false;
   // Prefer a live subscription (the recorded one first, then any live
   // one — a re-subscription must win over a recorded-but-canceled
   // predecessor), falling back to the recorded / newest candidate.
   const chosen =
-    subs.find((s) => s.id === account.stripeSubscriptionId && SUBSCRIBED_STATUSES.includes(s.status)) ??
-    subs.find((s) => SUBSCRIBED_STATUSES.includes(s.status)) ??
-    subs.find((s) => s.id === account.stripeSubscriptionId) ??
-    subs[0] ??
+    planSubs.find((s) => s.id === account.stripeSubscriptionId && SUBSCRIBED_STATUSES.includes(s.status)) ??
+    planSubs.find((s) => SUBSCRIBED_STATUSES.includes(s.status)) ??
+    planSubs.find((s) => s.id === account.stripeSubscriptionId) ??
+    planSubs[0] ??
     null;
 
   const next = {
@@ -209,7 +216,146 @@ export async function reconcileSubscriptionFromStripe(db: Db, account: AccountRo
   }
 }
 
+/**
+ * Bank Sync add-on ($8.88/month per entity) — a SEPARATE Stripe
+ * subscription per business, identified by subscription metadata
+ * (addon='bank_sync', entityId). Its state mirrors onto bk_sync_addons
+ * exactly the way the base plan mirrors onto the accounts row: webhook
+ * first, throttled read-time reconcile as the repair path. The purchase
+ * flow exists only while STRIPE_BANK_SYNC_PRICE_ID is set; the owner
+ * creates that price in Stripe herself.
+ */
+/**
+ * Fallback Bank Sync price ID, used only when STRIPE_BANK_SYNC_PRICE_ID
+ * is not set in the environment. The product is "Kovala -Plaid- Bank
+ * Sync" (prod_VWflyMfG9ZCmEE), $8.88/month recurring, created by the
+ * owner in Stripe; this is its default price as read from the owner's
+ * Stripe dashboard (transcribed from a screen photo — the resolved ID
+ * is logged at server startup, and a "no such price" answer from Stripe
+ * at checkout is treated as a server config error, so a transcription
+ * slip is diagnosable instead of silently breaking purchases).
+ */
+export const BANK_SYNC_PRICE_ID_FALLBACK: string | null = "price_1UVbxVAXuTzNcQX7Ed0li4Iii";
+
+export function bankSyncPriceId(): string | null {
+  return process.env.STRIPE_BANK_SYNC_PRICE_ID || BANK_SYNC_PRICE_ID_FALLBACK;
+}
+
+type AddonRow = typeof schema.bkSyncAddons.$inferSelect;
+
+/**
+ * Upsert the per-entity add-on row from a Stripe subscription. Returns
+ * false when the subscription is not a bank-sync add-on (so callers can
+ * fall through to base-plan handling), true when it was routed here.
+ */
+export async function syncBankSyncAddon(db: Db, subscription: Stripe.Subscription): Promise<boolean> {
+  if (subscription.metadata?.addon !== "bank_sync") return false;
+  const entityId = Number(subscription.metadata?.entityId);
+  if (!entityId) return false;
+  const customerId =
+    typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  const rows = await db
+    .select()
+    .from(schema.accounts)
+    .where(eq(schema.accounts.stripeCustomerId, customerId))
+    .limit(1);
+  const account = rows[0];
+  if (!account) {
+    console.warn(`stripe webhook: no account found for customer ${customerId}`);
+    return true;
+  }
+  const values = {
+    accountId: account.id,
+    entityId,
+    stripeSubscriptionId: subscription.id,
+    stripeItemId: subscription.items?.data?.[0]?.id ?? null,
+    status: subscription.status,
+    currentPeriodEnd: periodEnd(subscription),
+    updatedAt: new Date(),
+  };
+  const existing = await db
+    .select({ id: schema.bkSyncAddons.id })
+    .from(schema.bkSyncAddons)
+    .where(eq(schema.bkSyncAddons.entityId, entityId))
+    .limit(1);
+  if (existing[0]) {
+    await db.update(schema.bkSyncAddons).set(values).where(eq(schema.bkSyncAddons.id, existing[0].id));
+  } else {
+    await db.insert(schema.bkSyncAddons).values(values);
+  }
+  return true;
+}
+
+/** Per-entity read-time reconcile throttle (same interval as accounts). */
+const lastAddonReconcileAtByEntity = new Map<number, number>();
+
+/**
+ * Read-time reconciliation for one entity's add-on, mirroring
+ * reconcileSubscriptionFromStripe: rebuild the local row from Stripe's
+ * actual subscriptions for the account's customer, so a completed
+ * add-on checkout stranded by a lost webhook is repaired on the next
+ * Books read. Never throws; falls back to the local row.
+ */
+export async function reconcileBankSyncAddon(
+  db: Db,
+  account: AccountRow,
+  entityId: number,
+): Promise<AddonRow | null> {
+  const readRow = async (): Promise<AddonRow | null> => {
+    const rows = await db
+      .select()
+      .from(schema.bkSyncAddons)
+      .where(eq(schema.bkSyncAddons.entityId, entityId))
+      .limit(1);
+    return rows[0] ?? null;
+  };
+  const current = await readRow();
+  const nowMs = Date.now();
+  const last = lastAddonReconcileAtByEntity.get(entityId) ?? 0;
+  if (nowMs - last < RECONCILE_MIN_INTERVAL_MS) return current;
+  if (!process.env.STRIPE_SECRET_KEY || !account.stripeCustomerId) return current;
+  lastAddonReconcileAtByEntity.set(entityId, nowMs);
+  try {
+    const stripe = getStripe();
+    const subs = (await stripe.subscriptions.list({ customer: account.stripeCustomerId, status: "all", limit: 20 })).data;
+    const mine = subs
+      .filter((s) => s.metadata?.addon === "bank_sync" && Number(s.metadata?.entityId) === entityId)
+      .sort((a, b) => b.created - a.created);
+    const chosen = mine.find((s) => SUBSCRIBED_STATUSES.includes(s.status)) ?? mine[0] ?? null;
+    if (chosen) {
+      await syncBankSyncAddon(db, chosen);
+    } else if (current && SUBSCRIBED_STATUSES.includes(current.status)) {
+      // Stripe shows no add-on subscription for this entity anymore (e.g.
+      // canceled in the Stripe portal with the webhook missed): pause it
+      // locally. The entity's imported transactions are never touched.
+      await db
+        .update(schema.bkSyncAddons)
+        .set({ status: "canceled", updatedAt: new Date() })
+        .where(eq(schema.bkSyncAddons.id, current.id));
+    }
+    return await readRow();
+  } catch (err) {
+    lastAddonReconcileAtByEntity.delete(entityId);
+    console.error(
+      `bank-sync reconcile failed for entity ${entityId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return current;
+  }
+}
+
+/**
+ * Sync entitlement for one entity: the owner's account is comped (the
+ * ADMIN_EMAILS pattern — admin role, never charged, never revenue);
+ * everyone else needs a live add-on subscription for that entity.
+ */
+export function bankSyncEntitled(addon: AddonRow | null, account: AccountRow): boolean {
+  if (account.role === "admin") return true;
+  return Boolean(addon && SUBSCRIBED_STATUSES.includes(addon.status));
+}
+
 async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<void> {
+  if (await syncBankSyncAddon(db, subscription)) return;
   const customerId =
     typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const rows = await db
@@ -233,6 +379,23 @@ async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<
 }
 
 async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
+  // A failed payment on a Bank Sync add-on pauses only that add-on.
+  const subRef = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
+  const subId = typeof subRef === "string" ? subRef : subRef?.id;
+  if (subId && process.env.STRIPE_SECRET_KEY) {
+    try {
+      const sub = await getStripe().subscriptions.retrieve(subId);
+      if (sub.metadata?.addon === "bank_sync") {
+        await db
+          .update(schema.bkSyncAddons)
+          .set({ status: "past_due", updatedAt: new Date() })
+          .where(eq(schema.bkSyncAddons.stripeSubscriptionId, subId));
+        return;
+      }
+    } catch {
+      // Fall through to the base-plan handling.
+    }
+  }
   const customerId =
     typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   if (!customerId) return;
@@ -270,7 +433,11 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
           .update(schema.accounts)
           .set({
             stripeCustomerId: customerId,
-            ...(subscriptionId ? { stripeSubscriptionId: subscriptionId } : {}),
+            // An add-on checkout must not rebind the account's recorded
+            // base-plan subscription; syncSubscription routes it below.
+            ...(subscriptionId && session.metadata?.addon !== "bank_sync"
+              ? { stripeSubscriptionId: subscriptionId }
+              : {}),
           })
           .where(eq(schema.accounts.id, accountId));
       }

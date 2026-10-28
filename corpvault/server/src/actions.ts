@@ -15,7 +15,7 @@ import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
-import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
+import { bankSyncEntitled, bankSyncPriceId, baseUrl, getStripe, reconcileBankSyncAddon, reconcileSubscriptionFromStripe } from "./billing.js";
 import { createPlaidLinkToken, decryptToken, encryptToken, exchangePlaidPublicToken, getPlaidAccounts, getPlaidBalances, getPlaidInstitutionName, plaidConfigured, removePlaidItem, syncPlaidTransactions, tokenEncryptionReady, type PlaidSyncTransaction } from "./plaid.js";
 
 export interface Ctx {
@@ -318,6 +318,15 @@ function requirePlaidReady(): void {
         throw new Error("Bank connections are not turned on for Kovala yet.");
     if (!tokenEncryptionReady())
         throw new Error("Bank connections are not fully configured on the server yet.");
+}
+/** The Bank Sync add-on gate ($8.88/mo per entity; the owner's admin
+ *  account is comped). Reconciles the entity's add-on row from Stripe
+ *  first, so a just-completed checkout counts even if its webhook is
+ *  still in flight. */
+async function requireBankSyncEntitled(db: Db, account: Awaited<ReturnType<typeof accountRecord>>, entityId: number): Promise<void> {
+    const addon = await reconcileBankSyncAddon(db, account, entityId);
+    if (!bankSyncEntitled(addon, account))
+        throw new Error("Bank sync is an $8.88/mo add-on for this business — turn it on to connect a bank. CSV import is always free.");
 }
 /** One Plaid transactions/sync pass for a connection: added rows insert,
  *  modified rows update in place, removed rows delete — all keyed by the
@@ -918,29 +927,47 @@ export const actionDefs = {
         },
     },
     /** Whether the optional bank connection can be offered at all (it is
-     *  configured server-side via PLAID_* env), plus this business's
-     *  connection state. The client renders the connect option only when
-     *  configured is true; an existing connection is always reported so
-     *  it can be synced or disconnected. */
+     *  configured server-side via PLAID_* env), this business's connection
+     *  state, and its Bank Sync add-on state ($8.88/mo per entity; the
+     *  owner's account is comped). The client renders the connect option
+     *  only when configured is true; an existing connection is always
+     *  reported so it can be synced or disconnected. */
     getBankConnection: {
         request: z.object({ token: z.string(), entity_id: z.number() }),
-        response: z.object({ configured: z.boolean(), connection: bkBankConnectionShape.nullable() }),
+        response: z.object({
+            configured: z.boolean(), connection: bkBankConnectionShape.nullable(),
+            sync: z.object({ available: z.boolean(), comped: z.boolean(), active: z.boolean(), status: z.string(), current_period_end: z.string().nullable() }),
+        }),
         async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
-            const accountId = await accountFor(ctx.db, args.token);
-            await requireBkEntity(ctx.db, accountId, args.entity_id);
-            const conn = await activeBkConnection(ctx.db, accountId, args.entity_id);
-            return { configured: plaidConfigured() && tokenEncryptionReady(), connection: conn ? bkConnectionPublic(conn) : null };
+            const account = await accountRecord(ctx.db, args.token);
+            await requireBkEntity(ctx.db, account.id, args.entity_id);
+            const conn = await activeBkConnection(ctx.db, account.id, args.entity_id);
+            const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
+            const comped = account.role === "admin";
+            return {
+                configured: plaidConfigured() && tokenEncryptionReady(),
+                connection: conn ? bkConnectionPublic(conn) : null,
+                sync: {
+                    available: Boolean(bankSyncPriceId()),
+                    comped,
+                    active: bankSyncEntitled(addon, account),
+                    status: comped ? "comped" : addon?.status ?? "none",
+                    current_period_end: addon?.currentPeriodEnd ? addon.currentPeriodEnd.toISOString() : null,
+                },
+            };
         },
     },
-    /** Step 1 of connecting: a Plaid Link token for this business. */
+    /** Step 1 of connecting: a Plaid Link token for this business.
+     *  Requires the entity's Bank Sync add-on (or the comped owner). */
     createPlaidLinkToken: {
         request: z.object({ token: z.string(), entity_id: z.number() }),
         response: z.object({ link_token: z.string() }),
         async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
-            const accountId = await accountFor(ctx.db, args.token);
-            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            const account = await accountRecord(ctx.db, args.token);
+            await requireBkEntity(ctx.db, account.id, args.entity_id);
             requirePlaidReady();
-            const { linkToken } = await createPlaidLinkToken(String(accountId));
+            await requireBankSyncEntitled(ctx.db, account, args.entity_id);
+            const { linkToken } = await createPlaidLinkToken(String(account.id));
             return { link_token: linkToken };
         },
     },
@@ -952,9 +979,11 @@ export const actionDefs = {
         request: z.object({ token: z.string(), entity_id: z.number(), public_token: z.string().min(1).max(500), institution_name: z.string().max(160).optional() }),
         response: z.object({ connection: bkBankConnectionShape, added: z.number(), updated: z.number(), removed: z.number() }),
         async handler(ctx: Ctx, args: { token: string; entity_id: number; public_token: string; institution_name?: string }) {
-            const accountId = await accountFor(ctx.db, args.token);
+            const account = await accountRecord(ctx.db, args.token);
+            const accountId = account.id;
             await requireBkEntity(ctx.db, accountId, args.entity_id);
             requirePlaidReady();
+            await requireBankSyncEntitled(ctx.db, account, args.entity_id);
             const exchanged = await exchangePlaidPublicToken(args.public_token);
             const previous = await activeBkConnection(ctx.db, accountId, args.entity_id);
             if (previous) {
@@ -980,17 +1009,22 @@ export const actionDefs = {
         },
     },
     /** Manual sync ("Sync now", and the Books screen fires it once on
-     *  load when a connection is active). */
+     *  load when a connection is active). A lapsed add-on pauses sync —
+     *  the connection and its imported transactions stay untouched. */
     syncBankConnection: {
         request: z.object({ token: z.string(), entity_id: z.number() }),
         response: z.object({ added: z.number(), updated: z.number(), removed: z.number(), last_synced_at: z.string().nullable() }),
         async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
-            const accountId = await accountFor(ctx.db, args.token);
+            const account = await accountRecord(ctx.db, args.token);
+            const accountId = account.id;
             await requireBkEntity(ctx.db, accountId, args.entity_id);
-            requirePlaidReady();
             const conn = await activeBkConnection(ctx.db, accountId, args.entity_id);
             if (!conn)
                 throw new Error("No bank is connected to this business.");
+            requirePlaidReady();
+            const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
+            if (!bankSyncEntitled(addon, account))
+                throw new Error("Bank sync is paused for this business — the add-on is inactive. Your imported transactions are still in your books.");
             const result = await syncBkConnection(ctx.db, accountId, conn);
             const fresh = await activeBkConnection(ctx.db, accountId, args.entity_id);
             return { ...result, last_synced_at: fresh?.lastSyncedAt ? fresh.lastSyncedAt.toISOString() : null };
@@ -1018,6 +1052,88 @@ export const actionDefs = {
             await ctx.db.update(schema.bkBankConnections).set({ status: "revoked", updatedAt: new Date() }).where(eq(schema.bkBankConnections.id, conn.id));
             if (args.delete_transactions)
                 await ctx.db.delete(schema.bkTransactions).where(and(eq(schema.bkTransactions.entityId, args.entity_id), eq(schema.bkTransactions.accountId, accountId), eq(schema.bkTransactions.source, "plaid")));
+            return { ok: true };
+        },
+    },
+    /**
+     * Start a Stripe Checkout for one business's Bank Sync add-on
+     * ($8.88/month, its own subscription, metadata addon='bank_sync' +
+     * entityId so the webhook and reconcile route it to the per-entity
+     * row). Exists only while STRIPE_BANK_SYNC_PRICE_ID is configured.
+     * The owner's account is comped and never reaches a checkout.
+     */
+    createBankSyncCheckout: {
+        request: z.object({ token: z.string(), entity_id: z.number() }),
+        response: z.object({ url: z.string() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number }): Promise<{ url: string }> {
+            const account = await accountRecord(ctx.db, args.token);
+            await requireBkEntity(ctx.db, account.id, args.entity_id);
+            const priceId = bankSyncPriceId();
+            if (!priceId)
+                throw new Error("Bank sync isn't available yet.");
+            if (account.role === "admin")
+                throw new Error("Bank sync is included on your account — no checkout needed.");
+            const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
+            if (bankSyncEntitled(addon, account))
+                throw new Error("Bank sync is already on for this business.");
+            const stripe = getStripe();
+            let customerId = account.stripeCustomerId;
+            if (!customerId) {
+                const customer = await stripe.customers.create({
+                    email: account.email,
+                    metadata: { accountId: String(account.id) },
+                });
+                customerId = customer.id;
+                await ctx.db.update(schema.accounts).set({ stripeCustomerId: customerId }).where(eq(schema.accounts.id, account.id));
+            }
+            const url = baseUrl(ctx.origin);
+            let sessionUrl: string | null = null;
+            try {
+                const session = await stripe.checkout.sessions.create({
+                    mode: "subscription",
+                    customer: customerId,
+                    client_reference_id: String(account.id),
+                    metadata: { addon: "bank_sync", accountId: String(account.id), entityId: String(args.entity_id) },
+                    subscription_data: { metadata: { addon: "bank_sync", accountId: String(account.id), entityId: String(args.entity_id) } },
+                    line_items: [{ price: priceId, quantity: 1 }],
+                    success_url: `${url}/?banksync=success`,
+                    cancel_url: `${url}/?banksync=cancelled`,
+                });
+                sessionUrl = session.url;
+            }
+            catch (err) {
+                // A "no such price" answer means the configured price ID
+                // (env var or the BANK_SYNC_PRICE_ID_FALLBACK constant,
+                // transcribed from the owner's dashboard) doesn't exist
+                // in Stripe — a SERVER config error, not the customer's
+                // mistake. Log the resolved ID and show a support state.
+                const e = err as { code?: string; param?: string; message?: string };
+                if ((e.code === "resource_missing" && /price/i.test(e.param ?? "")) || /no such price/i.test(e.message ?? "")) {
+                    console.error(`bank sync checkout CONFIG error: resolved price ${priceId} was rejected by Stripe:`, err);
+                    throw new Error("Bank sync isn't set up correctly on the server yet — please contact support.");
+                }
+                throw err;
+            }
+            if (!sessionUrl)
+                throw new Error("Could not start checkout. Try again.");
+            return { url: sessionUrl };
+        },
+    },
+    /** Turn one business's Bank Sync add-on off: cancel its Stripe
+     *  subscription and pause sync locally right away (the webhook and
+     *  reconcile land the same state). Imported transactions stay. */
+    cancelBankSyncAddon: {
+        request: z.object({ token: z.string(), entity_id: z.number() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; entity_id: number }): Promise<z.infer<typeof okResponse>> {
+            const account = await accountRecord(ctx.db, args.token);
+            await requireBkEntity(ctx.db, account.id, args.entity_id);
+            const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
+            if (!addon?.stripeSubscriptionId)
+                throw new Error("Bank sync is not on for this business.");
+            const stripe = getStripe();
+            await stripe.subscriptions.cancel(addon.stripeSubscriptionId);
+            await ctx.db.update(schema.bkSyncAddons).set({ status: "canceled", updatedAt: new Date() }).where(eq(schema.bkSyncAddons.id, addon.id));
             return { ok: true };
         },
     },

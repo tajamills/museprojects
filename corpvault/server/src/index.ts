@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import { createDb, runMigrations, type Db } from "./db.js";
 import { actionDefs, type ActionName, type Ctx } from "./actions.js";
 import { createLocalBlobStore, resolveBlobPath } from "./storage.js";
-import { stripeWebhookHandler } from "./billing.js";
+import { bankSyncPriceId, stripeWebhookHandler } from "./billing.js";
 import * as schema from "./schema.js";
 
 export const DATA_DIR =
@@ -145,6 +145,13 @@ export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
 async function main(): Promise<void> {
   const { db, pool } = createDb();
   await runMigrations(pool);
+  // Log the resolved Bank Sync price ID at startup: it was transcribed
+  // from a photo of the owner's Stripe dashboard, so if purchases ever
+  // fail with "no such price", the exact ID the server is using is in
+  // the logs (see the config-error branch in createBankSyncCheckout).
+  console.log(
+    `kovala bank sync add-on price: ${bankSyncPriceId() ?? "(not configured — purchase flow hidden)"} (env override: ${process.env.STRIPE_BANK_SYNC_PRICE_ID ? "set" : "unset"})`,
+  );
   const app = createApp(db, DATA_DIR);
   const port = Number(process.env.PORT ?? 3000);
   app.listen(port, () => {

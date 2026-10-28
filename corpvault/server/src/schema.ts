@@ -111,6 +111,19 @@ export const bkBankConnections = pgTable("bk_bank_connections", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
 });
 
+export const bkSyncAddons = pgTable("bk_sync_addons", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  entityId: integer("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeItemId: text("stripe_item_id"),
+  /** Mirrors the Stripe subscription status (active | past_due | canceled | …). */
+  status: text("status").notNull().default("none"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+});
+
 export const meetings = pgTable("meetings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),

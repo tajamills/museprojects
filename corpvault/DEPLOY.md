@@ -13,6 +13,7 @@ built React client.
 | `DATA_DIR` | no | `./data` | Directory where uploaded documents are stored on local disk. **Mount a Railway volume at this path** (e.g. `/app/data`) so uploads survive redeploys. |
 | `PORT` | no | `3000` | Railway injects `PORT` automatically. |
 | `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` | no | — | Optional Books bank connections (Phase 2, read-only Plaid). The connect option appears in Books ONLY when all three are set (`PLAID_ENV` = `sandbox` or `production`). |
+| `STRIPE_BANK_SYNC_PRICE_ID` | no | — | Bank Sync add-on price ($8.88/mo per business; product "Kovala -Plaid- Bank Sync", prod_VWflyMfG9ZCmEE). The purchase flow appears only when a price ID resolves: this env var first, else the `BANK_SYNC_PRICE_ID_FALLBACK` constant in `server/src/billing.ts`. The owner's admin account is comped and never checks out. |
 | `TOKEN_ENCRYPTION_KEY` | no | — | 64 hex chars (`openssl rand -hex 32`). Required alongside the Plaid vars: Plaid access tokens are stored AES-256-GCM encrypted under this key (same scheme as Zepostia). Never rotate casually — stored tokens become unreadable. |
 
 See `.env.example` for a copy-paste template.
