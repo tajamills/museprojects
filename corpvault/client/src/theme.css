@@ -484,3 +484,12 @@
 .cat-add{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}
 .cat-add-btn{white-space:nowrap}
 @media (max-width:680px){.books-nums strong{font-size:17px}.books-month-label{min-width:0;font-size:15px}.txn-row{grid-template-columns:auto 38px minmax(0,1fr) auto;gap:9px}.cat-add{grid-template-columns:1fr}.cat-add-btn{width:100%}}
+/* Bank connection card (2026-10-28, Books Phase 2) — same raised card and
+   6px buttons; it exists only when the server reports Plaid configured, so
+   these styles are inert in an unconfigured workspace. */
+.bank-card .bank-copy{margin:2px 0 14px}
+.bank-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.bank-accounts{margin-top:2px}
+.bank-confirm{margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+.bank-confirm p{margin:0;font-size:14px;line-height:1.5}
+.bank-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}

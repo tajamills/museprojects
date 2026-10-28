@@ -12,6 +12,8 @@ built React client.
 | `DATABASE_URL` | **yes** | — | Postgres connection string. Add Railway's **Postgres plugin** to the service and Railway provides this automatically as a service variable. The server refuses to boot without it. |
 | `DATA_DIR` | no | `./data` | Directory where uploaded documents are stored on local disk. **Mount a Railway volume at this path** (e.g. `/app/data`) so uploads survive redeploys. |
 | `PORT` | no | `3000` | Railway injects `PORT` automatically. |
+| `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` | no | — | Optional Books bank connections (Phase 2, read-only Plaid). The connect option appears in Books ONLY when all three are set (`PLAID_ENV` = `sandbox` or `production`). |
+| `TOKEN_ENCRYPTION_KEY` | no | — | 64 hex chars (`openssl rand -hex 32`). Required alongside the Plaid vars: Plaid access tokens are stored AES-256-GCM encrypted under this key (same scheme as Zepostia). Never rotate casually — stored tokens become unreadable. |
 
 See `.env.example` for a copy-paste template.
 

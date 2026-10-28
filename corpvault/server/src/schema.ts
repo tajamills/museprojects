@@ -86,8 +86,27 @@ export const bkTransactions = pgTable("bk_transactions", {
   categoryId: integer("category_id").references(() => bkCategories.id, { onDelete: "set null" }),
   status: text("status", { enum: ["cleared", "pending"] }).notNull().default("cleared"),
   receiptDocumentId: integer("receipt_document_id").references(() => documents.id, { onDelete: "set null" }),
-  source: text("source", { enum: ["manual", "csv"] }).notNull().default("manual"),
+  source: text("source", { enum: ["manual", "csv", "plaid"] }).notNull().default("manual"),
+  externalId: text("external_id"),
   note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+});
+
+export const bkBankConnections = pgTable("bk_bank_connections", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  entityId: integer("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  plaidItemId: text("plaid_item_id").notNull(),
+  /** AES-256-GCM encrypted Plaid access token (see server/src/plaid.ts).
+   *  Never selected into any client-facing response. */
+  accessTokenEnc: text("access_token_enc").notNull(),
+  institutionName: text("institution_name"),
+  /** JSON: [{account_id, name, mask, balance_cents}] refreshed at each sync. */
+  accountsJson: text("accounts_json"),
+  transactionsCursor: text("transactions_cursor"),
+  status: text("status", { enum: ["active", "revoked"] }).notNull().default("active"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
 });

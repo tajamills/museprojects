@@ -16,6 +16,7 @@ import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
+import { createPlaidLinkToken, decryptToken, encryptToken, exchangePlaidPublicToken, getPlaidAccounts, getPlaidBalances, getPlaidInstitutionName, plaidConfigured, removePlaidItem, syncPlaidTransactions, tokenEncryptionReady, type PlaidSyncTransaction } from "./plaid.js";
 
 export interface Ctx {
   db: Db;
@@ -286,6 +287,106 @@ function parseBkAmountCents(raw: string): number | null {
 }
 function csvCell(value: string): string {
     return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+// --- Bank connections (Phase 2, Plaid — read-only, opt-in per business) ----
+const bkBankConnectionShape = z.object({
+    id: z.number(), institution_name: z.string().nullable(),
+    accounts: z.array(z.object({ name: z.string(), mask: z.string().nullable(), balance_cents: z.number().nullable() })),
+    status: z.string(), last_synced_at: z.string().nullable(),
+});
+type BkConnectionRow = typeof schema.bkBankConnections.$inferSelect;
+/** The client-facing shape of a connection. The encrypted access token is
+ *  deliberately NOT part of it — it never leaves the server. */
+function bkConnectionPublic(row: BkConnectionRow): z.infer<typeof bkBankConnectionShape> {
+    let accounts: { name: string; mask: string | null; balance_cents: number | null }[] = [];
+    if (row.accountsJson) {
+        try {
+            const parsed = JSON.parse(row.accountsJson) as { name?: string; mask?: string | null; balance_cents?: number | null }[];
+            if (Array.isArray(parsed))
+                accounts = parsed.map((a) => ({ name: a.name ?? "Account", mask: a.mask ?? null, balance_cents: a.balance_cents ?? null }));
+        }
+        catch { accounts = []; }
+    }
+    return { id: row.id, institution_name: row.institutionName, accounts, status: row.status, last_synced_at: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null };
+}
+async function activeBkConnection(db: Db, accountId: number, entityId: number): Promise<BkConnectionRow | null> {
+    const rows = await db.select().from(schema.bkBankConnections).where(and(eq(schema.bkBankConnections.entityId, entityId), eq(schema.bkBankConnections.accountId, accountId), eq(schema.bkBankConnections.status, "active"))).limit(1);
+    return rows[0] ?? null;
+}
+function requirePlaidReady(): void {
+    if (!plaidConfigured())
+        throw new Error("Bank connections are not turned on for Kovala yet.");
+    if (!tokenEncryptionReady())
+        throw new Error("Bank connections are not fully configured on the server yet.");
+}
+/** One Plaid transactions/sync pass for a connection: added rows insert,
+ *  modified rows update in place, removed rows delete — all keyed by the
+ *  Plaid transaction_id in external_id, so re-syncs never duplicate. A
+ *  pending transaction that posts arrives as an added row pointing back at
+ *  the pending row's id (pending_transaction_id): it UPDATES that row and
+ *  adopts the posted id instead of creating a second row. Plaid's sign
+ *  convention is positive = money out of the account. Balances refresh
+ *  alongside the pass. */
+async function syncBkConnection(db: Db, accountId: number, conn: BkConnectionRow): Promise<{ added: number; updated: number; removed: number }> {
+    const accessToken = decryptToken(conn.accessTokenEnc);
+    let cursor = conn.transactionsCursor ?? undefined;
+    let added = 0;
+    let updated = 0;
+    let removed = 0;
+    const upsert = async (t: PlaidSyncTransaction): Promise<"added" | "updated"> => {
+        const values = {
+            txnDate: t.date,
+            description: (t.name || "Bank transaction").slice(0, 240),
+            amountCents: Math.max(1, Math.round(Math.abs(t.amount) * 100)),
+            direction: t.amount > 0 ? "out" as const : "in" as const,
+            status: t.pending ? "pending" as const : "cleared" as const,
+        };
+        const byPosted = await db.select({ id: schema.bkTransactions.id }).from(schema.bkTransactions).where(and(eq(schema.bkTransactions.entityId, conn.entityId), eq(schema.bkTransactions.externalId, t.transaction_id))).limit(1);
+        if (byPosted[0]) {
+            await db.update(schema.bkTransactions).set({ ...values, updatedAt: new Date() }).where(eq(schema.bkTransactions.id, byPosted[0].id));
+            return "updated";
+        }
+        if (t.pending_transaction_id) {
+            const byPending = await db.select({ id: schema.bkTransactions.id }).from(schema.bkTransactions).where(and(eq(schema.bkTransactions.entityId, conn.entityId), eq(schema.bkTransactions.externalId, t.pending_transaction_id))).limit(1);
+            if (byPending[0]) {
+                await db.update(schema.bkTransactions).set({ ...values, externalId: t.transaction_id, updatedAt: new Date() }).where(eq(schema.bkTransactions.id, byPending[0].id));
+                return "updated";
+            }
+        }
+        await db.insert(schema.bkTransactions).values({ accountId, entityId: conn.entityId, ...values, categoryId: null, receiptDocumentId: null, source: "plaid", externalId: t.transaction_id, note: null });
+        return "added";
+    };
+    for (let page = 0; page < 10; page += 1) {
+        const res = await syncPlaidTransactions(accessToken, cursor);
+        for (const t of res.added) {
+            if ((await upsert(t)) === "added")
+                added += 1;
+            else
+                updated += 1;
+        }
+        for (const t of res.modified) {
+            if ((await upsert(t)) === "added")
+                added += 1;
+            else
+                updated += 1;
+        }
+        for (const r of res.removed) {
+            const gone = await db.delete(schema.bkTransactions).where(and(eq(schema.bkTransactions.entityId, conn.entityId), eq(schema.bkTransactions.externalId, r.transaction_id))).returning({ id: schema.bkTransactions.id });
+            removed += gone.length;
+        }
+        cursor = res.nextCursor;
+        if (!res.hasMore)
+            break;
+    }
+    let accountsJson = conn.accountsJson;
+    try {
+        const accounts = await getPlaidBalances(accessToken);
+        if (accounts.length)
+            accountsJson = JSON.stringify(accounts);
+    }
+    catch { /* keep the last known balances */ }
+    await db.update(schema.bkBankConnections).set({ transactionsCursor: cursor ?? null, accountsJson, lastSyncedAt: new Date(), updatedAt: new Date() }).where(eq(schema.bkBankConnections.id, conn.id));
+    return { added, updated, removed };
 }
 export const actionDefs = {
     authStatus: {
@@ -814,6 +915,110 @@ export const actionDefs = {
             }
             const slug = (entityRows[0]?.name ?? "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "business";
             return { csv: lines.join("\n"), filename: `kovala-books-${slug}.csv` };
+        },
+    },
+    /** Whether the optional bank connection can be offered at all (it is
+     *  configured server-side via PLAID_* env), plus this business's
+     *  connection state. The client renders the connect option only when
+     *  configured is true; an existing connection is always reported so
+     *  it can be synced or disconnected. */
+    getBankConnection: {
+        request: z.object({ token: z.string(), entity_id: z.number() }),
+        response: z.object({ configured: z.boolean(), connection: bkBankConnectionShape.nullable() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            const conn = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            return { configured: plaidConfigured() && tokenEncryptionReady(), connection: conn ? bkConnectionPublic(conn) : null };
+        },
+    },
+    /** Step 1 of connecting: a Plaid Link token for this business. */
+    createPlaidLinkToken: {
+        request: z.object({ token: z.string(), entity_id: z.number() }),
+        response: z.object({ link_token: z.string() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            requirePlaidReady();
+            const { linkToken } = await createPlaidLinkToken(String(accountId));
+            return { link_token: linkToken };
+        },
+    },
+    /** Step 2: exchange the Link public token, store the item (access
+     *  token encrypted at rest), and run the first sync. One active
+     *  connection per business — reconnecting retires the previous item
+     *  at Plaid and marks its row revoked. */
+    exchangePlaidPublicToken: {
+        request: z.object({ token: z.string(), entity_id: z.number(), public_token: z.string().min(1).max(500), institution_name: z.string().max(160).optional() }),
+        response: z.object({ connection: bkBankConnectionShape, added: z.number(), updated: z.number(), removed: z.number() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; public_token: string; institution_name?: string }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            requirePlaidReady();
+            const exchanged = await exchangePlaidPublicToken(args.public_token);
+            const previous = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            if (previous) {
+                try { await removePlaidItem(decryptToken(previous.accessTokenEnc)); }
+                catch { /* the old item is already gone at Plaid */ }
+                await ctx.db.update(schema.bkBankConnections).set({ status: "revoked", updatedAt: new Date() }).where(eq(schema.bkBankConnections.id, previous.id));
+            }
+            const institutionName = (await getPlaidInstitutionName(exchanged.accessToken)) ?? args.institution_name ?? null;
+            let accountsJson: string | null = null;
+            try {
+                const accounts = await getPlaidAccounts(exchanged.accessToken);
+                if (accounts.length)
+                    accountsJson = JSON.stringify(accounts);
+            }
+            catch { accountsJson = null; }
+            const inserted = await ctx.db.insert(schema.bkBankConnections).values({ accountId, entityId: args.entity_id, plaidItemId: exchanged.itemId, accessTokenEnc: encryptToken(exchanged.accessToken), institutionName, accountsJson, status: "active" }).returning();
+            const conn = inserted[0];
+            if (!conn)
+                throw new Error("Could not save the bank connection.");
+            const result = await syncBkConnection(ctx.db, accountId, conn);
+            const fresh = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            return { connection: bkConnectionPublic(fresh ?? conn), added: result.added, updated: result.updated, removed: result.removed };
+        },
+    },
+    /** Manual sync ("Sync now", and the Books screen fires it once on
+     *  load when a connection is active). */
+    syncBankConnection: {
+        request: z.object({ token: z.string(), entity_id: z.number() }),
+        response: z.object({ added: z.number(), updated: z.number(), removed: z.number(), last_synced_at: z.string().nullable() }),
+        async handler(ctx: Ctx, args: { token: string; entity_id: number }) {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            requirePlaidReady();
+            const conn = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            if (!conn)
+                throw new Error("No bank is connected to this business.");
+            const result = await syncBkConnection(ctx.db, accountId, conn);
+            const fresh = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            return { ...result, last_synced_at: fresh?.lastSyncedAt ? fresh.lastSyncedAt.toISOString() : null };
+        },
+    },
+    /** Disconnect: remove the item at Plaid (best effort — the local
+     *  revoke always lands, even if Plaid is unreachable or the server's
+     *  Plaid env was removed, so a user can never be trapped connected),
+     *  mark the connection revoked, and optionally delete the transactions
+     *  that came from this connection (source = 'plaid' rows only;
+     *  manual and CSV rows are never touched). */
+    disconnectBankConnection: {
+        request: z.object({ token: z.string(), entity_id: z.number(), delete_transactions: z.boolean() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; entity_id: number; delete_transactions: boolean }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            await requireBkEntity(ctx.db, accountId, args.entity_id);
+            const conn = await activeBkConnection(ctx.db, accountId, args.entity_id);
+            if (!conn)
+                throw new Error("No bank is connected to this business.");
+            if (plaidConfigured() && tokenEncryptionReady()) {
+                try { await removePlaidItem(decryptToken(conn.accessTokenEnc)); }
+                catch { /* item already removed at Plaid — still revoke locally */ }
+            }
+            await ctx.db.update(schema.bkBankConnections).set({ status: "revoked", updatedAt: new Date() }).where(eq(schema.bkBankConnections.id, conn.id));
+            if (args.delete_transactions)
+                await ctx.db.delete(schema.bkTransactions).where(and(eq(schema.bkTransactions.entityId, args.entity_id), eq(schema.bkTransactions.accountId, accountId), eq(schema.bkTransactions.source, "plaid")));
+            return { ok: true };
         },
     },
     /**

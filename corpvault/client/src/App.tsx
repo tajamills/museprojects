@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "./safe-area";
 import { api, type ApiResponse } from "./api";
@@ -348,6 +348,56 @@ function todayLocal(): string { const n = new Date(); return `${n.getFullYear()}
 function monthLabel(month: string): string { const [y, m] = month.split("-").map(Number); return new Date(y ?? 2000, (m ?? 1) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }); }
 function shiftMonth(month: string, delta: number): string { const [y, m] = month.split("-").map(Number); const d = new Date(y ?? 2000, (m ?? 1) - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
 function lastDayOfMonth(month: string): string { const [y, m] = month.split("-").map(Number); return `${month}-${String(new Date(y ?? 2000, m ?? 1, 0).getDate()).padStart(2, "0")}`; }
+/** Plaid Link is loaded on demand from Plaid's CDN — only ever requested
+ *  after the server says bank connections are configured, so workspaces
+ *  without the option never fetch it. */
+interface PlaidLinkHandler { open: () => void }
+interface PlaidLinkGlobal { create: (config: { token: string; onSuccess: (publicToken: string, metadata: { institution?: { name?: string } | null }) => void; onExit?: () => void }) => PlaidLinkHandler }
+let plaidScriptPromise: Promise<void> | null = null;
+function loadPlaidScript(): Promise<void> {
+    if ((window as unknown as { Plaid?: PlaidLinkGlobal }).Plaid)
+        return Promise.resolve();
+    if (!plaidScriptPromise)
+        plaidScriptPromise = new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js"; s.onload = () => resolve(); s.onerror = () => reject(new Error("Could not load the bank connection window. Check your connection and try again.")); document.head.appendChild(s); });
+    return plaidScriptPromise;
+}
+/** The optional bank connection card on a business's Books screen. It
+ *  renders NOTHING until the server reports the feature configured, and
+ *  the connect choice only when no connection is active — manual entry
+ *  and CSV import carry on either way. Read-only by design: there is no
+ *  payment or transfer control anywhere in this card. */
+function BankCard({ token, entity }: {
+    token: string;
+    entity: Entity;
+}) {
+    const qc = useQueryClient();
+    const [notice, setNotice] = useState("");
+    const [confirming, setConfirming] = useState(false);
+    const syncedOnce = useRef(false);
+    const bank = useQuery({ queryKey: ["bank", token, entity.id], queryFn: () => api.getBankConnection({ token, entity_id: entity.id }) });
+    const conn = bank.data?.connection ?? null;
+    const invalidateAll = () => { qc.invalidateQueries({ queryKey: ["bank", token, entity.id] }); qc.invalidateQueries({ queryKey: ["books", token, entity.id] }); qc.invalidateQueries({ queryKey: ["booksSummary", token] }); };
+    const sync = useMutation({ mutationFn: () => api.syncBankConnection({ token, entity_id: entity.id }), onSuccess: (r) => { setNotice(r.added || r.updated ? `Bank sync done — ${r.added} new, ${r.updated} updated.` : "Bank sync done — nothing new."); invalidateAll(); }, onError: (e) => setNotice(errText(e)) });
+    const exchange = useMutation({ mutationFn: (args: { public_token: string; institution_name?: string }) => api.exchangePlaidPublicToken({ token, entity_id: entity.id, ...args }), onSuccess: (r) => { setNotice(`Bank connected — ${r.added} transaction${r.added === 1 ? "" : "s"} imported.`); invalidateAll(); }, onError: (e) => setNotice(errText(e)) });
+    const disconnect = useMutation({ mutationFn: (deleteTransactions: boolean) => api.disconnectBankConnection({ token, entity_id: entity.id, delete_transactions: deleteTransactions }), onSuccess: () => { setConfirming(false); setNotice("Bank disconnected."); invalidateAll(); }, onError: (e) => setNotice(errText(e)) });
+    // Opening the Books screen with an active connection syncs it once.
+    useEffect(() => { if (conn?.status === "active" && !syncedOnce.current) { syncedOnce.current = true; sync.mutate(); } }, [conn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (bank.isPending || bank.isError || !bank.data)
+        return null;
+    if (!bank.data.configured && !conn)
+        return null;
+    if (!conn)
+        return <section className="panel-card bank-card"><div className="panel-head"><h2>Bank connection</h2></div><p className="quiet bank-copy">Connect a bank (optional) — read-only, and you can disconnect anytime.</p><div className="bank-actions"><button className="primary compact" disabled={exchange.isPending} onClick={async () => { setNotice(""); try {
+            const { link_token } = await api.createPlaidLinkToken({ token, entity_id: entity.id });
+            await loadPlaidScript();
+            const Plaid = (window as unknown as { Plaid?: PlaidLinkGlobal }).Plaid;
+            if (!Plaid)
+                throw new Error("Could not load the bank connection window.");
+            Plaid.create({ token: link_token, onSuccess: (publicToken, metadata) => exchange.mutate({ public_token: publicToken, institution_name: metadata.institution?.name ?? undefined }) }).open();
+        }
+        catch (e) { setNotice(errText(e)); } }}>Connect bank</button></div>{notice && <p className="books-notice" role="status">{notice}</p>}</section>;
+    return <section className="panel-card bank-card"><div className="panel-head"><h2>{conn.institution_name ?? "Bank connection"}</h2>{conn.last_synced_at && <span className="quiet">Last synced {new Date(conn.last_synced_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>}</div>{conn.accounts.length ? <div className="bank-accounts">{conn.accounts.map((a, i) => <div className="books-cat-row" key={`${a.name}-${i}`}><span>{a.name}{a.mask ? ` ····${a.mask}` : ""}</span><strong>{a.balance_cents != null ? money(a.balance_cents) : "—"}</strong></div>)}</div> : <p className="quiet bank-copy">Connected — read-only. New transactions arrive when you sync.</p>}{confirming ? <div className="bank-confirm"><p>Disconnect this bank? Transactions already imported stay in your books unless you delete them.</p><div className="bank-actions"><button className="secondary" disabled={disconnect.isPending} onClick={() => disconnect.mutate(false)}>Keep transactions & disconnect</button><button className="secondary bank-danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate(true)}>Delete imported & disconnect</button><button className="text-button" onClick={() => setConfirming(false)}>Cancel</button></div></div> : <div className="bank-actions"><button className="secondary" disabled={sync.isPending} onClick={() => { setNotice(""); sync.mutate(); }}>{sync.isPending ? "Syncing…" : "Sync now"}</button><button className="secondary" onClick={() => setConfirming(true)}>Disconnect</button></div>}{notice && <p className="books-notice" role="status">{notice}</p>}</section>;
+}
 /** Books root: the all-companies overview, or one business's books when a
  *  card is opened. Each business's books are a separate ledger end to end —
  *  the server fences every books query by entity, and this screen never
@@ -393,8 +443,9 @@ function EntityBooks({ data, token, entity, onBack }: {
     <section className="pulse"><div><strong>{money(b.totals.in_cents)}</strong><span>Money in</span></div><div><strong>{money(b.totals.out_cents)}</strong><span>Money out</span></div><div><strong>{money(b.totals.net_cents)}</strong><span>Left over</span></div></section>
     <div className="books-actions"><button className="primary compact" onClick={() => setEditing("new")}><Icon name="plus"/>Add transaction</button><label className="secondary books-file-btn"><Icon name="upload"/>Import CSV<input aria-label="Import transactions from a CSV file" type="file" accept=".csv,text/csv,text/plain" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) file.text().then((text) => importMutation.mutate(text)).catch(() => setNotice("Could not read that file.")); }}/></label><button className="secondary" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}><Icon name="download"/>Export for CPA</button><button className="secondary" onClick={() => setCatsOpen(true)}>Categories</button></div>
     {notice && <p className="books-notice" role="status">{notice}</p>}
+    <BankCard token={token} entity={entity}/>
     <section className="panel-card"><div className="panel-head"><h2>Where the money went</h2></div>{b.category_totals.length ? b.category_totals.map((c) => { const net = c.in_cents - c.out_cents; return <div className="books-cat-row" key={c.category_id ?? "none"}><span>{c.name}</span><strong className={net < 0 ? "txn-out" : ""}>{net < 0 ? `−${money(-net)}` : `+${money(net)}`}</strong></div>; }) : <p className="quiet">Nothing recorded this month yet.</p>}</section>
-    <section className="panel-card"><div className="panel-head"><h2>Transactions</h2><span className="quiet">{b.transactions.length} this month</span></div>{b.transactions.length ? <div className="txn-list">{b.transactions.map((t) => <div className="txn-row" key={t.id}><span className={`txn-dot ${t.status === "pending" ? "pending" : ""}`} role="img" aria-label={t.status === "pending" ? "Pending" : "Cleared"} title={t.status === "pending" ? "Pending" : "Cleared"}/><span className="txn-date"><strong>{Number(t.date.slice(8))}</strong><small>{new Date(`${t.date}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</small></span><span className="txn-main"><strong>{t.description}</strong><small>{t.category_name ?? "No category"}{t.receipt_filename ? ` · Receipt: ${t.receipt_filename}` : ""}{t.note ? ` · ${t.note}` : ""}</small></span><span className="txn-side"><strong className={t.direction === "in" ? "txn-in" : "txn-out"}>{moneyFlow(t.amount_cents, t.direction)}</strong><span className="txn-actions"><button onClick={() => setEditing(t)}>Edit</button><button className="danger" disabled={deleteMutation.isPending} onClick={() => { if (window.confirm("Delete this transaction? This cannot be undone.")) deleteMutation.mutate(t.id); }}>Delete</button></span></span></div>)}</div> : <p className="quiet">No transactions in {monthLabel(month)}. Add one above, or import a bank CSV.</p>}</section>
+    <section className="panel-card"><div className="panel-head"><h2>Transactions</h2><span className="quiet">{b.transactions.length} this month</span></div>{b.transactions.length ? <div className="txn-list">{b.transactions.map((t) => <div className="txn-row" key={t.id}><span className={`txn-dot ${t.status === "pending" ? "pending" : ""}`} role="img" aria-label={t.status === "pending" ? "Pending" : "Cleared"} title={t.status === "pending" ? "Pending" : "Cleared"}/><span className="txn-date"><strong>{Number(t.date.slice(8))}</strong><small>{new Date(`${t.date}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</small></span><span className="txn-main"><strong>{t.description}</strong><small>{t.category_name ?? "No category"}{t.source === "plaid" ? " · From bank" : ""}{t.receipt_filename ? ` · Receipt: ${t.receipt_filename}` : ""}{t.note ? ` · ${t.note}` : ""}</small></span><span className="txn-side"><strong className={t.direction === "in" ? "txn-in" : "txn-out"}>{moneyFlow(t.amount_cents, t.direction)}</strong><span className="txn-actions"><button onClick={() => setEditing(t)}>Edit</button><button className="danger" disabled={deleteMutation.isPending} onClick={() => { if (window.confirm("Delete this transaction? This cannot be undone.")) deleteMutation.mutate(t.id); }}>Delete</button></span></span></div>)}</div> : <p className="quiet">No transactions in {monthLabel(month)}. Add one above, or import a bank CSV.</p>}</section>
     </>}
     {editing && b && <Sheet title={editing === "new" ? "Add transaction" : "Edit transaction"} onClose={() => setEditing(null)}><TransactionForm token={token} entity={entity} categories={b.categories} documents={docs} txn={editing === "new" ? undefined : editing} onDone={() => setEditing(null)}/></Sheet>}
     {catsOpen && b && <Sheet title="Categories" onClose={() => setCatsOpen(false)}><CategoriesForm token={token} entity={entity} categories={b.categories}/></Sheet>}
