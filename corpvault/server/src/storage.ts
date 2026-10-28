@@ -5,11 +5,13 @@
 // keys (`documents/<accountId>/<uuid>`), so a single Railway volume mounted at
 // DATA_DIR makes uploads persistent across deploys. See DEPLOY.md.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 export interface BlobStore {
   put(key: string, bytes: Uint8Array, opts: { contentType: string }): Promise<void>;
+  /** Remove a stored blob. Missing keys are not an error. */
+  delete(key: string): Promise<void>;
   /** Signed download URL handed to the browser (token-scoped). */
   getUrl(key: string): string;
 }
@@ -30,6 +32,10 @@ export function createLocalBlobStore(dataDir: string, token: string | null): Blo
       const full = resolveBlobPath(dataDir, key);
       await mkdir(dirname(full), { recursive: true });
       await writeFile(full, bytes);
+    },
+    async delete(key) {
+      const full = resolveBlobPath(dataDir, key);
+      await unlink(full).catch(() => undefined);
     },
     getUrl(key) {
       return `/files/${key}${token ? `?token=${encodeURIComponent(token)}` : ""}`;

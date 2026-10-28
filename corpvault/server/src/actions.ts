@@ -348,6 +348,20 @@ export const actionDefs = {
             return { id: row.id };
         },
     },
+    deleteDocument: {
+        request: z.object({ token: z.string(), id: z.number() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            const owned = await ctx.db.select({ blobKey: schema.documents.blobKey }).from(schema.documents).where(and(eq(schema.documents.id, args.id), eq(schema.documents.accountId, accountId))).limit(1);
+            const doc = owned[0];
+            if (!doc)
+                throw new Error("That document is not available.");
+            await ctx.db.delete(schema.documents).where(and(eq(schema.documents.id, args.id), eq(schema.documents.accountId, accountId)));
+            await ctx.blobs.delete(doc.blobKey);
+            return { ok: true };
+        },
+    },
     addMeeting: {
         request: z.object({ token: z.string(), entity_id: z.number(), meeting_type: z.enum(meetingTypes), meeting_date: z.string(), meeting_time: z.string(), timezone: z.string().min(1), location: z.string().max(200).optional(), attendees: z.array(z.object({ name: z.string().min(1), role: z.string().min(1) })).min(1), agenda_items: z.array(z.string().min(1)).min(1), discussion_summary: z.string().min(1), decisions: z.array(z.string().min(1)), action_items: z.array(z.object({ action: z.string().min(1), owner: z.string().min(1), due_date: z.string(), status: z.string().min(1) })), next_meeting_date: z.string().optional(), recorded_by: z.string().min(1) }),
         response: z.object({ id: z.number() }),
@@ -361,6 +375,15 @@ export const actionDefs = {
             if (!row)
                 throw new Error("Could not save the minutes.");
             return { id: row.id };
+        },
+    },
+    deleteMeeting: {
+        request: z.object({ token: z.string(), id: z.number() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; id: number }): Promise<z.infer<typeof okResponse>> {
+            const accountId = await accountFor(ctx.db, args.token);
+            await ctx.db.delete(schema.meetings).where(and(eq(schema.meetings.id, args.id), eq(schema.meetings.accountId, accountId)));
+            return { ok: true };
         },
     },
     /**
