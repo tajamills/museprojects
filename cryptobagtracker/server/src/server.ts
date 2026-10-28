@@ -17,6 +17,8 @@ import { stripeWebhookHandler } from "./billing.js";
 import { handleTwilioInbound, smsAlertsEnabled, twilioConfig, twilioWebhookUrl, validateTwilioSignature } from "./sms.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
+import { and, eq } from "drizzle-orm";
+import * as schema from "./schema.js";
 
 type ActionDef = {
   request: z.ZodTypeAny;
@@ -151,6 +153,33 @@ async function main(): Promise<void> {
   app.listen(port, () => {
     console.log(`cryptobagtracker listening on :${port}`);
   });
+
+  // One-time cleanup (2026-10-28, at Layla's direction — "turn off the
+  // alert"): deactivate the planted Oct 27 SMS test alert (BTC above $1 on
+  // the throwaway test account sms-fix-test-oct27@cryptobagtracker.io).
+  // The site API has no delete/deactivate action and that alert re-fires
+  // on an episode loop until its 24h cap, so this boot step is its off
+  // switch. Self-limiting: it matches only that account's still-active
+  // BTC $1 alerts, so every later boot is a no-op. Safe to remove once
+  // it has run in production.
+  try {
+    const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
+      .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
+    if (testUsers.length > 0) {
+      const off = await db.update(schema.priceAlerts).set({ active: false })
+        .where(and(
+          eq(schema.priceAlerts.userId, testUsers[0].id),
+          eq(schema.priceAlerts.asset, "BTC"),
+          eq(schema.priceAlerts.targetPrice, 1),
+          eq(schema.priceAlerts.active, true),
+        )).returning({ id: schema.priceAlerts.id });
+      if (off.length > 0) {
+        console.log(`cleanup: deactivated planted test alert(s): ${off.map((r) => r.id).join(", ")}`);
+      }
+    }
+  } catch (err) {
+    console.error("test-alert cleanup failed:", err instanceof Error ? err.message : err);
+  }
 
   // Price-alert scheduler: poll CoinGecko for active alerts, deliver via
   // Telegram / outbound webhook, and record every trigger in alert_history.
