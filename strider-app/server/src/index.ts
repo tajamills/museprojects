@@ -79,7 +79,7 @@ async function main() {
   // Media uploads travel as base64 inside action JSON (max 12 MB files).
   app.use(express.json({ limit: "20mb" }));
 
-  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  app.get("/healthz", (_req, res) => res.json({ ok: true, build: "2026-10-28-comp-accounts" }));
 
   // Facebook OAuth callback. Must be registered in the Meta app as a Valid
   // OAuth Redirect URI: {APP_BASE_URL}/oauth/facebook/callback
