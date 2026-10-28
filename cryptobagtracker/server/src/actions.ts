@@ -189,6 +189,10 @@ const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum([
 const savePayoutInfoRequest = z.object({ token: z.string(), payoutMethod: z.enum(["zelle", "stripe"]), payoutZelleInfo: z.string().max(128).optional(), payoutTaxName: z.string().max(128), payoutTaxAddress: z.string().max(256) });
 const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), smsConsent: z.boolean().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
+const priceAlertIdRequest = z.object({ token: z.string(), alertId: z.number().int().positive() });
+const setPriceAlertActiveRequest = z.object({ token: z.string(), alertId: z.number().int().positive(), active: z.boolean() });
+const walletIdRequest = z.object({ token: z.string(), walletId: z.number().int().positive() });
+const transactionIdRequest = z.object({ token: z.string(), transactionId: z.number().int().positive() });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
 const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable() });
 const redirectResponse = z.object({ url: z.string() });
@@ -300,6 +304,17 @@ export const Actions = {
     handler: async (ctx: Ctx, args: z.infer<typeof addWalletRequest>): Promise<z.infer<typeof okResponse>> => {
       const user = await requireUser(ctx, args.token);
       await ctx.db.insert(schema.wallets).values({ userId: user.id, name: args.name.trim(), chain: args.chain.toUpperCase(), address: args.address.trim(), owned: args.owned });
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
+  deleteWallet: {
+    request: walletIdRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof walletIdRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      await ctx.db.delete(schema.wallets)
+        .where(and(eq(schema.wallets.id, args.walletId), eq(schema.wallets.userId, user.id)));
       ctx.invalidateQueries();
       return { ok: true };
     },
@@ -416,6 +431,17 @@ export const Actions = {
       return { ok: true as const, classification };
     },
   },
+  deleteTransaction: {
+    request: transactionIdRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof transactionIdRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      await ctx.db.delete(schema.transactions)
+        .where(and(eq(schema.transactions.id, args.transactionId), eq(schema.transactions.userId, user.id)));
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
   setCostBasisMethod: {
     request: setCostBasisMethodRequest,
     response: okResponse,
@@ -482,6 +508,33 @@ export const Actions = {
     handler: async (ctx: Ctx, args: z.infer<typeof createPriceAlertRequest>): Promise<z.infer<typeof okResponse>> => {
       const user = await requireUser(ctx, args.token);
       await ctx.db.insert(schema.priceAlerts).values({ userId: user.id, asset: args.asset.toUpperCase(), direction: args.direction, targetPrice: args.targetPrice, channels: args.channels.join(","), active: true });
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
+  deletePriceAlert: {
+    request: priceAlertIdRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof priceAlertIdRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      await ctx.db.delete(schema.priceAlerts)
+        .where(and(eq(schema.priceAlerts.id, args.alertId), eq(schema.priceAlerts.userId, user.id)));
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  },
+  setPriceAlertActive: {
+    request: setPriceAlertActiveRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof setPriceAlertActiveRequest>): Promise<z.infer<typeof okResponse>> => {
+      const user = await requireUser(ctx, args.token);
+      // Pausing also clears the episode state, so a resumed alert starts a
+      // fresh episode instead of picking up mid-reminder-loop.
+      await ctx.db.update(schema.priceAlerts)
+        .set(args.active
+          ? { active: true }
+          : { active: false, episodeStartedAt: null, lastTriggeredAt: null, lastNotifiedPrice: null })
+        .where(and(eq(schema.priceAlerts.id, args.alertId), eq(schema.priceAlerts.userId, user.id)));
       ctx.invalidateQueries();
       return { ok: true };
     },
