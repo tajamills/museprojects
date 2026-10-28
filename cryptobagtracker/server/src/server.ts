@@ -112,10 +112,15 @@ async function main(): Promise<void> {
   // kill switch is verifiable from outside (added 2026-10-28 after the
   // boot-only cleanup could not be confirmed). Cached 20s — health checks
   // must stay cheap. Remove once the test alert is confirmed gone.
-  let testAlertProbe: { at: number; active: boolean | null } = { at: 0, active: null };
+  // v4 (2026-10-28): also lists EVERY active alert row — a "still above $1"
+  // text landed after the probe read the known test alert inactive, so a
+  // second test artifact on another account has to be visible here.
+  type ActiveAlertRow = { id: number; userId: number; asset: string; direction: string; targetPrice: number };
+  let testAlertProbe: { at: number; active: boolean | null; activeAlerts: ActiveAlertRow[] | null } = { at: 0, active: null, activeAlerts: null };
   app.get("/health", async (_req, res) => {
     if (Date.now() - testAlertProbe.at > 20_000) {
       let active: boolean | null = null;
+      let activeAlerts: ActiveAlertRow[] | null = null;
       try {
         const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
           .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
@@ -133,12 +138,20 @@ async function main(): Promise<void> {
             ),
           ));
         active = rows.length > 0;
+        activeAlerts = await db.select({
+          id: schema.priceAlerts.id,
+          userId: schema.priceAlerts.userId,
+          asset: schema.priceAlerts.asset,
+          direction: schema.priceAlerts.direction,
+          targetPrice: schema.priceAlerts.targetPrice,
+        }).from(schema.priceAlerts).where(eq(schema.priceAlerts.active, true));
       } catch {
         active = null;
+        activeAlerts = null;
       }
-      testAlertProbe = { at: Date.now(), active };
+      testAlertProbe = { at: Date.now(), active, activeAlerts };
     }
-    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-28-alert-kill-v3", test_alert_active: testAlertProbe.active });
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-28-alert-kill-v4", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
   });
 
   app.post("/actions", async (req, res) => {

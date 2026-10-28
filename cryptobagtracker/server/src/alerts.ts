@@ -22,7 +22,7 @@
 //
 // checkPriceAlerts() is called on an interval from server.ts. It never throws
 // for per-alert problems: undeliverable alerts are recorded in alert_history.
-import { and, eq, gte, inArray, or } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, lte, or } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { decryptSecret } from "./crypto.js";
 import * as schema from "./schema.js";
@@ -384,8 +384,11 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
     const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
       .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
     const testUserId = testUsers.length > 0 ? testUsers[0].id : -1;
-    // Match the planted test alert two independent ways: by owner account +
-    // shape, and by its known row id (4). Either one kills it.
+    // Match the planted test alert three independent ways: by owner account +
+    // shape, by its known row id (4), and — v4, after a "still above $1"
+    // text landed with id 4 already inactive — by test-artifact shape on
+    // ANY account: a BTC "above" alert at $1 or less created before
+    // 2026-10-28T04:00:00Z can only be a planted test artifact.
     await db.update(schema.priceAlerts).set({ active: false })
       .where(and(
         eq(schema.priceAlerts.active, true),
@@ -396,6 +399,12 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
             eq(schema.priceAlerts.targetPrice, 1),
           ),
           eq(schema.priceAlerts.id, 4),
+          and(
+            eq(schema.priceAlerts.asset, "BTC"),
+            eq(schema.priceAlerts.direction, "above"),
+            lte(schema.priceAlerts.targetPrice, 1),
+            lt(schema.priceAlerts.createdAt, new Date("2026-10-28T04:00:00Z")),
+          ),
         ),
       ));
   } catch (err) {
