@@ -17,7 +17,7 @@ import { stripeWebhookHandler } from "./billing.js";
 import { handleTwilioInbound, smsAlertsEnabled, twilioConfig, twilioWebhookUrl, validateTwilioSignature } from "./sms.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import * as schema from "./schema.js";
 
 type ActionDef = {
@@ -108,8 +108,37 @@ async function main(): Promise<void> {
 
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-28-alert-kill-v2" });
+  // Health probe with a live read on the planted test alert's state, so its
+  // kill switch is verifiable from outside (added 2026-10-28 after the
+  // boot-only cleanup could not be confirmed). Cached 20s — health checks
+  // must stay cheap. Remove once the test alert is confirmed gone.
+  let testAlertProbe: { at: number; active: boolean | null } = { at: 0, active: null };
+  app.get("/health", async (_req, res) => {
+    if (Date.now() - testAlertProbe.at > 20_000) {
+      let active: boolean | null = null;
+      try {
+        const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
+          .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
+        const testUserId = testUsers.length > 0 ? testUsers[0].id : -1;
+        const rows = await db.select({ id: schema.priceAlerts.id }).from(schema.priceAlerts)
+          .where(and(
+            eq(schema.priceAlerts.active, true),
+            or(
+              and(
+                eq(schema.priceAlerts.userId, testUserId),
+                eq(schema.priceAlerts.asset, "BTC"),
+                eq(schema.priceAlerts.targetPrice, 1),
+              ),
+              eq(schema.priceAlerts.id, 4),
+            ),
+          ));
+        active = rows.length > 0;
+      } catch {
+        active = null;
+      }
+      testAlertProbe = { at: Date.now(), active };
+    }
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-28-alert-kill-v3", test_alert_active: testAlertProbe.active });
   });
 
   app.post("/actions", async (req, res) => {

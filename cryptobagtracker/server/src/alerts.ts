@@ -22,7 +22,7 @@
 //
 // checkPriceAlerts() is called on an interval from server.ts. It never throws
 // for per-alert problems: undeliverable alerts are recorded in alert_history.
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, or } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { decryptSecret } from "./crypto.js";
 import * as schema from "./schema.js";
@@ -383,15 +383,21 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
   try {
     const testUsers = await db.select({ id: schema.users.id }).from(schema.users)
       .where(eq(schema.users.email, "sms-fix-test-oct27@cryptobagtracker.io"));
-    if (testUsers.length > 0) {
-      await db.update(schema.priceAlerts).set({ active: false })
-        .where(and(
-          eq(schema.priceAlerts.userId, testUsers[0].id),
-          eq(schema.priceAlerts.asset, "BTC"),
-          eq(schema.priceAlerts.targetPrice, 1),
-          eq(schema.priceAlerts.active, true),
-        ));
-    }
+    const testUserId = testUsers.length > 0 ? testUsers[0].id : -1;
+    // Match the planted test alert two independent ways: by owner account +
+    // shape, and by its known row id (4). Either one kills it.
+    await db.update(schema.priceAlerts).set({ active: false })
+      .where(and(
+        eq(schema.priceAlerts.active, true),
+        or(
+          and(
+            eq(schema.priceAlerts.userId, testUserId),
+            eq(schema.priceAlerts.asset, "BTC"),
+            eq(schema.priceAlerts.targetPrice, 1),
+          ),
+          eq(schema.priceAlerts.id, 4),
+        ),
+      ));
   } catch (err) {
     console.error("price alerts: test-alert kill switch failed:", err instanceof Error ? err.message : err);
   }
