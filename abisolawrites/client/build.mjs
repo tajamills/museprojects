@@ -47,5 +47,10 @@ await run(path.join(repoRoot, "node_modules", ".bin", "tailwindcss"), [
 await cp(path.join(root, "index.html"), path.join(outdir, "index.html"));
 await cp(path.join(root, "favicon.svg"), path.join(outdir, "favicon.svg"));
 await cp(path.join(root, "quietly-ready-cover.jpg"), path.join(outdir, "quietly-ready-cover.jpg"));
+// Quietly Ready chapter photos (Pexels stock, Oct 29, 2026 — see
+// ~/workspace/abisola-books/files/qr-images/MANIFEST.md for sources).
+for (const name of ["pantry", "water", "dry-goods", "cooking", "animals", "go-bag", "canned"]) {
+  await cp(path.join(root, `qr-${name}.jpg`), path.join(outdir, `qr-${name}.jpg`));
+}
 await cp(path.join(root, "google19638b72474d3670.html"), path.join(outdir, "google19638b72474d3670.html"));
 console.log("[build:client] dist/client ready");

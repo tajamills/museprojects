@@ -16,6 +16,12 @@ export interface Chapter {
   title?: string;
   free: boolean;
   text: string;
+  /**
+   * Optional photo shown at the start of the chapter in the reader
+   * (public stock photo — path is a served static asset, caption is the
+   * photographer credit). Only Quietly Ready uses this (Oct 29, 2026).
+   */
+  image?: { src: string; caption: string };
 }
 
 export interface Book {
@@ -37,11 +43,17 @@ export interface Book {
   chapters: Chapter[];
 }
 
-const ch = (label: string, free: boolean, title?: string): Chapter => ({
+const ch = (
+  label: string,
+  free: boolean,
+  title?: string,
+  image?: { src: string; caption: string },
+): Chapter => ({
   label,
   title,
   free,
   text: MANUSCRIPT_PLACEHOLDER,
+  ...(image ? { image } : {}),
 });
 
 const DOORS_NUMBERS = [
@@ -117,19 +129,40 @@ export const QUIETLY_READY: Book = {
   chapters: [
     ch("A Note Before We Start", true),
     ch("Introduction", true, "Why I Prep"),
-    ch("Chapter One", false, "The staging system — layers, not a haul"),
+    ch("Chapter One", false, "The staging system — layers, not a haul", {
+      src: "/qr-pantry.jpg",
+      caption: "Photo: Rachel Claire / Pexels",
+    }),
     ch("Chapter Two", false, "How to buy it — let the sales cycle do the saving"),
-    ch("Chapter Three", false, "Water — the honest math"),
-    ch("Chapter Four", false, "Food — the dry core"),
-    ch("Chapter Five", false, "The canned layer, the fats, and the small things"),
-    ch("Chapter Six", false, "Cooking without power"),
-    ch("Chapter Seven", false, "The animals"),
+    ch("Chapter Three", false, "Water — the honest math", {
+      src: "/qr-water.jpg",
+      caption: "Photo: Julia M Cameron / Pexels",
+    }),
+    ch("Chapter Four", false, "Food — the dry core", {
+      src: "/qr-dry-goods.jpg",
+      caption: "Photo: Agung Pandit Wiguna / Pexels",
+    }),
+    ch("Chapter Five", false, "The canned layer, the fats, and the small things", {
+      src: "/qr-canned.jpg",
+      caption: "Photo: Ron Lach / Pexels",
+    }),
+    ch("Chapter Six", false, "Cooking without power", {
+      src: "/qr-cooking.jpg",
+      caption: "Photo: Tima Miroshnichenko / Pexels",
+    }),
+    ch("Chapter Seven", false, "The animals", {
+      src: "/qr-animals.jpg",
+      caption: "Photo: Viktoria B. / Pexels",
+    }),
     ch("Chapter Eight", false, "Hygiene and the sickness layer"),
     ch("Chapter Nine", false, "The medical layer — staged, and handled with your doctor"),
     ch("Chapter Ten", false, "Power and communications — the works-without-it principle"),
     ch("Chapter Eleven", false, "Documents and money readiness"),
     ch("Chapter Twelve", false, "Low profile — the quiet rule"),
-    ch("Chapter Thirteen", false, "The go-bag, and staying put vs. leaving"),
+    ch("Chapter Thirteen", false, "The go-bag, and staying put vs. leaving", {
+      src: "/qr-go-bag.jpg",
+      caption: "Photo: Kindel Media / Pexels",
+    }),
     ch("Chapter Fourteen", false, "Keeping it alive — rotation and the monthly rhythm"),
     ch("Appendix", false, "Worksheets and Checklists"),
   ],

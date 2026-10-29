@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { BOOK_CHECKOUT_ENABLED, BOOKING_ITEM_IDS, BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
 import { CONTENT } from "./content-data.js";
+import { WORKSHEETS_DOCX_BASE64 } from "./worksheets-data.js";
 import { createStore, type Store, type User } from "./store.js";
 import {
   SESSION_COOKIE,
@@ -438,6 +439,34 @@ async function main() {
       return;
     }
     res.json({ ...meta, available: true, text: chapter.text });
+  });
+
+  // -------------------------------------------- worksheets download (owners)
+  // The interactive Quietly Ready worksheets (Word) are a buyer extra:
+  // same entitlement rule as the paid chapters — signed-in + owns the
+  // book, with the same one-shot reconcile heal before refusing. The
+  // .docx bytes are embedded in the bundle (worksheets-data.ts).
+  app.get("/api/books/quietlyready/worksheets", async (req, res) => {
+    const user = await currentUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Sign in to download the worksheets." });
+      return;
+    }
+    if (!(await store.hasEntitlement(user, "quietlyready"))) {
+      await reconcileEntitlements(user);
+      if (!(await store.hasEntitlement(user, "quietlyready"))) {
+        res.status(403).json({ error: "The worksheets come with the full-book unlock of Quietly Ready." });
+        return;
+      }
+    }
+    const buf = Buffer.from(WORKSHEETS_DOCX_BASE64, "base64");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    res.setHeader("Content-Disposition", 'attachment; filename="Quietly-Ready-Worksheets.docx"');
+    res.setHeader("Content-Length", String(buf.length));
+    res.send(buf);
   });
 
   // ------------------------------------------------------------ admin seam

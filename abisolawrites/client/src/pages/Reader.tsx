@@ -108,11 +108,26 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
               <p className="manuscript-slot-title">Opening the chapter…</p>
             </div>
           ) : result.status === "ok" ? (
-            <div className="prose">
-              {paragraphs.map((p, i) => (
-                <p key={i}>{p}</p>
-              ))}
-            </div>
+            <>
+              {book.id === "quietlyready" && chapter.label === "Appendix" && owned ? (
+                <div className="cta-row worksheets-download">
+                  <a className="secondary-button" href="/api/books/quietlyready/worksheets">
+                    Download the worksheets (Word)
+                  </a>
+                </div>
+              ) : null}
+              {chapter.image ? (
+                <figure className="chapter-figure">
+                  <img src={chapter.image.src} alt="" loading="lazy" />
+                  <figcaption>{chapter.image.caption}</figcaption>
+                </figure>
+              ) : null}
+              <div className="prose">
+                {paragraphs.map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            </>
           ) : result.status === "unavailable" ? (
             <div className="manuscript-slot" role="note">
               <FeatherIcon className="manuscript-slot-icon" />

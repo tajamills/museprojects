@@ -1,10 +1,17 @@
 import type { Book } from "../data/books";
 import { handleLinkClick } from "../nav";
+import { useMe } from "../auth";
 import { CheckoutBanner, ReadFreeButton, UnlockButton } from "../components";
 import { BookOpenIcon, CheckIcon, LockIcon, ScrollIcon } from "../icons";
 
 export function BookPage({ book, search }: { book: Book; search: string }) {
   const freeLabel = book.freeLabel;
+  const me = useMe();
+  // Owners of Quietly Ready also get the interactive worksheets (Word) —
+  // the button renders only for them; the route itself re-checks the
+  // entitlement server-side.
+  const ownsWorksheets =
+    book.id === "quietlyready" && (me?.entitlements.includes("quietlyready") ?? false);
   return (
     <main className="page">
       <CheckoutBanner search={search} />
@@ -33,6 +40,11 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
           <ReadFreeButton href={book.readerPath} label={freeLabel} />
           {/* Renders only while book checkout is enabled server-side. */}
           <UnlockButton book={book} />
+          {ownsWorksheets ? (
+            <a className="secondary-button" href="/api/books/quietlyready/worksheets">
+              Download the worksheets (Word)
+            </a>
+          ) : null}
         </div>
       </section>
 
