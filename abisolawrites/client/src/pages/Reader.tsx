@@ -1,10 +1,57 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Book } from "../data/books";
 import { fetchChapter, type ChapterResult } from "../api";
 import { useMe } from "../auth";
 import { handleLinkClick } from "../nav";
 import { CheckoutBanner, UnlockButton } from "../components";
 import { ArrowLeftIcon, ArrowRightIcon, FeatherIcon, LockIcon } from "../icons";
+
+/** Render a line with [FILL-IN] markers as visible write-in blanks. */
+function renderFill(text: string, keyPrefix: string) {
+  const parts = text.split("[FILL-IN]");
+  if (parts.length === 1) return text;
+  return parts.flatMap((part, i) =>
+    i === parts.length - 1
+      ? [part]
+      : [part, <span key={`${keyPrefix}-${i}`} className="fill-blank" aria-label="fill in" />],
+  );
+}
+
+/**
+ * The Quietly Ready appendix is worksheets, not prose: give its lines real
+ * structure — worksheet titles as subheads, ☐ runs as checklist items with
+ * the box on its own line start, • runs as bullet lines, [FILL-IN] as blanks.
+ */
+function renderAppendix(text: string) {
+  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const out: ReactNode[] = [];
+  blocks.forEach((block, bi) => {
+    const lines = block.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    lines.forEach((line, li) => {
+      const key = `${bi}-${li}`;
+      if (/^(Worksheet|Checklist) [A-Z]\b/.test(line)) {
+        out.push(<h3 key={key} className="appendix-head">{line}</h3>);
+      } else if (line.includes("☐")) {
+        const parts = line.split("☐");
+        const lead = parts[0].trim();
+        const items = parts.slice(1).map((s) => s.trim()).filter(Boolean);
+        if (lead) out.push(<p key={`${key}-lead`} className="appendix-lead">{renderFill(lead, key)}</p>);
+        out.push(
+          <ul key={key} className="appendix-checklist">
+            {items.map((item, ii) => (
+              <li key={ii}>{renderFill(item, `${key}-${ii}`)}</li>
+            ))}
+          </ul>,
+        );
+      } else if (line.startsWith("•")) {
+        out.push(<p key={key} className="appendix-bullet">• {renderFill(line.slice(1).trim(), key)}</p>);
+      } else {
+        out.push(<p key={key} className="appendix-line">{renderFill(line, key)}</p>);
+      }
+    });
+  });
+  return out;
+}
 
 function initialChapter(book: Book, search: string): number {
   const raw = Number(new URLSearchParams(search).get("ch") ?? "0");
@@ -122,11 +169,15 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
                   <figcaption>{chapter.image.caption}</figcaption>
                 </figure>
               ) : null}
-              <div className="prose">
-                {paragraphs.map((p, i) => (
-                  <p key={i}>{p}</p>
-                ))}
-              </div>
+              {book.id === "quietlyready" && chapter.label === "Appendix" ? (
+                <div className="prose appendix-prose">{renderAppendix(result.text)}</div>
+              ) : (
+                <div className="prose">
+                  {paragraphs.map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+                </div>
+              )}
             </>
           ) : result.status === "unavailable" ? (
             <div className="manuscript-slot" role="note">

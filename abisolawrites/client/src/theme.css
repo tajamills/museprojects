@@ -313,9 +313,17 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none !important;
 .reader-chapter-heading { font-size: clamp(24px, 3.4vw, 32px); font-weight: 800; margin: 0 0 20px; line-height: 1.2; }
 .prose { font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 18.5px; line-height: 1.8; }
 .prose p { margin: 0 0 1.1em; }
-.chapter-figure { margin: 0 0 1.6em; }
-.chapter-figure img { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--border); }
+.chapter-figure { margin: 0 0 1.6em; text-align: center; }
+.chapter-figure img { display: block; width: 100%; max-width: 400px; height: auto; margin: 0 auto; border-radius: 16px; border: 1px solid var(--border); }
 .chapter-figure figcaption { font-size: 13px; color: var(--dim); margin-top: 8px; }
+.appendix-head { font-size: 19px; font-weight: 700; margin: 1.5em 0 0.5em; }
+.appendix-lead { font-weight: 600; margin: 0 0 0.4em; }
+.appendix-line { margin: 0 0 0.6em; }
+.appendix-bullet { margin: 0 0 0.6em; padding-left: 1.3em; text-indent: -1.3em; }
+.appendix-checklist { list-style: none; padding: 0; margin: 0 0 1.1em; }
+.appendix-checklist li { position: relative; padding-left: 1.7em; margin: 0.4em 0; }
+.appendix-checklist li::before { content: "☐"; position: absolute; left: 0; }
+.fill-blank { display: inline-block; min-width: 110px; height: 1em; border-bottom: 2px solid var(--border-strong); margin: 0 2px; }
 .worksheets-download { margin: 0 0 1.6em; }
 .manuscript-slot {
   border: 1.5px dashed var(--border-strong); border-radius: 16px;
