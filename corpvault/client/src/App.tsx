@@ -48,7 +48,7 @@ function Field({ label, children }: {
  *  desktop rail, mobile header, sign-in, and the favicon
  *  (client/brand-mark.svg carries the same drawing). */
 function BrandMark() {
-    return <svg className="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="11" fill="#10151d" stroke="rgba(255,255,255,.18)"/><path d="M15.5 13v22M32.5 13 17.2 23.2M19 25.4l13.8 9.6" fill="none" stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+    return <svg className="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="11" fill="#111114" stroke="rgba(255,255,255,.18)"/><path d="M15.5 13v22M32.5 13 17.2 23.2M19 25.4l13.8 9.6" fill="none" stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }
 /** The filing-cabinet empty-state illustration (Layla's mockup): a drawn
  *  document page — folded corner, ruled lines — with a copper circular
