@@ -424,26 +424,42 @@
 .svc-cta-signin{color:var(--dim);font-size:13.5px}
 .svc-cta-signin a{color:var(--accent);font-weight:700;text-decoration:none}
 @media (min-width:800px){.svc-hero h1{font-size:44px}.svc-grid{grid-template-columns:1fr 1fr}.svc-steps{grid-template-columns:repeat(3,1fr)}}
-/* Books (2026-10-28) — Phase 1 bookkeeping. Readability is the headline:
-   three big plain numbers up top (Money in / Money out / Left over), labeled
-   category rows, and a transaction list a non-accountant can scan — date
-   block, plain description, category in small type, signed amount with the
-   money-out side muted. Raised 18px cards and 6px action buttons, same as
-   the rest of the app; colors come only from the shared tokens, so light
-   and dark both hold. The money-in amount keeps the full ink color; the
-   money-out amount is dimmed — never red, going out is normal business. */
+/* Books (2026-10-28; design pass 2026-10-29) — bookkeeping composed to the
+   app's standard, the way the Billing and Minutes pages are: a raised lead
+   card with the drawn books bubble carrying the month's three big plain
+   numbers (Money in / Money out / Left over) and the action row, overview
+   cards with the business monogram and a hairline over the numbers,
+   category rows with a proportional copper bar, rounded-square row actions,
+   and composed in-card empty states with the medallion. Readability stays
+   the headline: labeled rows, a transaction list a non-accountant can scan —
+   date block, plain description, category in small type, signed amount with
+   the money-out side muted (never red — going out is normal business).
+   Colors come only from the shared tokens, so light and dark both hold. */
 .segmented.two{grid-template-columns:repeat(2,1fr)}
 .books-card-list{display:grid;gap:14px;margin-top:22px}
 .books-card{margin-top:0;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .books-card:hover{transform:translateY(-1px);box-shadow:0 2px 3px rgba(34,30,26,.06),0 12px 26px rgba(34,30,26,.09)}
 .books-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.books-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.books-card-head h2{font:600 22px var(--serif);margin:0}
-.books-card-head .entity-open-arrow{color:var(--accent)}
+.books-card-head{display:flex;align-items:center;gap:14px}
+.books-card-head .entity-monogram{flex:0 0 auto}
+.books-card-title{flex:1;min-width:0}
+.books-card-title h2{font:600 22px var(--serif);margin:0}
+.books-card-title p{margin:2px 0 0;color:var(--dim);font-size:13px}
+.books-card-head .entity-open-arrow{color:var(--accent);flex:0 0 auto}
+.books-card .books-nums{border-top:1px solid var(--border);padding-top:16px}
 .books-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
 .books-nums span{display:block;color:var(--dim);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
 .books-nums strong{display:block;font:600 21px var(--serif);margin-top:4px}
 .books-head{flex-wrap:wrap;gap:14px;align-items:center}
+.books-lead{display:flex;gap:22px;align-items:flex-start}
+.books-lead-bubble{width:64px;height:64px}
+.books-lead-bubble svg{width:30px;height:30px}
+.books-lead-main{flex:1;min-width:0}
+.books-lead-main .books-nums{margin-top:2px}
+.books-lead-divider{margin:18px 0 2px}
+.books-lead .books-actions{margin-top:14px}
+.books-lead .books-notice{margin-top:14px}
+@media (max-width:680px){.books-lead{flex-direction:column;gap:16px}}
 .books-month-nav{display:flex;align-items:center;gap:10px}
 .books-month-label{font:600 17px var(--serif);min-width:148px;text-align:center}
 .books-month-btn{width:36px;height:36px;border:1px solid var(--border);background:linear-gradient(180deg,var(--surface) 0%,var(--warm-soft) 100%);border-radius:6px;display:grid;place-items:center;color:var(--accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 5px rgba(34,30,26,.10)}
@@ -456,6 +472,15 @@
 .books-cat-row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14.5px}
 .books-cat-row:last-child{border-bottom:0;padding-bottom:2px}
 .books-cat-row strong{font-weight:700;white-space:nowrap}
+.books-cat-row.with-bar{flex-direction:column;align-items:stretch;gap:7px}
+.books-cat-line{display:flex;justify-content:space-between;align-items:baseline;gap:14px}
+.cat-bar{height:6px;border-radius:999px;background:var(--warm-soft);box-shadow:inset 0 1px 2px rgba(34,30,26,.08)}
+.cat-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 76%,#ffffff 24%),var(--accent))}
+.books-empty{text-align:center;padding:28px 12px 18px}
+.books-empty .empty-art{width:56px;height:56px;margin:0 auto}
+.books-empty .empty-art svg{width:26px;height:26px}
+.books-empty h3{font:600 19px var(--serif);color:var(--text);margin:12px 0 5px}
+.books-empty p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.5}
 .txn-list{display:grid}
 .txn-row{display:grid;grid-template-columns:auto 44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border)}
 .txn-row:last-child{border-bottom:0;padding-bottom:2px}
@@ -471,25 +496,32 @@
 .txn-side>strong{font-size:15px;white-space:nowrap}
 .txn-in{color:var(--text)}
 .txn-out{color:var(--dim)}
-.txn-actions{display:flex;gap:12px;justify-content:flex-end;margin-top:3px}
-.txn-actions button{border:0;background:none;padding:0;color:var(--accent);font-size:12px;font-weight:700}
-.txn-actions button.danger{color:var(--danger)}
+.txn-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:5px}
+.txn-actions .fix-button{padding:6px 11px;font-size:12px}
 .cat-list{display:grid;gap:14px}
 .cat-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cat-row input{flex:1 1 170px;min-width:0;border:1px solid color-mix(in srgb,var(--border) 52%,var(--dim) 48%);background:var(--bg);border-radius:12px;padding:10px 12px;outline:none;box-shadow:inset 0 1px 3px rgba(34,30,26,.06)}
 .cat-row input:focus{border-color:var(--accent)}
-.cat-kind{color:var(--dim);font-size:12px;font-weight:600;white-space:nowrap}
+.cat-chips{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center}
 .cat-actions{display:inline-flex;gap:6px;flex-wrap:wrap}
 .cat-delete{color:var(--danger)}
 .cat-add{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}
 .cat-add-btn{white-space:nowrap}
 @media (max-width:680px){.books-nums strong{font-size:17px}.books-month-label{min-width:0;font-size:15px}.txn-row{grid-template-columns:auto 38px minmax(0,1fr) auto;gap:9px}.cat-add{grid-template-columns:1fr}.cat-add-btn{width:100%}}
-/* Bank connection card (2026-10-28, Books Phase 2) — same raised card and
-   6px buttons; it exists only when the server reports Plaid configured, so
-   these styles are inert in an unconfigured workspace. */
-.bank-card .bank-copy{margin:2px 0 14px}
+/* Bank connection card (2026-10-28, Books Phase 2; design pass 2026-10-29) —
+   composed like the Billing subscription card: drawn bank bubble + eyebrow +
+   serif title up top, a status chip for the connected state, accounts under
+   a hairline, and the paused / disconnect states as tinted strips. It exists
+   only when the server reports Plaid configured, so these styles are inert
+   in an unconfigured workspace. */
+.bank-title{font:600 24px var(--serif);letter-spacing:-.015em;margin:2px 0 3px}
+.bank-head-main{flex:1;min-width:0}
+.bank-head-main .quiet{margin:0}
+.bank-card .bank-copy{margin:14px 0 0}
+.bank-card .billing-divider{margin:18px 0 4px}
 .bank-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
 .bank-accounts{margin-top:2px}
-.bank-confirm{margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
-.bank-confirm p{margin:0;font-size:14px;line-height:1.5}
+.bank-strip{margin-top:16px}
+.bank-confirm{margin-top:14px}
+.bank-confirm .billing-strip{margin-top:0}
 .bank-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
