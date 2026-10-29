@@ -7,7 +7,7 @@ import { BookPage } from "./pages/BookPage";
 import { ReaderPage } from "./pages/Reader";
 import { SignInPage } from "./pages/SignIn";
 import { signOut } from "./api";
-import { useMe } from "./auth";
+import { clearMe, useMe } from "./auth";
 import { ServicesPage } from "./pages/Services";
 import { ResumePage } from "./pages/Resume";
 import { MusicPage } from "./pages/Music";
@@ -111,6 +111,9 @@ function HeaderAccount() {
         type="button"
         className="secondary-button signin-button"
         onClick={() => {
+          // Drop the cached identity first: the next sign-in must start
+          // clean, not with this account's snapshot.
+          clearMe();
           void signOut().then(() => window.location.assign("/"));
         }}
       >

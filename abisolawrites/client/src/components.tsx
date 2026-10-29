@@ -37,7 +37,9 @@ export function UnlockButton({ book }: { book: Book }) {
     };
   }, []);
 
-  if (!enabled) return null;
+  // Also wait for the identity read: rendering (or acting) as signed
+  // out while /api/me is in flight is how owners got sent to sign in.
+  if (!enabled || me === undefined) return null;
 
   const click = async () => {
     if (!me?.user) {

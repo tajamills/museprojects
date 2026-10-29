@@ -87,7 +87,7 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
                     </span>
                     {c.free ? (
                       <span className="free-chip">Free</span>
-                    ) : locked ? (
+                    ) : me === undefined ? null : locked ? (
                       <LockIcon className="lock-icon" />
                     ) : (
                       <span className="free-chip">Yours</span>
@@ -149,13 +149,15 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
               <p>
                 Locked chapters open with the full-book unlock of {book.title}{" "}
                 ({book.priceLabel}, one-time, yours to keep).{" "}
-                {me?.user
-                  ? "This account doesn't own this book yet."
-                  : "If you already own this book, sign in with the email you paid with and it will open."}
+                {me === undefined
+                  ? null
+                  : me.user
+                    ? "This account doesn't own this book yet."
+                    : "If you already own this book, sign in with the email you paid with and it will open."}
               </p>
               <div className="cta-row">
                 <UnlockButton book={book} />
-                {me?.user ? null : (
+                {me?.user || me === undefined ? null : (
                   <a
                     href={signInHref}
                     className="secondary-button"

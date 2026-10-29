@@ -391,6 +391,9 @@ async function main() {
   });
 
   app.get("/api/me", async (req, res) => {
+    // Never cacheable: this answer IS the caller's identity and flips
+    // at sign-in/sign-out.
+    res.setHeader("Cache-Control", "no-store");
     const user = await currentUser(req);
     if (!user) {
       res.json({ user: null, entitlements: [] });

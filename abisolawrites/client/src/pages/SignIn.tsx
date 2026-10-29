@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { signIn, signUp } from "../api";
+import { setMe } from "../auth";
 import { handleLinkClick } from "../nav";
 
 /**
@@ -22,8 +23,12 @@ export function SignInPage({ search }: { search: string }) {
     setBusy(true);
     setError(null);
     try {
-      if (mode === "signin") await signIn(email, password);
-      else await signUp(email, password);
+      const info = mode === "signin" ? await signIn(email, password) : await signUp(email, password);
+      // The auth response IS the /api/me payload (user + entitlements):
+      // seed the shared identity snapshot with it, so the identity is
+      // already correct wherever this document continues, and the full
+      // navigation below re-reads /api/me with the new cookie on top.
+      setMe(info);
       // Full navigation: every page re-reads /api/me with the new cookie.
       window.location.assign(next.startsWith("/") ? next : "/");
     } catch (err) {

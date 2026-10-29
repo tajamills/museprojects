@@ -58,7 +58,9 @@ export interface MeInfo {
 
 export async function fetchMe(): Promise<MeInfo> {
   try {
-    const res = await fetch("/api/me");
+    // Identity must never come from a cache: after sign-out/sign-in the
+    // previous answer is actively wrong, not just stale.
+    const res = await fetch("/api/me", { cache: "no-store" });
     if (!res.ok) return { user: null, entitlements: [] };
     return (await res.json()) as MeInfo;
   } catch {

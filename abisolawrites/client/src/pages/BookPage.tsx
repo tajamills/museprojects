@@ -7,6 +7,10 @@ import { ArrowRightIcon, BookOpenIcon, CheckIcon, LockIcon, ScrollIcon } from ".
 export function BookPage({ book, search }: { book: Book; search: string }) {
   const freeLabel = book.freeLabel;
   const me = useMe();
+  // While /api/me is still in flight the identity is UNKNOWN, not
+  // "signed out": render a neutral page (no buy button, no Locked
+  // chips) rather than painting the non-owner state and repainting.
+  const meLoading = me === undefined;
   // Same entitlement truth the reader uses: a signed-in owner sees the
   // owned state here too — no buy button, chapters marked "Yours".
   const owned = me?.entitlements.includes(book.id) ?? false;
@@ -39,7 +43,7 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
           </li>
         </ul>
         <div className="cta-row">
-          {owned ? (
+          {meLoading ? null : owned ? (
             <>
               <a
                 href={book.readerPath}
@@ -86,7 +90,7 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
                   <span className="free-chip">
                     <CheckIcon className="chip-icon" /> Free
                   </span>
-                ) : owned ? (
+                ) : meLoading ? null : owned ? (
                   <span className="free-chip">
                     <CheckIcon className="chip-icon" /> Yours
                   </span>
@@ -99,7 +103,7 @@ export function BookPage({ book, search }: { book: Book; search: string }) {
             </li>
           ))}
         </ol>
-        {owned ? (
+        {meLoading ? null : owned ? (
           <p className="fine-print">
             You own this book — every chapter above is open to you in the
             reader, yours to keep.
