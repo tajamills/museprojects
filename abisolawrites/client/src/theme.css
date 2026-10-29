@@ -325,6 +325,24 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none !important;
 .appendix-checklist li::before { content: "☐"; position: absolute; left: 0; }
 .fill-blank { display: inline-block; min-width: 110px; height: 1em; border-bottom: 2px solid var(--border-strong); margin: 0 2px; }
 .worksheets-download { margin: 0 0 1.6em; }
+/* Interactive in-reader worksheets (Quietly Ready appendix), phone-first:
+   checklist items are big tappable rows like a grocery list — tap anywhere
+   to tick — with a per-section "X of Y done" line; the worksheets keep
+   their underlined answer fields. Progress saved per reader. */
+.ws-note-slot { min-height: 1.5em; margin: 0 0 0.6em; }
+.ws-note { font-size: 13.5px; color: var(--dim); margin: 0; }
+.ws-progress { font-size: 14px; font-weight: 600; color: var(--dim); margin: -0.3em 0 0.9em; }
+.ws-list { margin: 0 0 1.1em; }
+.ws-item { display: flex; gap: 0.7em; align-items: center; min-height: 48px; padding: 0.45em 0.6em; margin: 0.35em 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ws-item:focus-within { border-color: var(--accent-strong); }
+.ws-item-label { flex: 1; }
+.ws-item-done .ws-item-label { text-decoration: line-through; opacity: 0.55; }
+.ws-check { flex: none; width: 1.15em; height: 1.15em; accent-color: var(--accent-strong); cursor: pointer; }
+.ws-item .ws-check { width: 26px; height: 26px; margin: 0; }
+.ws-row { margin: 0 0 0.6em; padding-left: 1.3em; text-indent: -1.3em; overflow-wrap: break-word; }
+.ws-row .ws-check { vertical-align: -0.15em; margin: 0 0.1em; }
+.ws-input { font: inherit; color: inherit; background: transparent; border: none; border-bottom: 2px solid var(--border-strong); border-radius: 0; padding: 0 2px; margin: 0 2px; width: 10em; max-width: 55vw; text-indent: 0; }
+.ws-input:focus { outline: none; border-bottom-color: var(--accent-strong); }
 .manuscript-slot {
   border: 1.5px dashed var(--border-strong); border-radius: 16px;
   background: var(--surface-2); padding: 26px; text-align: center;

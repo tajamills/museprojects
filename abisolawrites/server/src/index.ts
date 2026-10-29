@@ -469,6 +469,63 @@ async function main() {
     res.send(buf);
   });
 
+  // ------------------------------------- worksheet progress (owners only)
+  // The in-reader worksheets track per reader: which boxes are checked and
+  // what they typed. Same entitlement rule as the paid chapters — signed-in
+  // + owns the book, with the same one-shot reconcile heal before refusing.
+  // The state body is client-shaped and stored opaquely:
+  // { checks: { [itemKey]: true }, values: { [fieldKey]: string } }.
+  const WORKSHEET_STATE_MAX_BYTES = 64 * 1024;
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    v != null && typeof v === "object" && !Array.isArray(v);
+
+  async function requireBookOwner(req: Request, res: express.Response): Promise<User | null> {
+    const user = await currentUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Sign in to track your worksheets." });
+      return null;
+    }
+    if (!(await store.hasEntitlement(user, req.params.bookId))) {
+      await reconcileEntitlements(user);
+      if (!(await store.hasEntitlement(user, req.params.bookId))) {
+        res.status(403).json({ error: "Worksheet tracking comes with the full-book unlock." });
+        return null;
+      }
+    }
+    return user;
+  }
+
+  app.get("/api/books/:bookId/worksheet-state", async (req, res) => {
+    const user = await requireBookOwner(req, res);
+    if (!user) return;
+    const data = await store.getWorksheetState(user.id, req.params.bookId);
+    res.json(data ?? {});
+  });
+
+  app.put("/api/books/:bookId/worksheet-state", async (req, res) => {
+    const user = await requireBookOwner(req, res);
+    if (!user) return;
+    const body: unknown = req.body;
+    const state = isPlainObject(body) ? body.state : undefined;
+    if (!isPlainObject(state)) {
+      res.status(400).json({ error: "Expected a JSON body of the form { state: { ... } }." });
+      return;
+    }
+    if (
+      (state.checks !== undefined && !isPlainObject(state.checks)) ||
+      (state.values !== undefined && !isPlainObject(state.values))
+    ) {
+      res.status(400).json({ error: "state.checks and state.values must be objects when present." });
+      return;
+    }
+    if (JSON.stringify(state).length > WORKSHEET_STATE_MAX_BYTES) {
+      res.status(413).json({ error: "Worksheet state is too large." });
+      return;
+    }
+    await store.putWorksheetState(user.id, req.params.bookId, state);
+    res.json({ ok: true });
+  });
+
   // ------------------------------------------------------------ admin seam
   // Manual grants/revokes (e.g. honoring a past buyer) — Bearer ADMIN_TOKEN.
   // Disabled entirely when ADMIN_TOKEN is not set.

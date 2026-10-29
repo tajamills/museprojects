@@ -52,6 +52,9 @@ export interface Store {
   revokeEntitlement(user: User, bookId: string): Promise<void>;
   listEntitlements(user: User): Promise<Entitlement[]>;
   hasEntitlement(user: User, bookId: string): Promise<boolean>;
+  /** A reader's saved worksheet progress for one book (opaque JSON), or null. */
+  getWorksheetState(userId: string, bookId: string): Promise<Record<string, unknown> | null>;
+  putWorksheetState(userId: string, bookId: string, data: Record<string, unknown>): Promise<void>;
 }
 
 // ---------------------------------------------------------------- Postgres
@@ -85,6 +88,13 @@ class PgStore implements Store {
       );
       CREATE INDEX IF NOT EXISTS entitlements_user_idx ON entitlements(user_id);
       CREATE INDEX IF NOT EXISTS entitlements_email_idx ON entitlements(lower(email));
+      CREATE TABLE IF NOT EXISTS worksheet_state (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        book_id TEXT NOT NULL,
+        data_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (user_id, book_id)
+      );
     `);
   }
   private rowToUser(r: Record<string, unknown>): User {
@@ -181,6 +191,26 @@ class PgStore implements Store {
     );
     return rows.length > 0;
   }
+  async getWorksheetState(userId: string, bookId: string): Promise<Record<string, unknown> | null> {
+    const { rows } = await this.pool.query(
+      "SELECT data_json FROM worksheet_state WHERE user_id = $1 AND book_id = $2",
+      [userId, bookId],
+    );
+    if (!rows[0]) return null;
+    const data = rows[0].data_json as unknown;
+    return data != null && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : null;
+  }
+  async putWorksheetState(userId: string, bookId: string, data: Record<string, unknown>): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO worksheet_state (user_id, book_id, data_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, now())
+       ON CONFLICT (user_id, book_id)
+       DO UPDATE SET data_json = EXCLUDED.data_json, updated_at = now()`,
+      [userId, bookId, JSON.stringify(data)],
+    );
+  }
 }
 
 // -------------------------------------------------------------------- file
@@ -195,20 +225,28 @@ interface FileData {
     stripeSessionId: string | null;
     grantedAt: string;
   }[];
+  worksheetStates: {
+    userId: string;
+    bookId: string;
+    data: Record<string, unknown>;
+    updatedAt: string;
+  }[];
 }
 
 class FileStore implements Store {
   readonly kind = "file";
   private file: string;
-  private data: FileData = { users: [], sessions: [], entitlements: [] };
+  private data: FileData = { users: [], sessions: [], entitlements: [], worksheetStates: [] };
   constructor(file: string) {
     this.file = file;
   }
   async init(): Promise<void> {
     try {
       this.data = JSON.parse(await readFile(this.file, "utf8")) as FileData;
+      // Files written before worksheet tracking have no worksheetStates.
+      this.data.worksheetStates ??= [];
     } catch {
-      this.data = { users: [], sessions: [], entitlements: [] };
+      this.data = { users: [], sessions: [], entitlements: [], worksheetStates: [] };
       await this.persist();
     }
   }
@@ -287,6 +325,21 @@ class FileStore implements Store {
   }
   async hasEntitlement(user: User, bookId: string): Promise<boolean> {
     return this.data.entitlements.some((e) => e.bookId === bookId && this.matches(e, user.id, user.email));
+  }
+  async getWorksheetState(userId: string, bookId: string): Promise<Record<string, unknown> | null> {
+    const row = this.data.worksheetStates.find((s) => s.userId === userId && s.bookId === bookId);
+    return row ? (JSON.parse(JSON.stringify(row.data)) as Record<string, unknown>) : null;
+  }
+  async putWorksheetState(userId: string, bookId: string, data: Record<string, unknown>): Promise<void> {
+    const copy = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
+    const row = this.data.worksheetStates.find((s) => s.userId === userId && s.bookId === bookId);
+    if (row) {
+      row.data = copy;
+      row.updatedAt = new Date().toISOString();
+    } else {
+      this.data.worksheetStates.push({ userId, bookId, data: copy, updatedAt: new Date().toISOString() });
+    }
+    await this.persist();
   }
 }
 

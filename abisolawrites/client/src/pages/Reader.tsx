@@ -1,61 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Book } from "../data/books";
 import { fetchChapter, type ChapterResult } from "../api";
 import { useMe } from "../auth";
 import { handleLinkClick } from "../nav";
 import { CheckoutBanner, UnlockButton } from "../components";
+import { WorksheetAppendix } from "./WorksheetAppendix";
 import { ArrowLeftIcon, ArrowRightIcon, FeatherIcon, LockIcon } from "../icons";
-
-/**
- * Web pages are for reading, not filling in — the fill-in work lives in the
- * downloadable Word worksheets. So the web appendix drops every [FILL-IN]
- * marker (and the operators left dangling by it) and reads as a clean
- * reference checklist.
- */
-function renderFill(text: string) {
-  return text
-    .replace(/\[FILL-IN\]/g, "")
-    .replace(/\s*[×=]\s*(?=[;·,]|$)/g, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([;·,])/g, "$1")
-    .trim();
-}
-
-/**
- * The Quietly Ready appendix is worksheets, not prose: give its lines real
- * structure — worksheet titles as subheads, ☐ runs as checklist items with
- * the box on its own line start, • runs as bullet lines, [FILL-IN] as blanks.
- */
-function renderAppendix(text: string) {
-  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  const out: ReactNode[] = [];
-  blocks.forEach((block, bi) => {
-    const lines = block.split(/\n/).map((l) => l.trim()).filter(Boolean);
-    lines.forEach((line, li) => {
-      const key = `${bi}-${li}`;
-      if (/^(Worksheet|Checklist) [A-Z]\b/.test(line)) {
-        out.push(<h3 key={key} className="appendix-head">{line}</h3>);
-      } else if (line.includes("☐")) {
-        const parts = line.split("☐");
-        const lead = parts[0].trim();
-        const items = parts.slice(1).map((s) => s.trim()).filter(Boolean);
-        if (lead) out.push(<p key={`${key}-lead`} className="appendix-lead">{renderFill(lead)}</p>);
-        out.push(
-          <ul key={key} className="appendix-checklist">
-            {items.map((item, ii) => (
-              <li key={ii}>{renderFill(item)}</li>
-            ))}
-          </ul>,
-        );
-      } else if (line.startsWith("•")) {
-        out.push(<p key={key} className="appendix-bullet">• {renderFill(line.slice(1).trim())}</p>);
-      } else {
-        out.push(<p key={key} className="appendix-line">{renderFill(line)}</p>);
-      }
-    });
-  });
-  return out;
-}
 
 function initialChapter(book: Book, search: string): number {
   const raw = Number(new URLSearchParams(search).get("ch") ?? "0");
@@ -174,15 +124,7 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
                 </figure>
               ) : null}
               {book.id === "quietlyready" && chapter.label === "Appendix" ? (
-                <div className="prose appendix-prose">
-                  <p>{result.text.split(/\n\s*\n/)[0]?.trim()}</p>
-                  <p>
-                    The worksheets themselves are the Word file — download it above:
-                    print it and write on it, or open it and click the boxes and
-                    blanks right on your computer. That's where worksheets belong;
-                    this page just points you to them.
-                  </p>
-                </div>
+                <WorksheetAppendix bookId={book.id} text={result.text ?? ""} />
               ) : (
                 <div className="prose">
                   {paragraphs.map((p, i) => (

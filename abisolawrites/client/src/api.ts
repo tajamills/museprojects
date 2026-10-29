@@ -117,3 +117,55 @@ export async function fetchChapter(bookId: string, index: number): Promise<Chapt
     return { status: "error", text: null };
   }
 }
+
+// -------------------------------------------------- worksheet progress
+/** A reader's in-book worksheet tracking: checked boxes + typed answers. */
+export interface WorksheetState {
+  checks: Record<string, true>;
+  values: Record<string, string>;
+}
+
+export const EMPTY_WORKSHEET_STATE: WorksheetState = { checks: {}, values: {} };
+
+function normalizeWorksheetState(raw: unknown): WorksheetState {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return { checks: {}, values: {} };
+  const obj = raw as { checks?: unknown; values?: unknown };
+  const checks: Record<string, true> = {};
+  if (obj.checks != null && typeof obj.checks === "object" && !Array.isArray(obj.checks)) {
+    for (const [k, v] of Object.entries(obj.checks as Record<string, unknown>)) {
+      if (v) checks[k] = true;
+    }
+  }
+  const values: Record<string, string> = {};
+  if (obj.values != null && typeof obj.values === "object" && !Array.isArray(obj.values)) {
+    for (const [k, v] of Object.entries(obj.values as Record<string, unknown>)) {
+      if (typeof v === "string") values[k] = v;
+    }
+  }
+  return { checks, values };
+}
+
+/** Owners only (the server 401/403s everyone else); null when the load failed. */
+export async function fetchWorksheetState(bookId: string): Promise<WorksheetState | null> {
+  try {
+    const res = await fetch(`/api/books/${bookId}/worksheet-state`);
+    if (!res.ok) return null;
+    return normalizeWorksheetState(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true when the server stored the state. */
+export async function saveWorksheetState(bookId: string, state: WorksheetState): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/books/${bookId}/worksheet-state`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
