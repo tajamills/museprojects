@@ -91,6 +91,9 @@ const html = `<!doctype html>
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="kovala — business entity manager & compliance reminders" />
     <meta name="twitter:description" content="Track LLCs and corporations, keep documents in a secure vault, and never miss a compliance deadline or annual filing." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./assets/theme.css" />
     <script type="module" src="./assets/${jsFile}"></script>
   </head>
