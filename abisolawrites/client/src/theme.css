@@ -311,7 +311,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none !important;
 .lock-icon { width: 16px; height: 16px; color: var(--dim); flex: none; }
 .reader-main { padding: 28px; }
 .reader-chapter-heading { font-size: clamp(24px, 3.4vw, 32px); font-weight: 800; margin: 0 0 20px; line-height: 1.2; }
-.prose { font-family: "Fraunces", Georgia, serif; font-size: 18.5px; line-height: 1.8; }
+.prose { font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 18.5px; line-height: 1.8; }
 .prose p { margin: 0 0 1.1em; }
 .manuscript-slot {
   border: 1.5px dashed var(--border-strong); border-radius: 16px;
