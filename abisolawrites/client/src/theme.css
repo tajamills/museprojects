@@ -314,7 +314,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none !important;
 .prose { font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 18.5px; line-height: 1.8; }
 .prose p { margin: 0 0 1.1em; }
 .chapter-figure { margin: 0 0 1.6em; text-align: center; }
-.chapter-figure img { display: block; width: 100%; max-width: 400px; height: auto; margin: 0 auto; border-radius: 16px; border: 1px solid var(--border); }
+.chapter-figure img { display: block; width: 100%; max-width: 400px; max-height: 320px; object-fit: cover; height: auto; margin: 0 auto; border-radius: 16px; border: 1px solid var(--border); }
 .chapter-figure figcaption { font-size: 13px; color: var(--dim); margin-top: 8px; }
 .appendix-head { font-size: 19px; font-weight: 700; margin: 1.5em 0 0.5em; }
 .appendix-lead { font-weight: 600; margin: 0 0 0.4em; }
