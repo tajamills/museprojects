@@ -457,7 +457,9 @@
 .books-lead-main{flex:1;min-width:0}
 .books-lead-main .books-nums{margin-top:2px}
 .books-lead-divider{margin:18px 0 2px}
-.books-lead .books-actions{margin-top:14px}
+.books-lead .books-actions{margin-top:14px;flex-wrap:nowrap}
+.books-lead .books-actions .primary,.books-lead .books-actions .secondary{white-space:nowrap;padding-left:12px;padding-right:12px;font-size:13px;min-width:0}
+@media (max-width:520px){.books-lead .books-actions{flex-wrap:wrap}}
 .books-lead .books-notice{margin-top:14px}
 @media (max-width:680px){.books-lead{flex-direction:column;gap:16px}}
 .books-month-nav{display:flex;align-items:center;gap:10px}
