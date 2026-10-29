@@ -6,15 +6,19 @@ import { handleLinkClick } from "../nav";
 import { CheckoutBanner, UnlockButton } from "../components";
 import { ArrowLeftIcon, ArrowRightIcon, FeatherIcon, LockIcon } from "../icons";
 
-/** Render a line with [FILL-IN] markers as visible write-in blanks. */
-function renderFill(text: string, keyPrefix: string) {
-  const parts = text.split("[FILL-IN]");
-  if (parts.length === 1) return text;
-  return parts.flatMap((part, i) =>
-    i === parts.length - 1
-      ? [part]
-      : [part, <span key={`${keyPrefix}-${i}`} className="fill-blank" aria-label="fill in" />],
-  );
+/**
+ * Web pages are for reading, not filling in — the fill-in work lives in the
+ * downloadable Word worksheets. So the web appendix drops every [FILL-IN]
+ * marker (and the operators left dangling by it) and reads as a clean
+ * reference checklist.
+ */
+function renderFill(text: string) {
+  return text
+    .replace(/\[FILL-IN\]/g, "")
+    .replace(/\s*[×=]\s*(?=[;·,]|$)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([;·,])/g, "$1")
+    .trim();
 }
 
 /**
@@ -35,18 +39,18 @@ function renderAppendix(text: string) {
         const parts = line.split("☐");
         const lead = parts[0].trim();
         const items = parts.slice(1).map((s) => s.trim()).filter(Boolean);
-        if (lead) out.push(<p key={`${key}-lead`} className="appendix-lead">{renderFill(lead, key)}</p>);
+        if (lead) out.push(<p key={`${key}-lead`} className="appendix-lead">{renderFill(lead)}</p>);
         out.push(
           <ul key={key} className="appendix-checklist">
             {items.map((item, ii) => (
-              <li key={ii}>{renderFill(item, `${key}-${ii}`)}</li>
+              <li key={ii}>{renderFill(item)}</li>
             ))}
           </ul>,
         );
       } else if (line.startsWith("•")) {
-        out.push(<p key={key} className="appendix-bullet">• {renderFill(line.slice(1).trim(), key)}</p>);
+        out.push(<p key={key} className="appendix-bullet">• {renderFill(line.slice(1).trim())}</p>);
       } else {
-        out.push(<p key={key} className="appendix-line">{renderFill(line, key)}</p>);
+        out.push(<p key={key} className="appendix-line">{renderFill(line)}</p>);
       }
     });
   });
