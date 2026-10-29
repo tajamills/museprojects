@@ -539,3 +539,8 @@
 .bank-confirm{margin-top:14px}
 .bank-confirm .billing-strip{margin-top:0}
 .bank-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+
+/* Square corners — Layla, Oct 29, 2026: sleek sharp edges. Structural + interactive
+   surfaces go to 0 radius; true circles (50% icon bubbles, round add) stay round. */
+:root{--radius:0px}
+.panel-card,.entity-card,.deadline,.minutes-card,.pulse,.doc-list,.notice,.focus-deadline,.focus-clear,.sheet,.primary,.secondary,.billing-subscribe,.fix-button,.field input,.field select,.field textarea,.search input,.action-row input,.action-row select,.repeat-row input,.form-callout,.file-drop,.date-block,.file-stamp,.entity-monogram,.segmented,.segmented button,.books-month-btn,.entity-menu-button,.error-note,.coming-up-more,.chip,.entity-view,.auth-card,.billing-card,.books-lead,.bank-card{border-radius:0}
