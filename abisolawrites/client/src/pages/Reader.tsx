@@ -174,7 +174,15 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
                 </figure>
               ) : null}
               {book.id === "quietlyready" && chapter.label === "Appendix" ? (
-                <div className="prose appendix-prose">{renderAppendix(result.text)}</div>
+                <div className="prose appendix-prose">
+                  <p>{result.text.split(/\n\s*\n/)[0]?.trim()}</p>
+                  <p>
+                    The worksheets themselves are the Word file — download it above:
+                    print it and write on it, or open it and click the boxes and
+                    blanks right on your computer. That's where worksheets belong;
+                    this page just points you to them.
+                  </p>
+                </div>
               ) : (
                 <div className="prose">
                   {paragraphs.map((p, i) => (
