@@ -1,9 +1,12 @@
 import { BOOKS, type Book } from "../data/books";
 import { handleLinkClick } from "../nav";
+import { useMe } from "../auth";
 import { ReadFreeButton, UnlockButton } from "../components";
 import {
+  ArrowRightIcon,
   BookOpenIcon,
   CalendarIcon,
+  CheckIcon,
   DoorIcon,
   MusicIcon,
   ScrollIcon,
@@ -12,6 +15,12 @@ import {
 } from "../icons";
 
 function BookCard({ book }: { book: Book }) {
+  const me = useMe();
+  // Same ownership rule as the book pages: unknown identity renders no
+  // CTA at all; an owner gets "Continue reading" + the owned chip and
+  // never a buy button; everyone else keeps the free/unlock pair.
+  const meLoading = me === undefined;
+  const owned = me?.entitlements.includes(book.id) ?? false;
   const CoverIcon = book.id === "doors1" ? DoorIcon : ShieldIcon;
   const freeLabel =
     book.id === "doors1"
@@ -53,9 +62,27 @@ function BookCard({ book }: { book: Book }) {
           </li>
         </ul>
         <div className="cta-row">
-          <ReadFreeButton href={book.readerPath} label={freeLabel} />
-          {/* Renders only while book checkout is enabled server-side. */}
-          <UnlockButton book={book} />
+          {meLoading ? null : owned ? (
+            <>
+              <a
+                href={book.readerPath}
+                className="primary-button"
+                onClick={(e) => handleLinkClick(e, book.readerPath)}
+              >
+                Continue reading
+                <ArrowRightIcon className="btn-icon" />
+              </a>
+              <span className="chip free-chip">
+                <CheckIcon className="chip-icon" /> You own this book
+              </span>
+            </>
+          ) : (
+            <>
+              <ReadFreeButton href={book.readerPath} label={freeLabel} />
+              {/* Renders only while book checkout is enabled server-side. */}
+              <UnlockButton book={book} />
+            </>
+          )}
         </div>
       </div>
     </article>
