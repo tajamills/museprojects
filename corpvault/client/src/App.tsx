@@ -512,8 +512,63 @@ function CategoriesForm({ token, entity, categories }: {
     const add = useMutation({ mutationFn: (form: FormData) => api.createCategory({ token, entity_id: entity.id, name: String(form.get("name")), kind: String(form.get("kind")) as "income" | "expense" | "contribution" | "distribution" }), onSuccess: async () => { await invalidate(); }, onError: (e) => setError(errText(e)) });
     return <div className="form-grid"><form className="cat-add" onSubmit={(e) => { e.preventDefault(); setError(""); add.mutate(new FormData(e.currentTarget)); e.currentTarget.reset(); }}><Field label="New category"><input name="name" required placeholder="Category name"/></Field><Field label="Kind"><select name="kind">{BK_KIND_OPTIONS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></Field><button className="primary compact cat-add-btn" type="submit" disabled={add.isPending}>{add.isPending ? "Saving…" : "Add category"}</button></form>{error && <p className="error-note">{error}</p>}<div className="cat-list">{categories.map((c) => <CategoryRow key={c.id} token={token} entity={entity} category={c} onChanged={invalidate}/>)}</div><p className="form-callout">Archived categories keep their history but leave the pickers. A category with transactions on it can't be deleted — archive it instead.</p></div>;
 }
-function Billing({ token }: {
+function AccountSettings({ token, email, onTokenRefresh, onEmailChange, onSignOut }: {
     token: string;
+    email: string;
+    /** Password change rotates the session: adopt the fresh token. */
+    onTokenRefresh: (next: string, email: string) => void;
+    /** Email change: keep the rail + stored sign-in email current. */
+    onEmailChange: (next: string) => void;
+    /** Account deleted: drop the local session for good. */
+    onSignOut: () => void;
+}) {
+    const [pwCurrent, setPwCurrent] = useState("");
+    const [pwNext, setPwNext] = useState("");
+    const [pwAgain, setPwAgain] = useState("");
+    const [pwError, setPwError] = useState("");
+    const [pwDone, setPwDone] = useState(false);
+    const pwChange = useMutation({ mutationFn: () => { if (pwNext !== pwAgain)
+            throw new Error("The new passwords don't match."); return api.changePassword({ token, current_password: pwCurrent, new_password: pwNext }); }, onSuccess: (data) => { setPwCurrent(""); setPwNext(""); setPwAgain(""); setPwError(""); setPwDone(true); onTokenRefresh(data.token, data.email); }, onError: (e) => { setPwDone(false); setPwError(errText(e)); } });
+    const [emNext, setEmNext] = useState("");
+    const [emPassword, setEmPassword] = useState("");
+    const [emError, setEmError] = useState("");
+    const [emDone, setEmDone] = useState(false);
+    const emChange = useMutation({ mutationFn: () => api.changeEmail({ token, current_password: emPassword, new_email: emNext }), onSuccess: (data) => { setEmPassword(""); setEmError(""); setEmDone(true); onEmailChange(data.email); }, onError: (e) => { setEmDone(false); setEmError(errText(e)); } });
+    const [delPassword, setDelPassword] = useState("");
+    const [delConfirm, setDelConfirm] = useState("");
+    const [delError, setDelError] = useState("");
+    const delAccount = useMutation({ mutationFn: () => api.deleteAccount({ token, current_password: delPassword, confirmation: delConfirm }), onSuccess: () => onSignOut(), onError: (e) => setDelError(errText(e)) });
+    return <section className="account-settings" aria-label="Account settings"><div><p className="eyebrow">Account</p><h2 className="account-settings-title">Account settings</h2></div>
+    <section className="panel-card account-card"><h3>Password</h3><p className="quiet">Change the password you sign in with.</p><form className="form-grid account-form" onSubmit={(e) => { e.preventDefault(); setPwError(""); setPwDone(false); pwChange.mutate(); }}>
+      <Field label="Current password"><input type="password" autoComplete="current-password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required/></Field>
+      <Field label="New password"><input type="password" autoComplete="new-password" value={pwNext} onChange={(e) => setPwNext(e.target.value)} minLength={8} required/></Field>
+      <Field label="New password again"><input type="password" autoComplete="new-password" value={pwAgain} onChange={(e) => setPwAgain(e.target.value)} minLength={8} required/></Field>
+      <p className="field-note">Use at least 8 characters.</p>
+      {pwError && <p className="error-note" role="alert">{pwError}</p>}
+      {pwDone && <p className="done-note">Password changed. You're signed in with the new password.</p>}
+      <div><button className="primary compact" type="submit" disabled={pwChange.isPending}>{pwChange.isPending ? "Saving…" : "Change password"}</button></div>
+    </form></section>
+    <section className="panel-card account-card"><h3>Sign-in email</h3><p className="quiet">You sign in with <strong>{email}</strong>.</p><form className="form-grid account-form" onSubmit={(e) => { e.preventDefault(); setEmError(""); setEmDone(false); emChange.mutate(); }}>
+      <Field label="New email"><input type="email" autoComplete="email" value={emNext} onChange={(e) => setEmNext(e.target.value)} required/></Field>
+      <Field label="Current password"><input type="password" autoComplete="current-password" value={emPassword} onChange={(e) => setEmPassword(e.target.value)} required/></Field>
+      {emError && <p className="error-note" role="alert">{emError}</p>}
+      {emDone && <p className="done-note">Sign-in email changed. Use the new email next time you sign in.</p>}
+      <div><button className="primary compact" type="submit" disabled={emChange.isPending}>{emChange.isPending ? "Saving…" : "Change email"}</button></div>
+    </form></section>
+    <section className="panel-card account-card danger-zone"><h3>Delete account</h3><p className="quiet">This deletes your account and everything in it — businesses, documents, books, and minutes. Any subscription is canceled first, so you are never charged again. This can't be undone.</p><form className="form-grid account-form" onSubmit={(e) => { e.preventDefault(); setDelError(""); delAccount.mutate(); }}>
+      <Field label="Current password"><input type="password" autoComplete="current-password" value={delPassword} onChange={(e) => setDelPassword(e.target.value)} required/></Field>
+      <Field label="Type DELETE to confirm"><input value={delConfirm} onChange={(e) => setDelConfirm(e.target.value)} placeholder="DELETE" required/></Field>
+      {delError && <p className="error-note" role="alert">{delError}</p>}
+      <div><button className="danger-button" type="submit" disabled={delConfirm !== "DELETE" || delAccount.isPending}>{delAccount.isPending ? "Deleting…" : "Delete my account"}</button></div>
+    </form></section>
+  </section>;
+}
+function Billing({ token, email, onTokenRefresh, onEmailChange, onSignOut }: {
+    token: string;
+    email: string;
+    onTokenRefresh: (next: string, email: string) => void;
+    onEmailChange: (next: string) => void;
+    onSignOut: () => void;
 }) {
     const [notice, setNotice] = useState("");
     const statusQuery = useQuery({ queryKey: ["billing", token], queryFn: () => api.getBillingStatus({ token }), retry: false });
@@ -536,7 +591,7 @@ function Billing({ token }: {
     {notice && <p className="error-note billing-alert" role="alert">{notice}</p>}
     {!subscribed && <div className="billing-actions"><button className="primary compact" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Subscribe — $199.88/yr"}</button><p className="field-note billing-note">Checkout is secured by Stripe. Your card is charged $199.88 immediately, then once a year.</p></div>}
     {hasBillingAccount && <button className="billing-invoices" disabled={portal.isPending} onClick={() => portal.mutate()}><Icon name="documents"/>View invoices<span className="entity-open-arrow" aria-hidden="true"/></button>}
-    </>}</section>}</div>;
+    </>}</section>}<AccountSettings token={token} email={email} onTokenRefresh={onTokenRefresh} onEmailChange={onEmailChange} onSignOut={onSignOut}/></div>;
 }
 /** The public services page (/services) — the "what exactly do I get"
  *  explainer a logged-out visitor can read before creating a workspace.
@@ -629,5 +684,5 @@ export function App() {
         return <div className="loading"><span></span><p>Opening your records…</p></div>;
     if (workspace.isError || !data)
         return <main className="error-page"><h1>We couldn't open this workspace.</h1><p>{errText(workspace.error)}</p><button className="primary compact" onClick={() => { localStorage.removeItem("bizkeep_token"); localStorage.removeItem("bizkeep_email"); setToken(""); }}>Return to sign in</button></main>;
-    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className={tab === "entities" && selectedEntityId == null ? "content wide" : "content"}>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload}/>}{tab === "books" && <Books data={data} token={token}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal}/>}{tab === "billing" && <Billing token={token}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
+    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className={tab === "entities" && selectedEntityId == null ? "content wide" : "content"}>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload}/>}{tab === "books" && <Books data={data} token={token}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal}/>}{tab === "billing" && <Billing token={token} email={email} onTokenRefresh={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); setToken(next); setEmail(nextEmail); }} onEmailChange={(nextEmail) => { localStorage.setItem("bizkeep_email", nextEmail); setEmail(nextEmail); }} onSignOut={() => { localStorage.clear(); setToken(""); setEmail(""); }}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
 }

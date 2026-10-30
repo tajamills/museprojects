@@ -548,3 +548,17 @@
 :root{--radius:0px}
 .panel-card,.entity-card,.deadline,.minutes-card,.pulse,.doc-list,.notice,.focus-deadline,.focus-clear,.sheet,.primary,.secondary,.billing-subscribe,.fix-button,.field input,.field select,.field textarea,.search input,.action-row input,.action-row select,.repeat-row input,.form-callout,.file-drop,.date-block,.file-stamp,.entity-monogram,.segmented,.segmented button,.books-month-btn,.entity-menu-button,.error-note,.coming-up-more,.chip,.entity-view,.auth-card,.billing-card,.books-lead,.bank-card{border-radius:0}
 .due-chip,.auth-panel,.auth-switch,.billing-strip,.books-notice,.entity-menu,.doc-nomatch,.empty,.count-badge,.cat-bar,.desktop-rail button,.bottom-nav button,.doc-row em{border-radius:0}
+
+/* Account settings (Billing page, below the plan card): password, sign-in
+   email, and the delete-account danger zone. Black/silver system; the
+   danger button is the one red surface, echoing .error-note's tokens. */
+.account-settings{margin-top:38px;display:grid;gap:16px}
+.account-settings-title{font:600 22px var(--serif);margin:4px 0 0}
+.account-card{margin-top:0}
+.account-card h3{font:600 18px var(--serif);margin:0 0 4px}
+.account-form{margin-top:16px}
+.danger-zone{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+.danger-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--danger);background:var(--danger);color:#ffffff;min-height:48px;border-radius:12px;font-weight:700;font-size:15px;padding:0 20px;cursor:pointer}
+.danger-button:disabled{opacity:.45;cursor:not-allowed}
+.done-note{background:var(--green-soft);color:var(--green);padding:10px 12px;border-radius:10px;margin:0;font-size:12px}
+.danger-button,.done-note{border-radius:0}

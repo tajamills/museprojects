@@ -72,6 +72,64 @@ async function accountRecord(db: Db, token: string) {
         throw new Error("Your session has expired. Please sign in again.");
     return account;
 }
+/**
+ * Cancel every Stripe subscription attached to an account — the base plan
+ * plus every per-business Bank Sync add-on — ahead of account deletion.
+ * Candidates come from the IDs recorded on the account / add-on rows plus,
+ * when a Stripe customer is bound, an authoritative list of that
+ * customer's subscriptions. Already-canceled subscriptions are skipped.
+ * Throws (aborting the deletion) when billing cannot be reached or any
+ * cancellation fails: a deleted account must never keep being charged.
+ * An account with nothing recorded in Stripe has nothing to cancel and
+ * returns without touching Stripe at all.
+ */
+async function cancelAllStripeSubscriptions(db: Db, account: Awaited<ReturnType<typeof accountRecord>>): Promise<void> {
+    const ids = new Set<string>();
+    if (account.stripeSubscriptionId)
+        ids.add(account.stripeSubscriptionId);
+    const addons = await db.select({ stripeSubscriptionId: schema.bkSyncAddons.stripeSubscriptionId }).from(schema.bkSyncAddons).where(eq(schema.bkSyncAddons.accountId, account.id));
+    for (const addon of addons) {
+        if (addon.stripeSubscriptionId)
+            ids.add(addon.stripeSubscriptionId);
+    }
+    if (!account.stripeCustomerId && ids.size === 0)
+        return;
+    const unreachable = "We couldn't cancel your subscription, so your account was not deleted. Please try again, or contact support.";
+    let stripe: ReturnType<typeof getStripe>;
+    try {
+        stripe = getStripe();
+    }
+    catch {
+        throw new Error(unreachable);
+    }
+    if (account.stripeCustomerId) {
+        try {
+            const subs = await stripe.subscriptions.list({ customer: account.stripeCustomerId, status: "all", limit: 100 });
+            for (const sub of subs.data)
+                ids.add(sub.id);
+        }
+        catch {
+            throw new Error(unreachable);
+        }
+    }
+    for (const id of ids) {
+        let status: string;
+        try {
+            status = (await stripe.subscriptions.retrieve(id)).status;
+        }
+        catch {
+            continue; // Unknown to Stripe — nothing left to cancel.
+        }
+        if (status === "canceled" || status === "incomplete_expired")
+            continue;
+        try {
+            await stripe.subscriptions.cancel(id);
+        }
+        catch {
+            throw new Error(unreachable);
+        }
+    }
+}
 function nextAnnual(month: number, day: number): string {
     const today = new Date();
     let year = today.getUTCFullYear();
@@ -1211,6 +1269,98 @@ export const actionDefs = {
                 status,
                 currentPeriodEnd: account.currentPeriodEnd ? account.currentPeriodEnd.toISOString() : null,
             };
+        },
+    },
+    changePassword: {
+        request: z.object({ token: z.string(), current_password: z.string().min(1).max(128), new_password: z.string().min(8).max(128) }),
+        response: sessionResponse,
+        async handler(ctx: Ctx, args: { token: string; current_password: string; new_password: string }): Promise<z.infer<typeof sessionResponse>> {
+            const account = await accountRecord(ctx.db, args.token);
+            if (!(await verifyPassword(args.current_password, account.passwordHash)))
+                throw new Error("Your current password is incorrect.");
+            const passwordHash = await hashPassword(args.new_password);
+            await ctx.db.update(schema.accounts).set({ passwordHash }).where(eq(schema.accounts.id, account.id));
+            // Rotate the session (the CryptoBagTracker change-password
+            // pattern): every existing session is revoked and a fresh
+            // token is issued, so a stolen old session dies with the
+            // old password.
+            await ctx.db.delete(schema.sessions).where(eq(schema.sessions.accountId, account.id));
+            const token = crypto.randomUUID();
+            await ctx.db.insert(schema.sessions).values({ token, accountId: account.id, expiresAt: new Date(Date.now() + 30 * 86400000) });
+            return { token, email: account.email, role: account.role ?? "user" };
+        },
+    },
+    changeEmail: {
+        request: z.object({ token: z.string(), current_password: z.string().min(1).max(128), new_email: z.string().email() }),
+        response: z.object({ ok: z.literal(true), email: z.string(), role: z.string() }),
+        async handler(ctx: Ctx, args: { token: string; current_password: string; new_email: string }): Promise<{ ok: true; email: string; role: string }> {
+            const account = await accountRecord(ctx.db, args.token);
+            if (!(await verifyPassword(args.current_password, account.passwordHash)))
+                throw new Error("Your current password is incorrect.");
+            const email = args.new_email.trim().toLowerCase();
+            if (email === account.email)
+                throw new Error("That's the email already on this account.");
+            const existing = await ctx.db.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.email, email)).limit(1);
+            if (existing.length)
+                throw new Error("An account with that email already exists.");
+            // Comp follows the email list: recompute the stored role from
+            // the new email exactly as sign-in does. Changing away from a
+            // listed email ends the comp; changing to one grants it.
+            const role = isAdminEmail(email) ? "admin" : "user";
+            await ctx.db.update(schema.accounts).set({ email, role }).where(eq(schema.accounts.id, account.id));
+            return { ok: true, email, role };
+        },
+    },
+    deleteAccount: {
+        request: z.object({ token: z.string(), current_password: z.string().min(1).max(128), confirmation: z.string() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { token: string; current_password: string; confirmation: string }): Promise<z.infer<typeof okResponse>> {
+            const account = await accountRecord(ctx.db, args.token);
+            if (args.confirmation !== "DELETE")
+                throw new Error("Type DELETE to confirm deleting your account.");
+            if (!(await verifyPassword(args.current_password, account.passwordHash)))
+                throw new Error("Your current password is incorrect.");
+            // 1) Cancel every Stripe subscription first. If this throws,
+            //    nothing is deleted — a deleted account must never keep
+            //    being charged.
+            await cancelAllStripeSubscriptions(ctx.db, account);
+            // 2) Best-effort: revoke the Plaid items (the same pattern as
+            //    disconnectBankConnection) so the bank links die with the
+            //    account instead of lingering at Plaid.
+            if (plaidConfigured() && tokenEncryptionReady()) {
+                const conns = await ctx.db.select({ accessTokenEnc: schema.bkBankConnections.accessTokenEnc }).from(schema.bkBankConnections).where(and(eq(schema.bkBankConnections.accountId, account.id), eq(schema.bkBankConnections.status, "active")));
+                for (const conn of conns) {
+                    try {
+                        await removePlaidItem(decryptToken(conn.accessTokenEnc));
+                    }
+                    catch { /* item already removed at Plaid — the row goes either way */ }
+                }
+            }
+            // 3) Remember the document blob keys so the stored files can
+            //    be removed once the rows are gone.
+            const docs = await ctx.db.select({ blobKey: schema.documents.blobKey }).from(schema.documents).where(eq(schema.documents.accountId, account.id));
+            // 4) Delete every row the account owns, then the account
+            //    itself, in one transaction. (Every child table also has
+            //    ON DELETE CASCADE on account_id — the explicit deletes
+            //    are the belt, the cascades the suspenders.)
+            await ctx.db.transaction(async (tx) => {
+                await tx.delete(schema.bkTransactions).where(eq(schema.bkTransactions.accountId, account.id));
+                await tx.delete(schema.bkBankConnections).where(eq(schema.bkBankConnections.accountId, account.id));
+                await tx.delete(schema.bkSyncAddons).where(eq(schema.bkSyncAddons.accountId, account.id));
+                await tx.delete(schema.bkCategories).where(eq(schema.bkCategories.accountId, account.id));
+                await tx.delete(schema.meetings).where(eq(schema.meetings.accountId, account.id));
+                await tx.delete(schema.reminders).where(eq(schema.reminders.accountId, account.id));
+                await tx.delete(schema.documents).where(eq(schema.documents.accountId, account.id));
+                await tx.delete(schema.entities).where(eq(schema.entities.accountId, account.id));
+                await tx.delete(schema.sessions).where(eq(schema.sessions.accountId, account.id));
+                await tx.delete(schema.accounts).where(eq(schema.accounts.id, account.id));
+            });
+            // 5) Remove the stored document files (best-effort; the blob
+            //    store treats missing keys as no-ops).
+            for (const doc of docs) {
+                await ctx.blobs.delete(doc.blobKey).catch(() => undefined);
+            }
+            return { ok: true };
         },
     },
 };
