@@ -2,7 +2,7 @@ import { SafeAreaTopScrim } from "./client-helpers";
 
 export type LegalKind = "terms" | "privacy";
 
-const LAST_UPDATED = "October 11, 2026";
+const LAST_UPDATED = "October 30, 2026";
 
 function LegalShell({ kind, children }: { kind: LegalKind; children: React.ReactNode }) {
   const title = kind === "terms" ? "Terms of Service" : "Privacy Policy";
@@ -40,7 +40,7 @@ export function TermsPage() {
         <p>
           zepostia (&ldquo;we&rdquo;, &ldquo;us&rdquo;) provides a social media scheduling and publishing tool.
           After you connect your accounts, you can write a post once and publish it to any combination of
-          Facebook, Instagram, YouTube, and X, either immediately or on a schedule you choose.
+          Facebook, Instagram, and X, either immediately or on a schedule you choose.
           The service is provided through our website at zepostia.com.
         </p>
       </section>
@@ -74,7 +74,7 @@ export function TermsPage() {
           <li><strong>X:</strong> 60 successful posts per calendar month.</li>
         </ul>
         <p>
-          Scheduled posts and posts to Facebook, Instagram, and YouTube are not subject to these caps.
+          Scheduled posts and posts to Facebook and Instagram are not subject to these caps.
           Only posts that publish successfully count toward the limit.
         </p>
       </section>
@@ -114,7 +114,7 @@ export function TermsPage() {
         <p>
           We work to keep zepostia reliable, but the service is provided on a best-effort basis. We are not
           liable for interruptions caused by third-party platform outages, API changes, or maintenance on
-          Facebook, Instagram, YouTube, or X. Scheduled posts depend on those platforms accepting
+          Facebook, Instagram, or X. Scheduled posts depend on those platforms accepting
           them at publish time.
         </p>
       </section>
@@ -194,7 +194,7 @@ export function PrivacyPage() {
         <h2>4. Who we share data with</h2>
         <p>We share data only as needed to provide the service:</p>
         <ul>
-          <li><strong>The platforms you connect</strong> (Meta/Facebook and Instagram, Google/YouTube, X) receive your post content when you publish, as you instructed.</li>
+          <li><strong>The platforms you connect</strong> (Meta/Facebook and Instagram, X) receive your post content when you publish, as you instructed.</li>
           <li><strong>Stripe</strong> processes your subscription payments.</li>
         </ul>
         <p>

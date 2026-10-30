@@ -92,6 +92,13 @@ const PLATFORM_ORDER: Platform[] = ["facebook", "instagram", "tiktok", "youtube"
  *  at TikTok's consent step). The integration stays wired underneath;
  *  flip this to true on approval day and TikTok comes back everywhere. */
 const tiktokVisible = false;
+/** YouTube is hidden on every customer surface until Google publishes
+ *  and verifies the OAuth app (it is still in Testing mode, so only
+ *  listed test users can connect — real customers hit a 403). The
+ *  integration, stored connections, and data stay wired underneath;
+ *  flip this to true once Google verification completes and YouTube
+ *  comes back everywhere. */
+const youtubeVisible = false;
 const PLATFORM_META: Record<Platform, { label: string; Icon: ComponentType; className: string }> = {
   facebook: { label: "Facebook", Icon: IconFacebook, className: "platform-facebook" },
   instagram: { label: "Instagram", Icon: IconInstagram, className: "platform-instagram" },
@@ -250,7 +257,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           <div className="hero-copy">
             <span className="hero-badge">Social media, simplified</span>
             <h1>One post.<br /><em>Every channel.</em></h1>
-            <p>Write once, post everywhere. Connect your Facebook, Instagram, and YouTube accounts &mdash; plus X with an add-on &mdash; then compose and schedule from one place.</p>
+            <p>Write once, post everywhere. Connect your Facebook and Instagram accounts &mdash; plus X with an add-on &mdash; then compose and schedule from one place.</p>
             <div className="hero-ctas">
               <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
               <a className="secondary-button hero-cta" href="#how-it-works">See how it works</a>
@@ -268,7 +275,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
               <div className="mockup-composer">
                 <p>What do you want to publish?</p>
                 <div className="mockup-chips">
-                  {PLATFORM_ORDER.filter((platform) => platform !== "tiktok" || tiktokVisible).map((platform) => <PlatformBadge key={platform} platform={platform} small />)}
+                  {PLATFORM_ORDER.filter((platform) => (platform !== "tiktok" || tiktokVisible) && (platform !== "youtube" || youtubeVisible)).map((platform) => <PlatformBadge key={platform} platform={platform} small />)}
                 </div>
               </div>
               <div className="mockup-actions">
@@ -285,9 +292,9 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
                 </div>
                 <div className="mockup-row">
                   <div className="mockup-dots">
-                    <PlatformBadge platform="youtube" small />
+                    <PlatformBadge platform="x" small />
                   </div>
-                  <div><p>New video is live&hellip;</p><span>Published 2h ago</span></div>
+                  <div><p>New post is live&hellip;</p><span>Published 2h ago</span></div>
                 </div>
               </div>
             </div>
@@ -295,7 +302,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
         </section>
         <section className="platforms-strip" aria-label="Supported platforms">
           <span>Posts to</span>
-          {PLATFORM_ORDER.filter((platform) => platform !== "tiktok" || tiktokVisible).map((platform) => (
+          {PLATFORM_ORDER.filter((platform) => (platform !== "tiktok" || tiktokVisible) && (platform !== "youtube" || youtubeVisible)).map((platform) => (
             <span key={platform} className="platform-item">
               <PlatformBadge platform={platform} small />{PLATFORM_META[platform].label}
             </span>
@@ -326,7 +333,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
           <h2>One plan, one price</h2>
           <div className="pricing-card">
             <div className="price">$19.88<small> / month</small></div>
-            <p>All three channels: Facebook, Instagram, YouTube. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
+            <p>Both included channels: Facebook and Instagram. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
             <p>X posting available as a paid add-on &mdash; see <a href="/services">Services</a>.</p>
             <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
           </div>
@@ -433,7 +440,8 @@ function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; pos
   const demoMode = useServerDemoMode();
   // Count exactly what the Accounts tiles show: the visible channel rows
   // (same lookup, same X gating), tallied by their current status.
-  const channels = channelAccounts(accounts, demoMode).filter((account) => (account.platform !== "x" || xVisible) && (account.platform !== "tiktok" || tiktokVisible));
+  const channels = channelAccounts(accounts, demoMode).filter((account) => (account.platform !== "x" || xVisible) && (account.platform !== "tiktok" || tiktokVisible) && (account.platform !== "youtube" || youtubeVisible));
+  const visibleChannelTotal = PLATFORM_ORDER.filter((platform) => (platform !== "x" || xVisible) && (platform !== "tiktok" || tiktokVisible) && (platform !== "youtube" || youtubeVisible)).length;
   const connected = channels.filter((account) => account.status === "connected").length;
   const pending = posts.filter((post) => post.status === "pending").length;
   const published = posts.filter((post) => post.status === "published").length;
@@ -456,7 +464,7 @@ function Dashboard({ accounts, posts, go, xVisible }: { accounts: Account[]; pos
     {needsAttention.length > 0 && <section className="attention-band"><strong>{needsAttention.length} account{needsAttention.length === 1 ? "" : "s"} need attention</strong><span>Reconnect before publishing. The app will not fail silently.</span><button onClick={() => go("accounts")}>Review</button></section>}
 
     <section className="stat-tiles" aria-label="Workspace summary">
-      <div className="stat-tile"><span className="stat-bubble tint-green"><IconLink /></span><div><strong>{connected}<small>/5</small></strong><span>connected</span></div></div>
+      <div className="stat-tile"><span className="stat-bubble tint-green"><IconLink /></span><div><strong>{connected}<small>/{visibleChannelTotal}</small></strong><span>connected</span></div></div>
       <div className="stat-tile"><span className="stat-bubble tint-blue"><IconClock /></span><div><strong>{pending}</strong><span>queued</span></div></div>
       <div className="stat-tile"><span className="stat-bubble tint-lav"><IconSend /></span><div><strong>{published}</strong><span>published</span></div></div>
     </section>
@@ -504,7 +512,7 @@ function PostList({ posts, onCancel, onCancelBump, onAdvanceBump, cancelling }: 
 function Composer({ accounts, token, onDone, goAccounts }: { accounts: Account[]; token: string; onDone: (message: string) => void; goAccounts: () => void }) {
   const demoMode = useServerDemoMode();
   const queryClient = useQueryClient();
-  const connected = channelAccounts(accounts, demoMode).filter((account) => account.status === "connected");
+  const connected = channelAccounts(accounts, demoMode).filter((account) => account.status === "connected" && (account.platform !== "tiktok" || tiktokVisible) && (account.platform !== "youtube" || youtubeVisible));
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
@@ -793,7 +801,7 @@ function Accounts({ accounts, token, onMessage, xVisible, xNeedsTier, goBilling,
       <div className="page-heading"><h1>Accounts</h1><p>Connect your social media accounts to publish content from Zepostia.</p></div>
       <button className="help-pill" onClick={goHelp}><span className="help-pill-icon"><IconHelp /></span>Need help connecting?</button>
     </div>
-    <div className="connect-list">{PLATFORM_ORDER.filter((platform) => (platform !== "x" || xVisible) && (platform !== "tiktok" || tiktokVisible)).map((platform) => {
+    <div className="connect-list">{PLATFORM_ORDER.filter((platform) => (platform !== "x" || xVisible) && (platform !== "tiktok" || tiktokVisible) && (platform !== "youtube" || youtubeVisible)).map((platform) => {
       const meta = PLATFORM_META[platform];
       const account = accountForPlatform(accounts, platform, demoMode);
       const needsReconnect = account && account.status !== "connected";
@@ -883,7 +891,7 @@ function Queue({ posts, token, onMessage, embedded }: { posts: Post[]; token: st
 }
 
 function PostPage({ accounts, posts, token, onMessage, goAccounts, xVisible }: { accounts: Account[]; posts: Post[]; token: string; onMessage: (message: string) => void; goAccounts: () => void; xVisible: boolean }) {
-  const visibleAccounts = accounts.filter((account) => (account.platform !== "x" || xVisible) && (account.platform !== "tiktok" || tiktokVisible));
+  const visibleAccounts = accounts.filter((account) => (account.platform !== "x" || xVisible) && (account.platform !== "tiktok" || tiktokVisible) && (account.platform !== "youtube" || youtubeVisible));
   return <div className="page-stack post-page">
     <Composer accounts={visibleAccounts} token={token} onDone={onMessage} goAccounts={goAccounts} />
     <Queue posts={posts} token={token} onMessage={onMessage} embedded />
@@ -1501,7 +1509,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
     },
     onError: (e) => setDeleteMessage(e instanceof Error ? e.message.replace(/^action \w+ error: /, "") : "Could not continue."),
   });
-  const miniPlatforms: Platform[] = (["facebook", "instagram", "tiktok", "youtube", "x"] as Platform[]).filter((platform) => (platform !== "x" || xVisible) && (platform !== "tiktok" || tiktokVisible));
+  const miniPlatforms: Platform[] = (["facebook", "instagram", "tiktok", "youtube", "x"] as Platform[]).filter((platform) => (platform !== "x" || xVisible) && (platform !== "tiktok" || tiktokVisible) && (platform !== "youtube" || youtubeVisible));
   return <div className="page-stack">
     <div className="page-heading settings-heading">
       <div><h1>Settings</h1><p>Manage your account, platform connections, and preferences.</p></div>
@@ -1560,7 +1568,7 @@ function Settings({ settings, token, user, metaConfigured, tiktokConfigured, you
 
     {isAdmin && <section className="owner-setup">
       <div className="page-heading"><h2>Owner setup</h2><p>Admin only — platform app credentials and setup steps. Customers never see this section.</p></div>
-      <section className="settings-list">{settings.filter((setting) => (setting.platform !== "x" || xVisible) && (setting.platform !== "tiktok" || tiktokVisible)).map((setting) => <OwnerPlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
+      <section className="settings-list">{settings.filter((setting) => (setting.platform !== "x" || xVisible) && (setting.platform !== "tiktok" || tiktokVisible) && (setting.platform !== "youtube" || youtubeVisible)).map((setting) => <OwnerPlatformSettingsCard key={setting.platform} setting={setting} token={token} onMessage={onMessage} isAdmin={isAdmin} metaConfigured={metaConfigured} tiktokConfigured={tiktokConfigured} youtubeConfigured={youtubeConfigured} xConfigured={xConfigured} xPostsUsed={xPostsUsed} xPostsCap={xPostsCap} tiktokPostsUsed={tiktokPostsUsed} tiktokPostsCap={tiktokPostsCap} />)}</section>
       <AdminResetTool token={token} />
       <BfWaitlistAdmin token={token} />
       <AffiliateReportAdmin token={token} />
@@ -1647,7 +1655,7 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
         <p className="help-note">TikTok posts are video only. New apps publish privately until TikTok approves them — if your video lands as private, that&apos;s why.</p>
       </>,
     } as HelpCardDef] : []),
-    {
+    ...(youtubeVisible ? [{
       id: "connect-youtube", title: "YouTube", sub: "Video uploads to your channel",
       search: "youtube connect google channel upload video account connection",
       body: <>
@@ -1658,7 +1666,7 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
         </ol>
         <p className="help-note">Every upload needs a video file and a title. You&apos;re granting the YouTube upload permission only — zepostia can&apos;t read your email or access anything else in your Google account.</p>
       </>,
-    },
+    } as HelpCardDef] : []),
     ...(xVisible ? [{
       id: "connect-x", title: "X", sub: "Text posts, 280 characters",
       search: "x twitter connect add-on tier account connection",
@@ -1685,7 +1693,7 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
         <p>Open the Post page and look at your queued and past posts — failed posts show the reason. Common causes:</p>
         <ul>
           <li>The account&apos;s connection expired — reconnect it on the Accounts page.</li>
-          <li>The media type isn&apos;t supported (e.g. text-only to YouTube, which needs video).</li>
+          <li>The media type isn&apos;t supported (e.g. a text-only post to Instagram, which needs media).</li>
           <li>The text is too long for the platform (X&apos;s 280-character limit).</li>
         </ul>
         <p>Fix the issue and repost.</p>
@@ -1712,7 +1720,7 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
     {
       id: "faq-passwords", title: "Does zepostia see or store my passwords?", Icon: IconShield,
       search: "passwords see store security login token",
-      body: <p>No. You log in on each platform&apos;s own website (facebook.com, google.com, x.com) — zepostia never sees your password. The platforms give zepostia a limited access token that only allows posting.</p>,
+      body: <p>No. You log in on each platform&apos;s own website (facebook.com, x.com) — zepostia never sees your password. The platforms give zepostia a limited access token that only allows posting.</p>,
     },
     {
       id: "faq-disconnect", title: "Can I disconnect an account?", Icon: IconLink,
@@ -1813,7 +1821,7 @@ function HelpPage({ go, xVisible }: { go: (page: Page) => void; xVisible: boolea
           <tr><td><strong>Facebook</strong></td><td>No practical limit</td><td>Text, link, image</td><td>Posts to Pages you manage</td></tr>
           <tr><td><strong>Instagram</strong></td><td>2,200 characters</td><td>Image or video</td><td>Professional account required</td></tr>
           {tiktokVisible && <tr><td><strong>TikTok</strong></td><td>Caption up to 2,200</td><td>Video only</td><td>60 posts/month included</td></tr>}
-          <tr><td><strong>YouTube</strong></td><td>Title + description</td><td>Video only</td><td>Uploads to your channel</td></tr>
+          {youtubeVisible && <tr><td><strong>YouTube</strong></td><td>Title + description</td><td>Video only</td><td>Uploads to your channel</td></tr>}
           {xVisible && <tr><td><strong>X</strong></td><td>280 characters</td><td>Text (links supported)</td><td>Add-on — tier limits apply</td></tr>}
         </tbody>
       </table></div>
@@ -1926,7 +1934,7 @@ function BlackFridayPage() {
     {
       Icon: IconCompose,
       title: "Write once, post everywhere",
-      body: "Write your post a single time — zepostia fits it to each platform's rules and sends it to Facebook, Instagram, and YouTube for you.",
+      body: "Write your post a single time — zepostia fits it to each platform's rules and sends it to Facebook and Instagram for you, plus X with its add-on.",
     },
     {
       Icon: IconClock,
@@ -2220,7 +2228,7 @@ function ServicesPage() {
       action: { label: "See the tiers", href: "#pricing" },
     },
   ];
-  const platformRows = allPlatformRows.filter((row) => row.platform !== "tiktok" || tiktokVisible);
+  const platformRows = allPlatformRows.filter((row) => (row.platform !== "tiktok" || tiktokVisible) && (row.platform !== "youtube" || youtubeVisible));
   const featureCards: Array<{ Icon: ComponentType; title: string; body: ReactNode }> = [
     {
       Icon: IconCompose,
@@ -2256,7 +2264,7 @@ function ServicesPage() {
   const faqs: Array<{ q: string; a: ReactNode }> = [
     {
       q: "What's included in the $19.88/month plan?",
-      a: "Posting to Facebook Pages, Instagram professional accounts, and YouTube; the composer with per-platform previews; scheduling; and your full post queue and history. X posting is the only extra — it's a paid add-on, in the tiers above.",
+      a: "Posting to Facebook Pages and Instagram professional accounts; the composer with per-platform previews; scheduling; and your full post queue and history. X posting is the only extra — it's a paid add-on, in the tiers above.",
     },
     {
       q: "How does the X add-on work?",
@@ -2272,7 +2280,7 @@ function ServicesPage() {
     },
     {
       q: "Do you need my social media passwords?",
-      a: "No. You log in on each platform's own website — facebook.com, google.com, x.com — and approve zepostia there. Zepostia receives a limited access token that only allows posting; it never sees or stores your password, and you can disconnect any account at any time.",
+      a: "No. You log in on each platform's own website — facebook.com, x.com — and approve zepostia there. Zepostia receives a limited access token that only allows posting; it never sees or stores your password, and you can disconnect any account at any time.",
     },
     {
       q: "Can someone set it up for me?",
@@ -2306,7 +2314,7 @@ function ServicesPage() {
         </section>
 
         <section className="svc-section" aria-label="Platforms">
-          <div className="svc-heading"><h2>Post where your audience already is</h2><p>Three platforms are in the plan. X joins them as an add-on. Every connection uses the platform&apos;s own login.</p></div>
+          <div className="svc-heading"><h2>Post where your audience already is</h2><p>Two platforms are in the plan. X joins them as an add-on. Every connection uses the platform&apos;s own login.</p></div>
           <div className="connect-list">
             {platformRows.map((row) => (
               <article className="connect-row" key={row.platform}>
@@ -2373,7 +2381,7 @@ function ServicesPage() {
                 <a className="primary-button" href="/?auth=signup">Start free trial</a>
               </div>
               <ul className="billing-perks">
-                <li><span className="trust-check"><IconCheck /></span>Facebook, Instagram &amp; YouTube</li>
+                <li><span className="trust-check"><IconCheck /></span>Facebook &amp; Instagram</li>
                 <li><span className="trust-check"><IconCheck /></span>Scheduling and post history</li>
                 <li><span className="trust-check"><IconCheck /></span>Cancel anytime</li>
               </ul>
