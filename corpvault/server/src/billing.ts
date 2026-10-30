@@ -22,6 +22,7 @@
 //                          http://localhost:3000.
 import Stripe from "stripe";
 import { eq } from "drizzle-orm";
+import { isAdminEmail } from "./admin.js";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 
@@ -346,11 +347,15 @@ export async function reconcileBankSyncAddon(
 
 /**
  * Sync entitlement for one entity: the owner's account is comped (the
- * ADMIN_EMAILS pattern — admin role, never charged, never revenue);
- * everyone else needs a live add-on subscription for that entity.
+ * ADMIN_EMAILS pattern — never charged, never revenue). The comp is
+ * honored by stored admin role OR by the account's email passing
+ * isAdminEmail(), so an owner/test account whose role was never
+ * promoted in the database is still comped at this shared check —
+ * every caller (Books UI state, Plaid link token, sync) flows through
+ * here. Everyone else needs a live add-on subscription for that entity.
  */
 export function bankSyncEntitled(addon: AddonRow | null, account: AccountRow): boolean {
-  if (account.role === "admin") return true;
+  if (account.role === "admin" || isAdminEmail(account.email)) return true;
   return Boolean(addon && SUBSCRIBED_STATUSES.includes(addon.status));
 }
 

@@ -29,17 +29,9 @@ export interface Ctx {
 
 const sessionResponse = z.object({ token: z.string(), email: z.string(), role: z.string() });
 const okResponse = z.object({ ok: z.literal(true) });
-/** Code-level admin emails, used ALONGSIDE the ADMIN_EMAILS env var below
- * (owner test account — Oct 30 order; same pattern as the owner-comp in the sister apps). */
-const CODE_ADMIN_EMAILS = ["bazibazi872@gmail.com"];
-/** Emails (lowercased) listed in ADMIN_EMAILS get the 'admin' role on signup/login. */
-function adminEmails(): Set<string> {
-    const fromEnv = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-    return new Set([...fromEnv, ...CODE_ADMIN_EMAILS]);
-}
-function isAdminEmail(email: string): boolean {
-    return adminEmails().has(email.toLowerCase());
-}
+/** Admin-email list lives in ./admin.js, shared with billing.ts so the
+ * Bank Sync entitlement check honors the exact same comp list. */
+import { isAdminEmail } from "./admin.js";
 const entityTypes = ["LLC", "Corporation", "DBA"] as const;
 const categories = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses", "Documentation"] as const;
 const meetingTypes = ["Annual", "Special", "Organizational", "Member Decision"] as const;
@@ -947,7 +939,7 @@ export const actionDefs = {
             await requireBkEntity(ctx.db, account.id, args.entity_id);
             const conn = await activeBkConnection(ctx.db, account.id, args.entity_id);
             const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
-            const comped = account.role === "admin";
+            const comped = account.role === "admin" || isAdminEmail(account.email);
             return {
                 configured: plaidConfigured() && tokenEncryptionReady(),
                 connection: conn ? bkConnectionPublic(conn) : null,
@@ -1075,7 +1067,7 @@ export const actionDefs = {
             const priceId = bankSyncPriceId();
             if (!priceId)
                 throw new Error("Bank sync isn't available yet.");
-            if (account.role === "admin")
+            if (account.role === "admin" || isAdminEmail(account.email))
                 throw new Error("Bank sync is included on your account — no checkout needed.");
             const addon = await reconcileBankSyncAddon(ctx.db, account, args.entity_id);
             if (bankSyncEntitled(addon, account))
