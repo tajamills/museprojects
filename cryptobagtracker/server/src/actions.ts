@@ -641,6 +641,10 @@ export const Actions = {
         mode: "subscription",
         customer: customerId,
         client_reference_id: String(user.id),
+        // Lets customers enter a promotion code at checkout (e.g. the
+        // owner's Black Friday code). The coupon/promotion code itself
+        // lives in Stripe — nothing is discounted unless she creates it.
+        allow_promotion_codes: true,
         line_items: [{ price: priceId, quantity: 1 }],
         subscription_data: { trial_period_days: 7 },
         success_url: `${url}/?billing=success`,
