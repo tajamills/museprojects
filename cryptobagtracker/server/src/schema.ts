@@ -26,6 +26,9 @@ export const users = pgTable("users", {
   payoutTaxName: text("payout_tax_name"),
   payoutTaxAddress: text("payout_tax_address"),
   costBasisMethod: text("cost_basis_method", { enum: ["FIFO", "LIFO", "HIFO"] }).notNull().default("FIFO"),
+  // Owner/comp accounts never lock and are never charged (migration 0010
+  // sets this for the owner's account by email; see entitlement.ts).
+  comped: boolean("comped").notNull().default(false),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),

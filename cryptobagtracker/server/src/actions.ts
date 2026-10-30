@@ -20,6 +20,7 @@ import { fetchTransactions as fetchKrakenTransactions } from "./exchanges/kraken
 import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold.js";
 import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
+import { computeEntitlement, getEntitlement } from "./entitlement.js";
 import {
   build8949,
   buildScheduleD,
@@ -49,6 +50,23 @@ async function requireUser(ctx: Ctx, token: string) {
   const users = await db.select().from(schema.users).where(eq(schema.users.id, session.userId)).limit(1);
   const user = users[0];
   if (!user) throw new Error("Account not found.");
+  return user;
+}
+
+export const SUBSCRIPTION_REQUIRED_MESSAGE =
+  "Subscription required: your 7-day free trial has ended. Subscribe for $8.88/month on the Billing page to keep adding and changing your data. Your records stay saved, and you can still view everything.";
+
+/**
+ * requireUser + the entitlement gate (entitlement.ts). Every mutating
+ * action goes through here: comped accounts, live Stripe subscribers, and
+ * accounts still inside the 7-day signup trial pass; everyone else gets a
+ * plain "subscription required" refusal. Read actions keep using
+ * requireUser — a locked account's data is never held hostage.
+ */
+async function requireEntitledUser(ctx: Ctx, token: string) {
+  const user = await requireUser(ctx, token);
+  const { entitlement } = await getEntitlement(ctx.db, user);
+  if (!entitlement.entitled) throw new Error(SUBSCRIPTION_REQUIRED_MESSAGE);
   return user;
 }
 
@@ -194,7 +212,7 @@ const setPriceAlertActiveRequest = z.object({ token: z.string(), alertId: z.numb
 const walletIdRequest = z.object({ token: z.string(), walletId: z.number().int().positive() });
 const transactionIdRequest = z.object({ token: z.string(), transactionId: z.number().int().positive() });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
-const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable() });
+const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable(), signupTrialEndsAt: z.string(), entitled: z.boolean(), comped: z.boolean() });
 const redirectResponse = z.object({ url: z.string() });
 
 export const Actions = {
@@ -254,7 +272,10 @@ export const Actions = {
     request: tokenRequest,
     response: z.any(),
     handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>) => {
-      const user = await requireUser(ctx, args.token);
+      // Read access stays open for locked accounts; the entitlement verdict
+      // (from reconciled Stripe state) rides along so the client can show
+      // the locked state plainly instead of failing actions silently.
+      const { user, entitlement } = await getEntitlement(ctx.db, await requireUser(ctx, args.token));
       const db = ctx.db;
       const [walletRows, txRows, exchanges, alerts, history, settings] = await Promise.all([
         db.select().from(schema.wallets).where(eq(schema.wallets.userId, user.id)).orderBy(asc(schema.wallets.id)),
@@ -286,7 +307,7 @@ export const Actions = {
         if (tx.type.toUpperCase() === "TRADE" && tx.receivedAsset && tx.receivedAmount && tx.receivedPriceUsd != null) assetMap.set(tx.receivedAsset.toUpperCase(), { amount: tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0), value: (tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0)) * tx.receivedPriceUsd });
       }
       return {
-        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, payoutMethod: user.payoutMethod, payoutZelleInfo: user.payoutZelleInfo, payoutTaxName: user.payoutTaxName, payoutTaxAddress: user.payoutTaxAddress },
+        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, payoutMethod: user.payoutMethod, payoutZelleInfo: user.payoutZelleInfo, payoutTaxName: user.payoutTaxName, payoutTaxAddress: user.payoutTaxAddress, entitlement: { entitled: entitlement.entitled, comped: entitlement.comped, reason: entitlement.reason, trialEndsAt: entitlement.trialEndsAt.toISOString(), trialDaysLeft: entitlement.trialDaysLeft } },
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
         exchanges: exchanges.map((e) => ({ id: e.id, provider: e.provider, label: e.label, keyHint: e.keyHint, status: e.status, lastSyncedAt: e.lastSyncedAt ? e.lastSyncedAt.toISOString() : null, syncError: e.syncError, createdAt: e.createdAt.toISOString() })),
@@ -302,7 +323,7 @@ export const Actions = {
     request: addWalletRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof addWalletRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.insert(schema.wallets).values({ userId: user.id, name: args.name.trim(), chain: args.chain.toUpperCase(), address: args.address.trim(), owned: args.owned });
       ctx.invalidateQueries();
       return { ok: true };
@@ -312,7 +333,7 @@ export const Actions = {
     request: walletIdRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof walletIdRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.delete(schema.wallets)
         .where(and(eq(schema.wallets.id, args.walletId), eq(schema.wallets.userId, user.id)));
       ctx.invalidateQueries();
@@ -323,7 +344,7 @@ export const Actions = {
     request: addExchangeConnectionRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof addExchangeConnectionRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       const hint = `••••${args.apiKey.slice(-4)}`;
       // Credentials are encrypted at rest (AES-256-GCM, EXCHANGE_ENC_KEY);
       // only the masked hint is ever shown in the UI.
@@ -338,7 +359,7 @@ export const Actions = {
     request: exchangeConnectionIdRequest,
     response: syncExchangeResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof exchangeConnectionIdRequest>): Promise<z.infer<typeof syncExchangeResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       const db = ctx.db;
       const rows = await db.select().from(schema.exchangeConnections)
         .where(and(eq(schema.exchangeConnections.id, args.connectionId), eq(schema.exchangeConnections.userId, user.id)))
@@ -404,7 +425,7 @@ export const Actions = {
     request: exchangeConnectionIdRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof exchangeConnectionIdRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.delete(schema.exchangeConnections)
         .where(and(eq(schema.exchangeConnections.id, args.connectionId), eq(schema.exchangeConnections.userId, user.id)));
       ctx.invalidateQueries();
@@ -415,7 +436,7 @@ export const Actions = {
     request: addTransactionRequest,
     response: addTransactionResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof addTransactionRequest>) => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       const db = ctx.db;
       const walletRows = await db.select().from(schema.wallets).where(eq(schema.wallets.userId, user.id));
       const from = walletRows.find((w) => w.id === args.fromWalletId);
@@ -435,7 +456,7 @@ export const Actions = {
     request: transactionIdRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof transactionIdRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.delete(schema.transactions)
         .where(and(eq(schema.transactions.id, args.transactionId), eq(schema.transactions.userId, user.id)));
       ctx.invalidateQueries();
@@ -446,7 +467,7 @@ export const Actions = {
     request: setCostBasisMethodRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof setCostBasisMethodRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.update(schema.users).set({ costBasisMethod: args.method }).where(eq(schema.users.id, user.id));
       ctx.invalidateQueries();
       return { ok: true };
@@ -456,7 +477,7 @@ export const Actions = {
     request: savePayoutInfoRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof savePayoutInfoRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.update(schema.users).set({
         payoutMethod: args.payoutMethod,
         payoutZelleInfo: args.payoutMethod === "zelle" ? (args.payoutZelleInfo?.trim() || null) : null,
@@ -471,7 +492,7 @@ export const Actions = {
     request: saveAlertSettingsRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof saveAlertSettingsRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       const db = ctx.db;
       const existing = await db.select().from(schema.alertSettings).where(eq(schema.alertSettings.userId, user.id)).limit(1);
       const telegramHint = args.telegramToken ? `••••${args.telegramToken.slice(-4)}` : existing[0]?.telegramHint ?? null;
@@ -506,7 +527,7 @@ export const Actions = {
     request: createPriceAlertRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof createPriceAlertRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.insert(schema.priceAlerts).values({ userId: user.id, asset: args.asset.toUpperCase(), direction: args.direction, targetPrice: args.targetPrice, channels: args.channels.join(","), active: true });
       ctx.invalidateQueries();
       return { ok: true };
@@ -516,7 +537,7 @@ export const Actions = {
     request: priceAlertIdRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof priceAlertIdRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.delete(schema.priceAlerts)
         .where(and(eq(schema.priceAlerts.id, args.alertId), eq(schema.priceAlerts.userId, user.id)));
       ctx.invalidateQueries();
@@ -527,7 +548,7 @@ export const Actions = {
     request: setPriceAlertActiveRequest,
     response: okResponse,
     handler: async (ctx: Ctx, args: z.infer<typeof setPriceAlertActiveRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireUser(ctx, args.token);
+      const user = await requireEntitledUser(ctx, args.token);
       // Pausing also clears the episode state, so a resumed alert starts a
       // fresh episode instead of picking up mid-reminder-loop.
       await ctx.db.update(schema.priceAlerts)
@@ -683,11 +704,18 @@ export const Actions = {
       }
       const status = user.subscriptionStatus || "none";
       const periodEnd = user.currentPeriodEnd ? user.currentPeriodEnd.toISOString() : null;
+      // Entitlement is computed from the just-reconciled row so the Billing
+      // page can say plainly whether the account is in its free trial, paid
+      // up, comped, or locked with a fee owed.
+      const entitlement = computeEntitlement(user);
       return {
         status,
         // During a trial, Stripe sets current_period_end to the trial's end.
         trialEndsAt: status === "trialing" ? periodEnd : null,
         currentPeriodEnd: periodEnd,
+        signupTrialEndsAt: entitlement.trialEndsAt.toISOString(),
+        entitled: entitlement.entitled,
+        comped: entitlement.comped,
       };
     },
   },

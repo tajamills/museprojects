@@ -19,12 +19,17 @@
 //     channels are recorded as "SMS (not enabled)" and nothing is sent.
 //   - Generic outbound webhook: if ALERT_WEBHOOK_URL is set, every trigger
 //     POSTs a JSON payload there (e.g. a Zapier "Catch Hook") fire-and-forget.
+//   - Entitlement: alerts for accounts that are not entitled (free trial
+//     ended, no subscription — see entitlement.ts) are recorded as
+//     undelivered with the reason and produce NO Telegram / SMS / webhook
+//     traffic at all.
 //
 // checkPriceAlerts() is called on an interval from server.ts. It never throws
 // for per-alert problems: undeliverable alerts are recorded in alert_history.
 import { and, eq, gte, inArray, lt, lte, or } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { decryptSecret } from "./crypto.js";
+import { getEntitlement, type Entitlement } from "./entitlement.js";
 import * as schema from "./schema.js";
 import { sendSmsMessage, smsAlertsEnabled, smsMonthlyCap, twilioConfig, type SmsSendResult } from "./sms.js";
 
@@ -437,6 +442,20 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
     ? await db.select().from(schema.alertSettings).where(inArray(schema.alertSettings.userId, userIds))
     : [];
   const settingsByUser = new Map(settingsRows.map((s) => [s.userId, s]));
+
+  // Entitlement gate: alerts belonging to accounts whose free trial ended
+  // with no subscription do not fire and generate no Telegram / SMS /
+  // webhook traffic. The verdict comes from Stripe-reconciled state
+  // (entitlement.ts). A user row that can't be loaded is treated as not
+  // entitled — no sends on an unknown account.
+  const entitlementByUser = new Map<number, Entitlement>();
+  if (userIds.length) {
+    const dueUsers = await db.select().from(schema.users).where(inArray(schema.users.id, userIds));
+    for (const row of dueUsers) {
+      const { entitlement } = await getEntitlement(db, row);
+      entitlementByUser.set(row.id, entitlement);
+    }
+  }
   const send = deps.sendTelegram ?? sendTelegramMessage;
   const sendSms =
     deps.sendSms ??
@@ -457,8 +476,16 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
     const channels = alert.channels.split(",").map((c) => c.trim());
     const delivered: string[] = [];
     const skipped: string[] = [];
+    const entitled = entitlementByUser.get(alert.userId)?.entitled ?? false;
+    if (!entitled) {
+      // Not entitled: nothing is sent on any channel and the outbound
+      // webhook stays silent. The trigger is still recorded below with
+      // this reason, and the episode bookkeeping advances as usual, so
+      // history shows the pause instead of a new line every tick.
+      skipped.push("Subscription (free trial ended — alerts paused until you subscribe)");
+    }
 
-    if (channels.includes("Telegram")) {
+    if (entitled && channels.includes("Telegram")) {
       const chatId = settings?.telegramChatId?.trim();
       if (chatId && telegramBotToken()) {
         try {
@@ -474,7 +501,7 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
         console.warn(`price alerts: alert ${alert.id} wants Telegram but ${reason}.`);
       }
     }
-    if (channels.includes("SMS")) {
+    if (entitled && channels.includes("SMS")) {
       // Per-customer SMS (sms.ts). Every branch records the honest outcome:
       // a delivery, or the specific reason no text left the building. The
       // old blanket "SMS (not implemented)" is retired with this block.
@@ -532,8 +559,10 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
         }
       }
     }
-    for (const c of channels) {
-      if (c !== "Telegram" && c !== "SMS") skipped.push(`${c} (not implemented)`);
+    if (entitled) {
+      for (const c of channels) {
+        if (c !== "Telegram" && c !== "SMS") skipped.push(`${c} (not implemented)`);
+      }
     }
 
     const historyMessage =
@@ -559,7 +588,7 @@ export async function checkPriceAlerts(db: Db, deps: AlertCheckDeps = {}): Promi
       console.error(`price alerts: failed to record trigger for alert ${alert.id}:`, err instanceof Error ? err.message : err);
     }
 
-    fireAlertWebhook({
+    if (entitled) fireAlertWebhook({
       userId: alert.userId,
       alertId: alert.id,
       asset: alert.asset,
