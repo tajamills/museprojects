@@ -31,10 +31,17 @@ export const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
  *  here, so the owner stays exempt even if the flag is ever cleared. */
 export const OWNER_COMP_EMAIL = "tmills142009@gmail.com";
 
-/** Stripe statuses that count as a live subscription — the same set
- *  billing.ts uses on its read side. past_due stays entitled while Stripe
- *  retries the card; the Billing page tells the user to update it. */
-const SUBSCRIBED_STATUSES: string[] = ["trialing", "active", "past_due"];
+/** Stripe statuses that count as a live subscription for ENTITLEMENT.
+ *  past_due is deliberately NOT in this set (owner ruling, Oct 30, 2026:
+ *  "they dont pay they dont get access") — a customer whose card failed
+ *  locks like any unpaid account. Reads stay open, so they can still
+ *  reach the Billing page, see its "Payment needed — update your card"
+ *  state (the display reads the raw status, not this set), update their
+ *  card through checkout/portal, and come back.
+ *  billing.ts keeps its own wider set for reconcile bookkeeping
+ *  (picking which Stripe subscription is the live one); that set does
+ *  not decide access and is intentionally separate from this one. */
+const SUBSCRIBED_STATUSES: string[] = ["trialing", "active"];
 
 export interface Entitlement {
   entitled: boolean;
