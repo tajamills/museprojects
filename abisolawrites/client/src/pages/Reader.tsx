@@ -27,6 +27,30 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
   const chapter = book.chapters[index];
   const owned = me?.entitlements.includes(book.id) ?? false;
 
+  // Meta pixel Purchase event: Stripe sends book buyers back to this
+  // reader with ?checkout=success (server success_url). Fire once per
+  // browser session per book, with the value from this book's own
+  // catalog price — never a hard-coded amount.
+  useEffect(() => {
+    if (new URLSearchParams(search).get("checkout") !== "success") return;
+    const key = `aw-fbq-purchase-${book.id}`;
+    try {
+      if (window.sessionStorage.getItem(key)) return;
+      window.sessionStorage.setItem(key, "1");
+    } catch {
+      /* storage unavailable — still fire once for this page view */
+    }
+    const fbq = (window as unknown as { fbq?: (...args: unknown[]) => void }).fbq;
+    if (typeof fbq === "function") {
+      fbq("track", "Purchase", {
+        value: book.priceCents / 100,
+        currency: "USD",
+        content_ids: [book.id],
+        content_type: "product",
+      });
+    }
+  }, [search, book.id, book.priceCents]);
+
   useEffect(() => {
     let live = true;
     setResult(null);
