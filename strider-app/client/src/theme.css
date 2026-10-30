@@ -152,6 +152,7 @@ html { scroll-behavior: smooth; }
 .platforms-strip { border-top: 1px solid var(--border); padding: 28px 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px 30px; }
 .platforms-strip > span:first-child { font-size: 11px; font-weight: 800; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
 .platform-item { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--dim); }
+.platform-soon { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--warning); background: var(--warning-soft); border-radius: 999px; padding: 2px 7px; }
 /* How it works */
 .how-section { padding: 16px 0 52px; scroll-margin-top: 20px; }
 .how-section h2, .pricing-section h2 { font-size: clamp(24px, 4vw, 32px); font-weight: 800; letter-spacing: -.02em; margin: 0 0 8px; text-align: center; }

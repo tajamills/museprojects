@@ -307,6 +307,12 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
               <PlatformBadge platform={platform} small />{PLATFORM_META[platform].label}
             </span>
           ))}
+          <span className="platform-item">
+            <PlatformBadge platform="tiktok" small />{PLATFORM_META.tiktok.label}<span className="platform-soon">Coming soon</span>
+          </span>
+          <span className="platform-item">
+            <PlatformBadge platform="youtube" small />{PLATFORM_META.youtube.label}<span className="platform-soon">Coming soon</span>
+          </span>
         </section>
         <section className="how-section" id="how-it-works">
           <h2>How it works</h2>
@@ -335,6 +341,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
             <div className="price">$19.88<small> / month</small></div>
             <p>Both included channels: Facebook and Instagram. Unlimited scheduled posts. 14-day free trial &mdash; cancel anytime.</p>
             <p>X posting available as a paid add-on &mdash; see <a href="/services">Services</a>.</p>
+            <p>Coming soon, at no extra cost: TikTok and YouTube join this same plan the day they launch.</p>
             <button className="primary-button hero-cta" onClick={() => openAuth("signup")}>Get Started</button>
           </div>
         </section>
@@ -1934,7 +1941,7 @@ function BlackFridayPage() {
     {
       Icon: IconCompose,
       title: "Write once, post everywhere",
-      body: "Write your post a single time — zepostia fits it to each platform's rules and sends it to Facebook and Instagram for you, plus X with its add-on.",
+      body: "Write your post a single time — zepostia fits it to each platform's rules and sends it to Facebook and Instagram for you, plus X with its add-on. TikTok and YouTube are coming soon — included at no extra cost when they launch.",
     },
     {
       Icon: IconClock,
@@ -2229,6 +2236,25 @@ function ServicesPage() {
     },
   ];
   const platformRows = allPlatformRows.filter((row) => (row.platform !== "tiktok" || tiktokVisible) && (row.platform !== "youtube" || youtubeVisible));
+  // Marketing-only rows: TikTok and YouTube are announced as coming soon.
+  // They are NOT connectable today (tiktokVisible / youtubeVisible stay
+  // false), render no action, and join the plan at no extra cost at launch.
+  const comingSoonRows: Array<{ platform: Platform; blurb: string; note?: string; pill: string; pillClass: string }> = [
+    {
+      platform: "tiktok",
+      blurb: "Video posting straight from the composer — no separate upload in the TikTok app.",
+      note: "The zepostia app is in TikTok's review now. The day it clears, TikTok turns on in your plan — included at no extra cost.",
+      pill: "Coming soon",
+      pillClass: "status-wait",
+    },
+    {
+      platform: "youtube",
+      blurb: "Video uploads to your channel, with the title and description written here.",
+      note: "YouTube is finishing its Google setup now. The day it clears, YouTube turns on in your plan — included at no extra cost.",
+      pill: "Coming soon",
+      pillClass: "status-wait",
+    },
+  ];
   const featureCards: Array<{ Icon: ComponentType; title: string; body: ReactNode }> = [
     {
       Icon: IconCompose,
@@ -2264,7 +2290,7 @@ function ServicesPage() {
   const faqs: Array<{ q: string; a: ReactNode }> = [
     {
       q: "What's included in the $19.88/month plan?",
-      a: "Posting to Facebook Pages and Instagram professional accounts; the composer with per-platform previews; scheduling; and your full post queue and history. X posting is the only extra — it's a paid add-on, in the tiers above.",
+      a: "Posting to Facebook Pages and Instagram professional accounts; the composer with per-platform previews; scheduling; and your full post queue and history. X posting is the only extra — it's a paid add-on, in the tiers above. TikTok and YouTube are coming soon — both join the plan at no extra cost when they launch.",
     },
     {
       q: "How does the X add-on work?",
@@ -2314,7 +2340,7 @@ function ServicesPage() {
         </section>
 
         <section className="svc-section" aria-label="Platforms">
-          <div className="svc-heading"><h2>Post where your audience already is</h2><p>Two platforms are in the plan. X joins them as an add-on. Every connection uses the platform&apos;s own login.</p></div>
+          <div className="svc-heading"><h2>Post where your audience already is</h2><p>Two platforms are in the plan. X joins them as an add-on. TikTok and YouTube are coming soon — both included at no extra cost when they launch. Every connection uses the platform&apos;s own login.</p></div>
           <div className="connect-list">
             {platformRows.map((row) => (
               <article className="connect-row" key={row.platform}>
@@ -2329,6 +2355,21 @@ function ServicesPage() {
                 <div className="connect-state">
                   <span className={`status-pill ${row.pillClass}`}><i />{row.pill}</span>
                   {row.action && <a className="secondary-button" href={row.action.href}>{row.action.label}</a>}
+                </div>
+              </article>
+            ))}
+            {comingSoonRows.map((row) => (
+              <article className="connect-row" key={row.platform}>
+                <div className="connect-main">
+                  <PlatformBadge platform={row.platform} />
+                  <div>
+                    <h2>{PLATFORM_META[row.platform].label}</h2>
+                    <p>{row.blurb}</p>
+                    {row.note && <p className="svc-note">{row.note}</p>}
+                  </div>
+                </div>
+                <div className="connect-state">
+                  <span className={`status-pill ${row.pillClass}`}><i />{row.pill}</span>
                 </div>
               </article>
             ))}
@@ -2370,7 +2411,7 @@ function ServicesPage() {
         </section>
 
         <section className="svc-section" id="pricing" aria-label="Pricing">
-          <div className="svc-heading"><h2>One plan, plus the extras</h2><p>Start with the plan — every platform above except X is in it. Add X posting only if you want it, and book a setup session if you'd like a hand getting started.</p></div>
+          <div className="svc-heading"><h2>One plan, plus the extras</h2><p>Start with the plan — Facebook and Instagram are live in it today, and TikTok and YouTube join it at no extra cost when they launch. Add X posting only if you want it, and book a setup session if you'd like a hand getting started.</p></div>
           <div className="billing-block svc-pricing">
             <div className="billing-card">
               <div className="billing-card-icon" aria-hidden="true"><IconCard /></div>
@@ -2382,6 +2423,7 @@ function ServicesPage() {
               </div>
               <ul className="billing-perks">
                 <li><span className="trust-check"><IconCheck /></span>Facebook &amp; Instagram</li>
+                <li><span className="trust-check"><IconCheck /></span>TikTok &amp; YouTube — coming soon, included at no extra cost</li>
                 <li><span className="trust-check"><IconCheck /></span>Scheduling and post history</li>
                 <li><span className="trust-check"><IconCheck /></span>Cancel anytime</li>
               </ul>
