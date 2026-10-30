@@ -7,9 +7,9 @@
  * list below, so either source alone is enough to comp an account. */
 
 /** Code-level admin emails, used ALONGSIDE the ADMIN_EMAILS env var
- * (owner test account — Oct 30 order; same pattern as the owner-comp in
- * the sister apps). */
-const CODE_ADMIN_EMAILS = ["bazibazi872@gmail.com"];
+ * (the owner's accounts — main + test, Oct 30; same pattern as the
+ * owner-comp in the sister apps). */
+const CODE_ADMIN_EMAILS = ["bazibazi872@gmail.com", "tmills142009@gmail.com"];
 
 /** Emails (lowercased) listed in ADMIN_EMAILS get the 'admin' role on signup/login. */
 export function adminEmails(): Set<string> {
