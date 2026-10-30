@@ -71,6 +71,50 @@ async function requireEntitledUser(ctx: Ctx, token: string) {
   return user;
 }
 
+/** Stripe subscription statuses that can still produce a charge. Wider
+ *  than the entitlement set on purpose: deletion must cancel anything
+ *  that could ever bill again, including past_due / unpaid / paused. */
+const BILLABLE_SUBSCRIPTION_STATUSES = new Set([
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "incomplete",
+  "paused",
+]);
+
+/**
+ * Cancel every billable Stripe subscription on an account (the
+ * delete-account path). Billing state keys off the user row — the
+ * Stripe customer/subscription ids stored on it — never the email, so
+ * this follows the account itself. Throws on any failure; the caller
+ * stops the deletion rather than leaving a deleted user being charged.
+ * An account with no Stripe ids has nothing to cancel.
+ */
+async function cancelAccountSubscriptions(user: {
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+}): Promise<void> {
+  if (!user.stripeCustomerId && !user.stripeSubscriptionId) return;
+  const stripe = getStripe();
+  const ids = new Set<string>();
+  if (user.stripeSubscriptionId) ids.add(user.stripeSubscriptionId);
+  if (user.stripeCustomerId) {
+    const subs = await stripe.subscriptions.list({
+      customer: user.stripeCustomerId,
+      status: "all",
+      limit: 100,
+    });
+    for (const sub of subs.data) ids.add(sub.id);
+  }
+  for (const id of ids) {
+    const sub = await stripe.subscriptions.retrieve(id);
+    if (BILLABLE_SUBSCRIPTION_STATUSES.has(sub.status)) {
+      await stripe.subscriptions.cancel(id);
+    }
+  }
+}
+
 function ymd(ms: number) { return new Date(ms).toISOString().slice(0, 10); }
 function money(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function hex(bytes: Uint8Array) { return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(""); }
@@ -205,6 +249,9 @@ const loginRequest = z.object({ email: z.string().email(), password: z.string().
 const tokenRequest = z.object({ token: z.string() });
 const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
 const changePasswordResponse = z.object({ ok: z.literal(true), token: z.string() });
+const changeEmailRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newEmail: z.string().email() });
+const changeEmailResponse = z.object({ ok: z.literal(true), email: z.string() });
+const deleteAccountRequest = z.object({ token: z.string(), confirmation: z.string() });
 const addWalletRequest = z.object({ token: z.string(), name: z.string().min(1).max(60), chain: z.string().min(2).max(10), address: z.string().min(3).max(200), owned: z.boolean() });
 const addExchangeConnectionRequest = z.object({ token: z.string(), provider: z.enum(["Coinbase", "Kraken", "Uphold"]), label: z.string().min(1).max(60), apiKey: z.string().min(4).max(500), apiSecret: z.string().max(20000) });
 const exchangeConnectionIdRequest = z.object({ token: z.string(), connectionId: z.number().int().positive() });
@@ -772,6 +819,75 @@ export const Actions = {
       await db.insert(schema.sessions).values({ token, userId: user.id, createdAt: new Date() });
       ctx.invalidateQueries();
       return { ok: true, token };
+    },
+  },
+  /**
+   * Change the account's sign-in email. The current password is required,
+   * the new address must not belong to another account, and the session
+   * stays valid (sessions key off the user id, not the email). Billing is
+   * untouched on purpose: subscription state keys off the Stripe
+   * customer/subscription ids stored on the user row, never the email,
+   * so a paying customer keeps their subscription across the change.
+   * (The one email-keyed state is the owner comp: an account that
+   * changes away from the comped email stops matching it — correct, and
+   * deliberately not special-cased.)
+   */
+  changeEmail: {
+    request: changeEmailRequest,
+    response: changeEmailResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof changeEmailRequest>): Promise<z.infer<typeof changeEmailResponse>> => {
+      const db = ctx.db;
+      const user = await requireUser(ctx, args.token);
+      if (!(await passwordVerify(args.currentPassword, user.passwordHash))) {
+        throw new Error("Current password is incorrect.");
+      }
+      const newEmail = args.newEmail.trim().toLowerCase();
+      if (newEmail === user.email) throw new Error("That is already your account email.");
+      const existing = await db.select().from(schema.users).where(eq(schema.users.email, newEmail)).limit(1);
+      if (existing[0]) throw new Error("An account already exists for that email.");
+      await db.update(schema.users).set({ email: newEmail }).where(eq(schema.users.id, user.id));
+      ctx.invalidateQueries();
+      return { ok: true, email: newEmail };
+    },
+  },
+  /**
+   * Delete the account and everything it owns. Guarded by a typed
+   * confirmation ("DELETE"). The Stripe subscription is cancelled FIRST
+   * through the billing code: if cancellation fails, the deletion stops
+   * with an honest error — a deleted user must never keep being charged.
+   * This schema has no foreign-key cascades, so every child table is
+   * cleared explicitly inside one transaction before the user row itself
+   * goes (taking the stored promo code, referral and payout columns with
+   * it). Sessions die with the account, so every device is signed out
+   * and the deleted login fails from then on.
+   */
+  deleteAccount: {
+    request: deleteAccountRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof deleteAccountRequest>): Promise<z.infer<typeof okResponse>> => {
+      const db = ctx.db;
+      const user = await requireUser(ctx, args.token);
+      if (args.confirmation !== "DELETE") {
+        throw new Error("Type DELETE to confirm deleting your account.");
+      }
+      try {
+        await cancelAccountSubscriptions(user);
+      } catch {
+        throw new Error("We couldn't cancel your subscription, so your account was not deleted. Cancel it from the Billing page first, then try again.");
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(schema.alertHistory).where(eq(schema.alertHistory.userId, user.id));
+        await tx.delete(schema.smsSends).where(eq(schema.smsSends.userId, user.id));
+        await tx.delete(schema.priceAlerts).where(eq(schema.priceAlerts.userId, user.id));
+        await tx.delete(schema.alertSettings).where(eq(schema.alertSettings.userId, user.id));
+        await tx.delete(schema.transactions).where(eq(schema.transactions.userId, user.id));
+        await tx.delete(schema.exchangeConnections).where(eq(schema.exchangeConnections.userId, user.id));
+        await tx.delete(schema.wallets).where(eq(schema.wallets.userId, user.id));
+        await tx.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+        await tx.delete(schema.users).where(eq(schema.users.id, user.id));
+      });
+      ctx.invalidateQueries();
+      return { ok: true };
     },
   },
 };

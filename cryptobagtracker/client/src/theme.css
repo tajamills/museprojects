@@ -50,10 +50,12 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 input,select { width:100%; border:1px solid var(--border); background:var(--surface); color:var(--text); padding:12px 13px; border-radius:12px; min-height:46px; box-shadow:inset 0 1px 2px rgba(6,25,19,.06); }
 input::placeholder { color:var(--dim); }
 code { font-family:var(--mono); font-size:12px; }
-.primary,.quiet { border:0; border-radius:999px; min-height:44px; padding:11px 22px; font-weight:700; transition:transform .12s ease, box-shadow .12s ease; }
+.primary,.quiet,.danger { border:0; border-radius:999px; min-height:44px; padding:11px 22px; font-weight:700; transition:transform .12s ease, box-shadow .12s ease; }
 .primary { background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #ffffff 18%) 0%, var(--accent) 55%, color-mix(in srgb, var(--accent) 88%, #000000 12%) 100%); color:var(--accent-ink); border:1px solid color-mix(in srgb, var(--accent) 75%, #000000 25%); box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 0 rgba(0,0,0,.18), 0 3px 8px rgba(0,0,0,.28); text-shadow:0 1px 1px rgba(0,0,0,.15); }
 .quiet { background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%); color:var(--text); border:1px solid var(--border); box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 2px 5px rgba(0,0,0,.18); }
 .primary:hover:not(:disabled) { transform:translateY(-1px); box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 0 rgba(0,0,0,.18), 0 5px 12px rgba(0,0,0,.34); }
+.danger { background:linear-gradient(180deg, color-mix(in srgb, var(--danger) 82%, #ffffff 18%) 0%, var(--danger) 55%, color-mix(in srgb, var(--danger) 88%, #000000 12%) 100%); color:#fff; border:1px solid color-mix(in srgb, var(--danger) 75%, #000000 25%); box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 0 rgba(0,0,0,.18), 0 3px 8px rgba(0,0,0,.28); text-shadow:0 1px 1px rgba(0,0,0,.15); }
+.danger:hover:not(:disabled) { transform:translateY(-1px); box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 0 rgba(0,0,0,.18), 0 5px 12px rgba(0,0,0,.34); }
 .quiet:hover:not(:disabled) { transform:translateY(-1px); box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 4px 9px rgba(0,0,0,.22); }
 .primary:active:not(:disabled),.quiet:active:not(:disabled) { transform:translateY(1px); box-shadow:inset 0 2px 5px rgba(0,0,0,.25), 0 1px 2px rgba(0,0,0,.10); }
 .full { width:100%; }
