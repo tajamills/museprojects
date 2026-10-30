@@ -10,7 +10,7 @@
 // POST /actions dispatches `{action, args}` to `Actions[action].handler`
 // after validating `args` against the action's zod `request` schema.
 import { z } from "zod";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
@@ -189,10 +189,13 @@ function importedClassification(type: NormalizedTx["type"]): string {
   return "DISPOSAL";
 }
 
-const authResponse = z.object({ token: z.string(), user: z.object({ email: z.string(), referralCode: z.string(), trialStartedAt: z.string() }) });
+const authResponse = z.object({ token: z.string(), user: z.object({ email: z.string(), trialStartedAt: z.string() }) });
 const okResponse = z.object({ ok: z.literal(true) });
 
-const signupRequest = z.object({ email: z.string().email(), password: z.string().min(8), referralCode: z.string().max(40).optional() });
+// The affiliate/referral program is closed (owner ruling, Oct 30, 2026).
+// There is deliberately no referralCode field here: zod strips unknown
+// keys, so a referral code sent anyway is ignored and never stored.
+const signupRequest = z.object({ email: z.string().email(), password: z.string().min(8) });
 const loginRequest = z.object({ email: z.string().email(), password: z.string().min(1) });
 const tokenRequest = z.object({ token: z.string() });
 const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
@@ -204,7 +207,6 @@ const syncExchangeResponse = z.object({ ok: z.literal(true), imported: z.number(
 const addTransactionRequest = z.object({ token: z.string(), type: z.enum(["BUY", "SELL", "TRADE", "SEND", "RECEIVE", "STAKING", "AIRDROP"]), asset: z.string().min(2).max(12), amount: z.number().positive(), priceUsd: z.number().nonnegative(), feeUsd: z.number().nonnegative(), receivedAsset: z.string().max(12).optional(), receivedAmount: z.number().positive().optional(), receivedPriceUsd: z.number().nonnegative().optional(), fromWalletId: z.number().int().positive().optional(), toWalletId: z.number().int().positive().optional(), note: z.string().max(200).optional(), occurredAt: z.string() });
 const addTransactionResponse = z.object({ ok: z.literal(true), classification: z.string() });
 const setCostBasisMethodRequest = z.object({ token: z.string(), method: z.enum(["FIFO", "LIFO", "HIFO"]) });
-const savePayoutInfoRequest = z.object({ token: z.string(), payoutMethod: z.enum(["zelle", "stripe"]), payoutZelleInfo: z.string().max(128).optional(), payoutTaxName: z.string().max(128), payoutTaxAddress: z.string().max(256) });
 const saveAlertSettingsRequest = z.object({ token: z.string(), telegramToken: z.string().optional(), telegramChatId: z.string().max(64).optional(), phone: z.string().optional(), smsConsent: z.boolean().optional(), pushEnabled: z.boolean() });
 const createPriceAlertRequest = z.object({ token: z.string(), asset: z.string().min(2).max(12), direction: z.enum(["above", "below"]), targetPrice: z.number().positive(), channels: z.array(z.enum(["Telegram", "SMS", "Push"])).min(1) });
 const priceAlertIdRequest = z.object({ token: z.string(), alertId: z.number().int().positive() });
@@ -225,26 +227,19 @@ export const Actions = {
       const existing = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
       if (existing[0]) throw new Error("An account already exists for that email.");
       const passwordHashValue = await passwordHash(args.password);
+      // referral_code is NOT NULL with no DB default, so a value is still
+      // generated to satisfy the constraint — but it is never returned,
+      // displayed, or used: the referral program is closed and no
+      // attribution or crediting happens at signup.
       const referralCode = `CBT${crypto.randomUUID().replace(/-/g, "").slice(0, 7).toUpperCase()}`;
-      const referredBy = args.referralCode?.trim().toUpperCase() || null;
-      const referrerRows = referredBy
-        ? await db.select().from(schema.users).where(eq(schema.users.referralCode, referredBy)).limit(1)
-        : [];
-      const referrer = referrerRows[0];
       const now = new Date();
-      const inserted = await db.insert(schema.users).values({ email, passwordHash: passwordHashValue, referralCode, referredBy, trialStartedAt: now, createdAt: now }).returning();
+      const inserted = await db.insert(schema.users).values({ email, passwordHash: passwordHashValue, referralCode, trialStartedAt: now, createdAt: now }).returning();
       const user = inserted[0];
       if (!user) throw new Error("Account could not be created.");
-      if (referrer) {
-        await db.update(schema.users).set({
-          affiliateReferralCount: sql`${schema.users.affiliateReferralCount} + 1`,
-          affiliateEarnings: sql`ROUND(${schema.users.affiliateEarnings} + 4.44, 2)`,
-        }).where(eq(schema.users.id, referrer.id));
-      }
       const token = crypto.randomUUID();
       await db.insert(schema.sessions).values({ token, userId: user.id, createdAt: now });
       ctx.invalidateQueries();
-      return { token, user: { email: user.email, referralCode: user.referralCode, trialStartedAt: user.trialStartedAt.toISOString() } };
+      return { token, user: { email: user.email, trialStartedAt: user.trialStartedAt.toISOString() } };
     },
   },
   login: {
@@ -257,7 +252,7 @@ export const Actions = {
       if (!user || !(await passwordVerify(args.password, user.passwordHash))) throw new Error("Email or password is incorrect.");
       const token = crypto.randomUUID();
       await db.insert(schema.sessions).values({ token, userId: user.id, createdAt: new Date() });
-      return { token, user: { email: user.email, referralCode: user.referralCode, trialStartedAt: user.trialStartedAt.toISOString() } };
+      return { token, user: { email: user.email, trialStartedAt: user.trialStartedAt.toISOString() } };
     },
   },
   logout: {
@@ -307,7 +302,7 @@ export const Actions = {
         if (tx.type.toUpperCase() === "TRADE" && tx.receivedAsset && tx.receivedAmount && tx.receivedPriceUsd != null) assetMap.set(tx.receivedAsset.toUpperCase(), { amount: tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0), value: (tx.receivedAmount + (assetMap.get(tx.receivedAsset.toUpperCase())?.amount ?? 0)) * tx.receivedPriceUsd });
       }
       return {
-        user: { email: user.email, referralCode: user.referralCode, referredBy: user.referredBy, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, payoutMethod: user.payoutMethod, payoutZelleInfo: user.payoutZelleInfo, payoutTaxName: user.payoutTaxName, payoutTaxAddress: user.payoutTaxAddress, entitlement: { entitled: entitlement.entitled, comped: entitlement.comped, reason: entitlement.reason, trialEndsAt: entitlement.trialEndsAt.toISOString(), trialDaysLeft: entitlement.trialDaysLeft } },
+        user: { email: user.email, trialStartedAt: user.trialStartedAt.toISOString(), costBasisMethod: method, subscriptionStatus: user.subscriptionStatus, entitlement: { entitled: entitlement.entitled, comped: entitlement.comped, reason: entitlement.reason, trialEndsAt: entitlement.trialEndsAt.toISOString(), trialDaysLeft: entitlement.trialDaysLeft } },
         wallets: walletRows.map((w) => ({ id: w.id, name: w.name, chain: w.chain, address: w.address, owned: w.owned, balances: [...balances.entries()].filter(([key]) => key.startsWith(`${w.id}:`)).map(([key, amount]) => ({ asset: key.split(":")[1] ?? "", amount: Number(amount.toFixed(10)) })) })),
         transactions: txRows.map((t) => ({ ...t, occurredAt: t.occurredAt.toISOString(), createdAt: t.createdAt.toISOString() })),
         exchanges: exchanges.map((e) => ({ id: e.id, provider: e.provider, label: e.label, keyHint: e.keyHint, status: e.status, lastSyncedAt: e.lastSyncedAt ? e.lastSyncedAt.toISOString() : null, syncError: e.syncError, createdAt: e.createdAt.toISOString() })),
@@ -315,7 +310,7 @@ export const Actions = {
         alertHistory: history.map((h) => ({ ...h, deliveredAt: h.deliveredAt.toISOString() })),
         alertSettings: settings[0] ? { telegramHint: settings[0].telegramHint, telegramChatId: settings[0].telegramChatId, phoneHint: settings[0].phoneHint, pushEnabled: settings[0].pushEnabled, smsEnabled: smsAlertsEnabled(), phoneSaved: Boolean(settings[0].phoneNumberEnc), smsConsentAt: settings[0].smsConsentAt?.toISOString() ?? null, smsOptedOut: settings[0].smsOptedOut } : { telegramHint: null, telegramChatId: null, phoneHint: null, pushEnabled: false, smsEnabled: smsAlertsEnabled(), phoneSaved: false, smsConsentAt: null, smsOptedOut: false },
         portfolio: { assets: [...assetMap.entries()].filter(([, v]) => Math.abs(v.amount) > 1e-10).map(([asset, v]) => ({ asset, amount: Number(v.amount.toFixed(10)), value: money(v.value) })), totalValue: money([...assetMap.values()].reduce((s, v) => s + v.value, 0)) },
-        tax, selfTest: runSelfTest(), affiliate: { count: user.affiliateReferralCount, earnings: money(user.affiliateEarnings) },
+        tax, selfTest: runSelfTest(),
       };
     },
   },
@@ -469,21 +464,6 @@ export const Actions = {
     handler: async (ctx: Ctx, args: z.infer<typeof setCostBasisMethodRequest>): Promise<z.infer<typeof okResponse>> => {
       const user = await requireEntitledUser(ctx, args.token);
       await ctx.db.update(schema.users).set({ costBasisMethod: args.method }).where(eq(schema.users.id, user.id));
-      ctx.invalidateQueries();
-      return { ok: true };
-    },
-  },
-  savePayoutInfo: {
-    request: savePayoutInfoRequest,
-    response: okResponse,
-    handler: async (ctx: Ctx, args: z.infer<typeof savePayoutInfoRequest>): Promise<z.infer<typeof okResponse>> => {
-      const user = await requireEntitledUser(ctx, args.token);
-      await ctx.db.update(schema.users).set({
-        payoutMethod: args.payoutMethod,
-        payoutZelleInfo: args.payoutMethod === "zelle" ? (args.payoutZelleInfo?.trim() || null) : null,
-        payoutTaxName: args.payoutTaxName.trim(),
-        payoutTaxAddress: args.payoutTaxAddress.trim(),
-      }).where(eq(schema.users.id, user.id));
       ctx.invalidateQueries();
       return { ok: true };
     },
