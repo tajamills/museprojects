@@ -37,7 +37,7 @@ function isAdminEmail(email: string): boolean {
     return adminEmails().has(email.toLowerCase());
 }
 const entityTypes = ["LLC", "Corporation", "DBA"] as const;
-const categories = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses"] as const;
+const categories = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses", "Documentation"] as const;
 const meetingTypes = ["Annual", "Special", "Organizational", "Member Decision"] as const;
 function hex(bytes: Uint8Array): string { return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(""); }
 async function hashPassword(password: string, saltHex?: string): Promise<string> {

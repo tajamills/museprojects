@@ -288,8 +288,8 @@ function EntityDetail({ data, token, entity, open, onEdit, onUploadDoc, onBack }
  *  labels map to the app's real categories as follows:
  *  Formation → "Formation" · Agreements → "Operating Agreement/Bylaws" ·
  *  Minutes → "Meeting Minutes" · Tax Filings → "Tax Filings" ·
- *  Licenses → "Licenses" · Other → "Contracts". */
-const DOC_SHORT_LABEL: Record<string, string> = { "Formation": "Formation", "Operating Agreement/Bylaws": "Agreements", "Meeting Minutes": "Minutes", "Contracts": "Other", "Tax Filings": "Tax Filings", "Licenses": "Licenses" };
+ *  Licenses → "Licenses" · Documentation → "Documentation" · Other → "Contracts". */
+const DOC_SHORT_LABEL: Record<string, string> = { "Formation": "Formation", "Operating Agreement/Bylaws": "Agreements", "Meeting Minutes": "Minutes", "Contracts": "Other", "Tax Filings": "Tax Filings", "Licenses": "Licenses", "Documentation": "Documentation" };
 type DocFilterIcon = "documents" | "agreement" | "minutes" | "receipt" | "license" | "folder";
 const DOC_FILTERS: { label: string; value: DocumentCategory | "all"; icon?: DocFilterIcon }[] = [
     { label: "All", value: "all" },
@@ -298,6 +298,7 @@ const DOC_FILTERS: { label: string; value: DocumentCategory | "all"; icon?: DocF
     { label: "Minutes", value: "Meeting Minutes", icon: "minutes" },
     { label: "Tax Filings", value: "Tax Filings", icon: "receipt" },
     { label: "Licenses", value: "Licenses", icon: "license" },
+    { label: "Documentation", value: "Documentation", icon: "documents" },
     { label: "Other", value: "Contracts", icon: "folder" },
 ];
 function Documents({ data, token, open }: {

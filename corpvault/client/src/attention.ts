@@ -22,7 +22,7 @@ export type WorkspaceDocument = Workspace["documents"][number];
 
 /** Document categories, exactly as stored and as offered in the upload form.
  *  Single definition — the upload form in App.tsx imports this list. */
-export const CATEGORIES = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses"] as const;
+export const CATEGORIES = ["Formation", "Operating Agreement/Bylaws", "Meeting Minutes", "Contracts", "Tax Filings", "Licenses", "Documentation"] as const;
 export type DocumentCategory = (typeof CATEGORIES)[number];
 /** The two categories the document flags below watch. */
 export const FORMATION_CATEGORY: DocumentCategory = "Formation";
