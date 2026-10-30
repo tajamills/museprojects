@@ -43,6 +43,12 @@ export function TermsPage() {
           Facebook, Instagram, and X, either immediately or on a schedule you choose.
           The service is provided through our website at zepostia.com.
         </p>
+        <p>
+          For YouTube: YouTube is a coming-soon platform in zepostia. When it launches, zepostia will
+          connect to YouTube through YouTube API Services. By using zepostia to connect or publish to
+          YouTube, you agree to be bound by the{" "}
+          <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>, in addition to these terms.
+        </p>
       </section>
       <section>
         <h2>2. Your account</h2>
@@ -203,7 +209,43 @@ export function PrivacyPage() {
         </p>
       </section>
       <section>
-        <h2>5. Data retention and deletion</h2>
+        <h2>5. Google and YouTube</h2>
+        <p>
+          Zepostia uses YouTube API Services for its YouTube integration. YouTube is a coming-soon
+          platform in Zepostia: when it launches, it will connect your YouTube channel and publish
+          videos you create in Zepostia to that channel. By connecting YouTube, you also agree to be
+          bound by the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>.
+          Google&rsquo;s handling of your information is described in the{" "}
+          <a href="http://www.google.com/policies/privacy">Google Privacy Policy</a>.
+        </p>
+        <p>When you connect your YouTube channel, we access and store:</p>
+        <ul>
+          <li>Your channel ID and channel name, so we can show which channel is connected.</li>
+          <li>
+            An OAuth access token and refresh token issued by Google, stored encrypted. These let us
+            upload videos and post follow-up comments on your own videos on your behalf, including
+            for posts you scheduled in advance.
+          </li>
+          <li>
+            The videos, titles, and descriptions you compose in Zepostia, which we upload to your
+            channel when you publish or when a scheduled post comes due.
+          </li>
+        </ul>
+        <p>
+          We use this access only to provide the publishing features you use. We do not use it to read
+          your private messages, watch or download your existing videos, or change anything on your
+          channel that you did not ask us to post.
+        </p>
+        <p>
+          You can disconnect YouTube at any time in Zepostia under Accounts, which deletes the stored
+          tokens. You can also revoke Zepostia&rsquo;s access at any time on{" "}
+          <a href="https://security.google.com/settings/security/permissions">Google&rsquo;s security settings page</a>.
+          Deleting your Zepostia account deletes your stored channel information and tokens. Questions
+          about these practices: <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.
+        </p>
+      </section>
+      <section>
+        <h2>6. Data retention and deletion</h2>
         <p>
           Disconnecting a social account immediately deletes the OAuth tokens for that account from our
           systems. Deleting your zepostia account removes your profile, connected accounts, tokens, posts,
@@ -212,7 +254,7 @@ export function PrivacyPage() {
         </p>
       </section>
       <section>
-        <h2>6. Your rights</h2>
+        <h2>7. Your rights</h2>
         <p>You can at any time:</p>
         <ul>
           <li>View the accounts you have connected and the posts you have published from your dashboard.</li>
@@ -222,7 +264,7 @@ export function PrivacyPage() {
         <p>To exercise any of these rights, email <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
       </section>
       <section>
-        <h2>7. Security</h2>
+        <h2>8. Security</h2>
         <p>
           We use industry-standard measures to protect your data, including encrypted token storage,
           hashed passwords, and encrypted connections (HTTPS) for all traffic. No method of transmission
@@ -230,18 +272,18 @@ export function PrivacyPage() {
         </p>
       </section>
       <section>
-        <h2>8. Children</h2>
+        <h2>9. Children</h2>
         <p>zepostia is not intended for anyone under 18, and we do not knowingly collect information from children.</p>
       </section>
       <section>
-        <h2>9. Changes to this policy</h2>
+        <h2>10. Changes to this policy</h2>
         <p>
           We may update this policy from time to time. If we make material changes, we will notify you
           through the service or by email before they take effect.
         </p>
       </section>
       <section>
-        <h2>10. Contact</h2>
+        <h2>11. Contact</h2>
         <p>Questions about your privacy? Email us at <a href="mailto:zepostia@cryptobagtracker.io">zepostia@cryptobagtracker.io</a>.</p>
       </section>
     </LegalShell>
