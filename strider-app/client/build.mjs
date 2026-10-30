@@ -3,7 +3,7 @@
 // proprietary @hatch/space-sdk build pipeline.
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -15,8 +15,17 @@ const outdir = path.join(repoRoot, "dist", "client");
 
 await mkdir(outdir, { recursive: true });
 
+// Holding switch (src/site.ts): while SITE_HIDDEN is true, bundle the
+// holding entry (src/main-holding.tsx) instead of the product app, so
+// the shipped client renders only the holding page on every route.
+// Flip the flag in site.ts to restore the full app.
+const siteSource = await readFile(path.join(root, "src/site.ts"), "utf8");
+const siteHidden = /export const SITE_HIDDEN = true/.test(siteSource);
+const entryPoint = siteHidden ? "src/main-holding.tsx" : "src/main.tsx";
+console.log(`[build:client] SITE_HIDDEN=${siteHidden} — entry: ${entryPoint}`);
+
 await build({
-  entryPoints: [path.join(root, "src/main.tsx")],
+  entryPoints: [path.join(root, entryPoint)],
   bundle: true,
   minify: true,
   sourcemap: true,

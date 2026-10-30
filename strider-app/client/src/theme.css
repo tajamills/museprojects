@@ -1185,3 +1185,12 @@ html, body { overflow-x: hidden; }
   .bf-form-card { padding: 24px 20px 20px; }
   .bf-entry .bf-entry-date { margin-left: 0; }
 }
+
+/* Holding page — the only thing rendered on any route while
+   SITE_HIDDEN is true (see src/site.ts). Uses the standard theme
+   variables so it sits on the product's own black/silver surfaces
+   in both light and dark mode. */
+.holding-page { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--text); padding: 24px; }
+.holding-inner { text-align: center; }
+.holding-name { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
+.holding-line { margin: 10px 0 0; color: var(--dim); font-size: 16px; }
