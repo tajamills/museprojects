@@ -29,9 +29,13 @@ export interface Ctx {
 
 const sessionResponse = z.object({ token: z.string(), email: z.string(), role: z.string() });
 const okResponse = z.object({ ok: z.literal(true) });
+/** Code-level admin emails, used ALONGSIDE the ADMIN_EMAILS env var below
+ * (owner test account — Oct 30 order; same pattern as the owner-comp in the sister apps). */
+const CODE_ADMIN_EMAILS = ["bazibazi872@gmail.com"];
 /** Emails (lowercased) listed in ADMIN_EMAILS get the 'admin' role on signup/login. */
 function adminEmails(): Set<string> {
-    return new Set((process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+    const fromEnv = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+    return new Set([...fromEnv, ...CODE_ADMIN_EMAILS]);
 }
 function isAdminEmail(email: string): boolean {
     return adminEmails().has(email.toLowerCase());
