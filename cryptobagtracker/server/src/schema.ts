@@ -29,6 +29,11 @@ export const users = pgTable("users", {
   // Owner/comp accounts never lock and are never charged (migration 0010
   // sets this for the owner's account by email; see entitlement.ts).
   comped: boolean("comped").notNull().default(false),
+  // Promo code captured from a /?promo=CODE link and stored at signup so
+  // checkout can pre-apply it without the customer typing anything
+  // (migration 0011). Cleared once the subscription starts or the code
+  // stops resolving in Stripe.
+  promoCode: text("promo_code"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),

@@ -19,6 +19,7 @@ import { fetchTransactions as fetchCoinbaseTransactions } from "./exchanges/coin
 import { fetchTransactions as fetchKrakenTransactions } from "./exchanges/kraken.js";
 import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold.js";
 import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
+import type Stripe from "stripe";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
 import { computeEntitlement, getEntitlement } from "./entitlement.js";
 import {
@@ -195,7 +196,11 @@ const okResponse = z.object({ ok: z.literal(true) });
 // The affiliate/referral program is closed (owner ruling, Oct 30, 2026).
 // There is deliberately no referralCode field here: zod strips unknown
 // keys, so a referral code sent anyway is ignored and never stored.
-const signupRequest = z.object({ email: z.string().email(), password: z.string().min(8) });
+// promoCode is NOT a referral: it is the Stripe promotion code a visitor
+// arrived with (/?promo=YB50), captured client-side so the discount can be
+// pre-applied at checkout without anyone typing it. It grants nothing by
+// itself — checkout still resolves it against Stripe before applying.
+const signupRequest = z.object({ email: z.string().email(), password: z.string().min(8), promoCode: z.string().trim().max(64).optional() });
 const loginRequest = z.object({ email: z.string().email(), password: z.string().min(1) });
 const tokenRequest = z.object({ token: z.string() });
 const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
@@ -214,7 +219,7 @@ const setPriceAlertActiveRequest = z.object({ token: z.string(), alertId: z.numb
 const walletIdRequest = z.object({ token: z.string(), walletId: z.number().int().positive() });
 const transactionIdRequest = z.object({ token: z.string(), transactionId: z.number().int().positive() });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
-const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable(), signupTrialEndsAt: z.string(), entitled: z.boolean(), comped: z.boolean() });
+const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable(), signupTrialEndsAt: z.string(), entitled: z.boolean(), comped: z.boolean(), promoCode: z.string().nullable() });
 const redirectResponse = z.object({ url: z.string() });
 
 export const Actions = {
@@ -232,8 +237,13 @@ export const Actions = {
       // displayed, or used: the referral program is closed and no
       // attribution or crediting happens at signup.
       const referralCode = `CBT${crypto.randomUUID().replace(/-/g, "").slice(0, 7).toUpperCase()}`;
+      // Store the promo code the visitor arrived with (uppercased) so it
+      // survives devices until first checkout. Stripe promotion codes are
+      // matched case-insensitively there; one canonical case here keeps
+      // the Billing line and the lookup simple.
+      const promoCode = args.promoCode ? args.promoCode.toUpperCase() : null;
       const now = new Date();
-      const inserted = await db.insert(schema.users).values({ email, passwordHash: passwordHashValue, referralCode, trialStartedAt: now, createdAt: now }).returning();
+      const inserted = await db.insert(schema.users).values({ email, passwordHash: passwordHashValue, referralCode, promoCode, trialStartedAt: now, createdAt: now }).returning();
       const user = inserted[0];
       if (!user) throw new Error("Account could not be created.");
       const token = crypto.randomUUID();
@@ -637,15 +647,39 @@ export const Actions = {
         await ctx.db.update(schema.users).set({ stripeCustomerId: customerId }).where(eq(schema.users.id, user.id));
       }
       const url = baseUrl(ctx.origin);
+      // Automatic promo application (owner order, Oct 30, 2026): a code
+      // captured from the visitor's /?promo=CODE link and stored at signup
+      // is resolved against Stripe and pre-applied, so the customer never
+      // types it. Stripe rejects discounts + allow_promotion_codes in the
+      // same session, so exactly one of the two is sent: a resolving stored
+      // code wins; anything else (no stored code, or one that expired /
+      // was deactivated / was never real) falls back to the typed-code box
+      // and the dead stored code is cleared. A bad stored code must never
+      // break checkout, so resolution failure is silent.
+      let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | undefined;
+      if (user.promoCode) {
+        try {
+          const found = await stripe.promotionCodes.list({ code: user.promoCode, active: true, limit: 1 });
+          const promotionCode = found.data[0];
+          if (promotionCode) {
+            discounts = [{ promotion_code: promotionCode.id }];
+          } else {
+            await ctx.db.update(schema.users).set({ promoCode: null }).where(eq(schema.users.id, user.id));
+          }
+        } catch {
+          // Lookup failed (network/Stripe hiccup): keep the stored code
+          // for a later attempt and fall through to the typed-code path.
+        }
+      }
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer: customerId,
         client_reference_id: String(user.id),
-        // Lets customers enter a promotion code at checkout (e.g. the
-        // owner's Black Friday code). The coupon/promotion code itself
-        // lives in Stripe — nothing is discounted unless she creates it.
-        allow_promotion_codes: true,
+        ...(discounts ? { discounts } : { allow_promotion_codes: true }),
         line_items: [{ price: priceId, quantity: 1 }],
+        // The discount rides alongside the 7-day trial: nothing is charged
+        // during the trial, and the coupon (the owner's are set to repeat)
+        // reduces every charge from day 8 on, per its own duration.
         subscription_data: { trial_period_days: 7 },
         success_url: `${url}/?billing=success`,
         cancel_url: `${url}/?billing=cancelled`,
@@ -692,6 +726,17 @@ export const Actions = {
       // page can say plainly whether the account is in its free trial, paid
       // up, comped, or locked with a fee owed.
       const entitlement = computeEntitlement(user);
+      // A stored promo code lives only until it is redeemed: once a
+      // subscription exists (or the account is comped and never checks
+      // out), the code has done its job and is cleared so the Billing
+      // page stops promising a discount at checkout. This read is the
+      // first place the reconciled subscription shows up, so it is the
+      // reliable clear point (webhook delivery is not).
+      let promoCode = user.promoCode ? user.promoCode.toUpperCase() : null;
+      if (promoCode && (entitlement.comped || ["trialing", "active", "past_due"].includes(status))) {
+        await ctx.db.update(schema.users).set({ promoCode: null }).where(eq(schema.users.id, user.id));
+        promoCode = null;
+      }
       return {
         status,
         // During a trial, Stripe sets current_period_end to the trial's end.
@@ -700,6 +745,7 @@ export const Actions = {
         signupTrialEndsAt: entitlement.trialEndsAt.toISOString(),
         entitled: entitlement.entitled,
         comped: entitlement.comped,
+        promoCode,
       };
     },
   },
