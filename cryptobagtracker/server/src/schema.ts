@@ -50,6 +50,30 @@ export const sessions = pgTable("sessions", {
   createdAt: createdAt(),
 });
 
+/**
+ * Forgot-password reset requests (migration 0012, admin-link stopgap).
+ * A public request lands here first (userId null when no account matches —
+ * the public response is identical either way); the owner generates the
+ * one-time link from the account page, which fills tokenHash (SHA-256 of
+ * the raw token — the raw value is only ever in the generated link) and
+ * expiresAt (60 minutes). usedAt is stamped when the link is spent, when
+ * a newer link supersedes it, or when the password is reset.
+ */
+export const passwordResetRequests = pgTable(
+  "password_reset_requests",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    userId: integer("user_id"),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash"),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    usedAt: timestamp("used_at", { withTimezone: true, mode: "date" }),
+    requestedIp: text("requested_ip"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("password_reset_requests_created_idx").on(t.createdAt)],
+);
+
 export const wallets = pgTable("wallets", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").notNull(),

@@ -151,7 +151,7 @@ async function main(): Promise<void> {
       }
       testAlertProbe = { at: Date.now(), active, activeAlerts };
     }
-    res.json({ ok: true, service: "cryptobagtracker", build: "2026-10-30-enc-key-passphrase", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-11-02-password-reset", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
   });
 
   app.post("/actions", async (req, res) => {
@@ -171,7 +171,8 @@ async function main(): Promise<void> {
       return;
     }
     try {
-      const reqCtx: Ctx = { db, invalidateQueries: () => {}, origin: req.get("origin") ?? null };
+      const forwardedFor = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
+      const reqCtx: Ctx = { db, invalidateQueries: () => {}, origin: req.get("origin") ?? null, ip: forwardedFor || req.ip || null };
       const result = await def.handler(reqCtx, parsed as never);
       res.json(result ?? null);
     } catch (err) {

@@ -10,7 +10,7 @@
 // POST /actions dispatches `{action, args}` to `Actions[action].handler`
 // after validating `args` against the action's zod `request` schema.
 import { z } from "zod";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, ne } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
@@ -21,7 +21,7 @@ import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold
 import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
 import type Stripe from "stripe";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
-import { computeEntitlement, getEntitlement } from "./entitlement.js";
+import { computeEntitlement, getEntitlement, isComped } from "./entitlement.js";
 import {
   build8949,
   buildScheduleD,
@@ -36,6 +36,9 @@ export interface Ctx {
   invalidateQueries: () => void;
   /** Request origin, for building absolute URLs (e.g. Stripe redirects). */
   origin: string | null;
+  /** Best-effort client IP (first x-forwarded-for hop, else the socket
+   *  address) — used only for rate limiting unauthenticated requests. */
+  ip: string | null;
 }
 
 type Method = "FIFO" | "LIFO" | "HIFO";
@@ -131,6 +134,24 @@ async function passwordVerify(password: string, stored: string) {
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: Number(iterationsText), hash: "SHA-256" }, material, 256);
   return hex(new Uint8Array(bits)) === expected;
+}
+
+/** SHA-256 hex digest — how password-reset tokens are stored at rest, so
+ *  a database read alone never yields a usable reset link. */
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return hex(new Uint8Array(digest));
+}
+
+/**
+ * requireUser + the support gate: only comped accounts (the owner — see
+ * isComped in entitlement.ts: the comped flag from migration 0010 or the
+ * owner's email) may run support actions like generating reset links.
+ */
+async function requireAdminUser(ctx: Ctx, token: string) {
+  const user = await requireUser(ctx, token);
+  if (!isComped(user)) throw new Error("That area is for support only.");
+  return user;
 }
 
 function computeTax(rows: TxRow[], method: Method) {
@@ -248,6 +269,11 @@ const signupRequest = z.object({ email: z.string().email(), password: z.string()
 const loginRequest = z.object({ email: z.string().email(), password: z.string().min(1) });
 const tokenRequest = z.object({ token: z.string() });
 const changePasswordRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newPassword: z.string().min(8) });
+const forgotPasswordRequest = z.object({ email: z.string().email() });
+const resetPasswordRequest = z.object({ token: z.string().min(16).max(256), newPassword: z.string().min(8) });
+const resetRequestsResponse = z.object({ requests: z.array(z.object({ id: z.number(), email: z.string(), hasAccount: z.boolean(), createdAt: z.string(), state: z.string() })) });
+const generateResetLinkRequest = z.object({ token: z.string(), requestId: z.number().int().positive() });
+const generateResetLinkResponse = z.object({ url: z.string(), expiresAt: z.string() });
 const changePasswordResponse = z.object({ ok: z.literal(true), token: z.string() });
 const changeEmailRequest = z.object({ token: z.string(), currentPassword: z.string().min(1), newEmail: z.string().email() });
 const changeEmailResponse = z.object({ ok: z.literal(true), email: z.string() });
@@ -822,6 +848,145 @@ export const Actions = {
     },
   },
   /**
+   * Forgot password — step 1 (public, signed-out). Records a reset
+   * REQUEST and always answers the same {ok: true}, whether or not the
+   * email belongs to an account, so the form can never be used to probe
+   * which emails are registered. This is the admin-link stopgap (no
+   * email service exists in the product): support sees the request in
+   * the account page and generates the actual link with
+   * generatePasswordResetLink, then sends it to the customer manually.
+   * Rate-limited to 3 requests per email and 20 per IP per hour; past
+   * the limit the request is silently not recorded (same response).
+   */
+  requestPasswordReset: {
+    request: forgotPasswordRequest,
+    response: okResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof forgotPasswordRequest>): Promise<z.infer<typeof okResponse>> => {
+      const db = ctx.db;
+      const email = args.email.trim().toLowerCase();
+      const since = new Date(Date.now() - 60 * 60 * 1000);
+      const byEmail = await db.select({ id: schema.passwordResetRequests.id })
+        .from(schema.passwordResetRequests)
+        .where(and(eq(schema.passwordResetRequests.email, email), gte(schema.passwordResetRequests.createdAt, since)));
+      const byIp = ctx.ip
+        ? await db.select({ id: schema.passwordResetRequests.id })
+            .from(schema.passwordResetRequests)
+            .where(and(eq(schema.passwordResetRequests.requestedIp, ctx.ip), gte(schema.passwordResetRequests.createdAt, since)))
+        : [];
+      if (byEmail.length < 3 && byIp.length < 20) {
+        const found = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+        await db.insert(schema.passwordResetRequests).values({
+          email,
+          userId: found[0]?.id ?? null,
+          requestedIp: ctx.ip,
+          createdAt: new Date(),
+        });
+      }
+      return { ok: true };
+    },
+  },
+  /**
+   * Forgot password — support view (owner/comped accounts only): the
+   * most recent reset requests, newest first, with enough state to act
+   * on each: "waiting" (no link yet), "link-active", "link-expired",
+   * or "used".
+   */
+  listPasswordResetRequests: {
+    request: tokenRequest,
+    response: resetRequestsResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof tokenRequest>): Promise<z.infer<typeof resetRequestsResponse>> => {
+      await requireAdminUser(ctx, args.token);
+      const rows = await ctx.db.select().from(schema.passwordResetRequests)
+        .orderBy(desc(schema.passwordResetRequests.createdAt)).limit(50);
+      const now = Date.now();
+      return {
+        requests: rows.map((r) => ({
+          id: r.id,
+          email: r.email,
+          hasAccount: r.userId != null,
+          createdAt: r.createdAt.toISOString(),
+          state: r.usedAt
+            ? "used"
+            : r.tokenHash
+              ? r.expiresAt && r.expiresAt.getTime() > now
+                ? "link-active"
+                : "link-expired"
+              : "waiting",
+        })),
+      };
+    },
+  },
+  /**
+   * Forgot password — step 2 (owner/comped accounts only): generate the
+   * one-time reset link for a request. The raw token exists only in the
+   * returned URL; the database keeps its SHA-256 hash. Generating a
+   * link replaces any earlier one for the same request, so only the
+   * newest link can ever work. The link expires in 60 minutes.
+   */
+  generatePasswordResetLink: {
+    request: generateResetLinkRequest,
+    response: generateResetLinkResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof generateResetLinkRequest>): Promise<z.infer<typeof generateResetLinkResponse>> => {
+      await requireAdminUser(ctx, args.token);
+      const db = ctx.db;
+      const rows = await db.select().from(schema.passwordResetRequests)
+        .where(eq(schema.passwordResetRequests.id, args.requestId)).limit(1);
+      const request = rows[0];
+      if (!request) throw new Error("That reset request was not found.");
+      if (request.userId == null) throw new Error("There is no account for that email, so there is nothing to reset.");
+      if (request.usedAt) throw new Error("That request was already used. Ask the customer to file a new one from the sign-in screen.");
+      const rawToken = hex(crypto.getRandomValues(new Uint8Array(32)));
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await db.update(schema.passwordResetRequests)
+        .set({ tokenHash: await sha256Hex(rawToken), expiresAt })
+        .where(eq(schema.passwordResetRequests.id, request.id));
+      return { url: `${baseUrl(ctx.origin)}/?reset=${rawToken}`, expiresAt: expiresAt.toISOString() };
+    },
+  },
+  /**
+   * Forgot password — step 3 (public): spend a reset link. The token is
+   * looked up by hash; an unknown, spent, or expired link gets one
+   * plain error. On success the password is rehashed with the same
+   * PBKDF2 as everywhere else, the link (and every other outstanding
+   * link for the account) is burned, and ALL existing sessions are
+   * invalidated — the same behavior as changePassword — before a fresh
+   * session is issued so the customer lands signed in.
+   */
+  resetPassword: {
+    request: resetPasswordRequest,
+    response: authResponse,
+    handler: async (ctx: Ctx, args: z.infer<typeof resetPasswordRequest>): Promise<z.infer<typeof authResponse>> => {
+      const db = ctx.db;
+      const invalid = new Error("This reset link is invalid or has expired. Request a new one from the sign-in screen.");
+      const rows = await db.select().from(schema.passwordResetRequests)
+        .where(eq(schema.passwordResetRequests.tokenHash, await sha256Hex(args.token.trim()))).limit(1);
+      const request = rows[0];
+      if (!request || request.userId == null || request.usedAt || !request.expiresAt || request.expiresAt.getTime() <= Date.now()) {
+        throw invalid;
+      }
+      const users = await db.select().from(schema.users).where(eq(schema.users.id, request.userId)).limit(1);
+      const user = users[0];
+      if (!user) throw invalid;
+      const passwordHashValue = await passwordHash(args.newPassword);
+      await db.update(schema.users).set({ passwordHash: passwordHashValue }).where(eq(schema.users.id, user.id));
+      const now = new Date();
+      await db.update(schema.passwordResetRequests).set({ usedAt: now }).where(eq(schema.passwordResetRequests.id, request.id));
+      // Any other outstanding link for this account dies with this reset.
+      await db.update(schema.passwordResetRequests)
+        .set({ usedAt: now })
+        .where(and(
+          eq(schema.passwordResetRequests.userId, user.id),
+          isNull(schema.passwordResetRequests.usedAt),
+          ne(schema.passwordResetRequests.id, request.id),
+        ));
+      await db.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+      const token = crypto.randomUUID();
+      await db.insert(schema.sessions).values({ token, userId: user.id, createdAt: now });
+      ctx.invalidateQueries();
+      return { token, user: { email: user.email, trialStartedAt: user.trialStartedAt.toISOString() } };
+    },
+  },
+  /**
    * Change the account's sign-in email. The current password is required,
    * the new address must not belong to another account, and the session
    * stays valid (sessions key off the user id, not the email). Billing is
@@ -876,6 +1041,7 @@ export const Actions = {
         throw new Error("We couldn't cancel your subscription, so your account was not deleted. Cancel it from the Billing page first, then try again.");
       }
       await db.transaction(async (tx) => {
+        await tx.delete(schema.passwordResetRequests).where(eq(schema.passwordResetRequests.userId, user.id));
         await tx.delete(schema.alertHistory).where(eq(schema.alertHistory.userId, user.id));
         await tx.delete(schema.smsSends).where(eq(schema.smsSends.userId, user.id));
         await tx.delete(schema.priceAlerts).where(eq(schema.priceAlerts.userId, user.id));
