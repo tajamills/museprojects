@@ -23,6 +23,7 @@ import type Stripe from "stripe";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
 import { firePasswordResetNotify } from "./resetNotify.js";
 import { computeEntitlement, getEntitlement, isComped } from "./entitlement.js";
+import { WatchActions } from "./watch/actions.js";
 import {
   build8949,
   buildScheduleD,
@@ -297,6 +298,7 @@ const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.stri
 const redirectResponse = z.object({ url: z.string() });
 
 export const Actions = {
+  ...WatchActions,
   signup: {
     request: signupRequest,
     response: authResponse,

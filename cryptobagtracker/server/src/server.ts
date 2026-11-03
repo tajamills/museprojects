@@ -17,6 +17,8 @@ import { stripeWebhookHandler } from "./billing.js";
 import { handleTwilioInbound, smsAlertsEnabled, twilioConfig, twilioWebhookUrl, validateTwilioSignature } from "./sms.js";
 import { db } from "./db.js";
 import { runMigrations } from "./migrate.js";
+import { registerWatchPublicRoutes } from "./watch/publicApi.js";
+import { startWatchMonitor } from "./watch/monitor.js";
 import { and, eq, or } from "drizzle-orm";
 import * as schema from "./schema.js";
 
@@ -151,7 +153,7 @@ async function main(): Promise<void> {
       }
       testAlertProbe = { at: Date.now(), active, activeAlerts };
     }
-    res.json({ ok: true, service: "cryptobagtracker", build: "2026-11-03-reset-notify", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-11-03-stolen-funds-watch", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
   });
 
   app.post("/actions", async (req, res) => {
@@ -179,6 +181,10 @@ async function main(): Promise<void> {
       res.status(400).json({ error: actionErrorMessage(err) });
     }
   });
+
+  // Stolen-Funds Watch public read API (flag-gated inside the handlers;
+  // 404 while dark). Registered before the SPA fallback on purpose.
+  registerWatchPublicRoutes(app, db);
 
   const clientDir = findClientDir();
   app.use(express.static(clientDir, { maxAge: "1h", index: false }));
@@ -246,6 +252,11 @@ async function main(): Promise<void> {
   };
   setTimeout(runAlertCheck, 30_000);
   setInterval(runAlertCheck, priceCheckInterval);
+
+  // Stolen-Funds Watch monitor: baseline-first polling of reported
+  // addresses. Every cycle re-reads the flags, so with all flags off this
+  // is a cheap no-op; it never delivers through the price-alert webhook.
+  startWatchMonitor(db);
 }
 
 main().catch((err) => {

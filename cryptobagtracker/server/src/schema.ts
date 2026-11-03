@@ -6,7 +6,7 @@
 //   integer (mode "boolean") -> boolean
 //   real -> doublePrecision
 //   text -> text
-import { boolean, doublePrecision, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, boolean, doublePrecision, index, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -172,4 +172,231 @@ export const alertHistory = pgTable("alert_history", {
   alertId: integer("alert_id").notNull(),
   message: text("message").notNull(),
   deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: "date" }).notNull(),
+});
+
+/**
+ * Stolen-Funds Watch (migration 0013). Reported-address case monitoring:
+ * an address enters only from a full string printed in an identifiable
+ * published source (watch_sources / watch_address_sources); every public
+ * figure renders from watch_case_claims; movement is baseline-first
+ * (watch_address_snapshots / watch_events). Feature flags default OFF —
+ * see server/src/watch/flags.ts. Language rule: addresses are "reported",
+ * never labeled with an accusation.
+ */
+const watchTs = () =>
+  timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date());
+const watchTsCol = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+const updatedAtCol = () =>
+  timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date());
+
+export const watchCases = pgTable("watch_cases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  status: text("status").notNull().default("reported_case_under_review"),
+  publicEnabled: boolean("public_enabled").notNull().default(false),
+  monitoringEnabled: boolean("monitoring_enabled").notNull().default(false),
+  alertsEnabled: boolean("alerts_enabled").notNull().default(false),
+  isTest: boolean("is_test").notNull().default(false),
+  createdAt: watchTs(),
+  updatedAt: updatedAtCol(),
+});
+
+export const watchSources = pgTable("watch_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  publisher: text("publisher").notNull(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  sourceType: text("source_type").notNull(),
+  publishedAt: watchTsCol("published_at"),
+  retrievedAt: watchTsCol("retrieved_at"),
+  createdAt: watchTs(),
+});
+
+export const watchCaseClaims = pgTable("watch_case_claims", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  claimKey: text("claim_key").notNull(),
+  claimType: text("claim_type").notNull(),
+  displayLabel: text("display_label").notNull(),
+  displayValue: text("display_value").notNull(),
+  numericValue: numeric("numeric_value"),
+  currencyOrAsset: text("currency_or_asset"),
+  sourceId: uuid("source_id").notNull().references(() => watchSources.id),
+  sourceLocator: text("source_locator").notNull().default(""),
+  asOfAt: watchTsCol("as_of_at"),
+  status: text("status").notNull().default("current"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: watchTs(),
+  updatedAt: updatedAtCol(),
+});
+
+export const watchAddresses = pgTable("watch_addresses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  chain: text("chain").notNull(),
+  network: text("network").notNull().default("mainnet"),
+  address: text("address").notNull(),
+  addressKey: text("address_key").notNull(),
+  displayAddress: text("display_address").notNull(),
+  listSection: text("list_section").notNull().default("reported"),
+  roleText: text("role_text"),
+  roleSourceId: uuid("role_source_id").references(() => watchSources.id),
+  status: text("status").notNull().default("reported_not_yet_checked"),
+  anchorPriority: boolean("anchor_priority").notNull().default(false),
+  frozenState: text("frozen_state"),
+  baselineStatus: text("baseline_status").notNull().default("pending"),
+  baselineHeight: bigint("baseline_height", { mode: "number" }),
+  baselineObservedAt: watchTsCol("baseline_observed_at"),
+  nextCheckAt: watchTsCol("next_check_at"),
+  lastCheckedAt: watchTsCol("last_checked_at"),
+  lastSuccessfulCheckAt: watchTsCol("last_successful_check_at"),
+  lastActivityAt: watchTsCol("last_activity_at"),
+  isTest: boolean("is_test").notNull().default(false),
+  createdAt: watchTs(),
+  updatedAt: updatedAtCol(),
+});
+
+export const watchAddressSources = pgTable("watch_address_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  addressId: uuid("address_id").notNull().references(() => watchAddresses.id),
+  sourceId: uuid("source_id").notNull().references(() => watchSources.id),
+  sourceLocator: text("source_locator").notNull().default(""),
+  reportedRoleText: text("reported_role_text"),
+  reportedSnapshotText: text("reported_snapshot_text"),
+  matchMethod: text("match_method").notNull().default("full_string"),
+  createdAt: watchTs(),
+});
+
+export const watchImportBatches = pgTable("watch_import_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").references(() => watchCases.id),
+  seedVersion: text("seed_version").notNull(),
+  seedSha256: text("seed_sha256").notNull(),
+  mode: text("mode").notNull(),
+  reportJson: jsonb("report_json").notNull().default({}),
+  importedBy: text("imported_by"),
+  createdAt: watchTs(),
+});
+
+export const watchAddressSnapshots = pgTable("watch_address_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  addressId: uuid("address_id").notNull().references(() => watchAddresses.id),
+  providerName: text("provider_name").notNull(),
+  observedAt: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
+  blockHeight: bigint("block_height", { mode: "number" }),
+  nativeBalanceRaw: text("native_balance_raw"),
+  nativeBalanceDecimal: text("native_balance_decimal"),
+  rawPayloadHash: text("raw_payload_hash"),
+  isBaseline: boolean("is_baseline").notNull().default(false),
+  createdAt: watchTs(),
+});
+
+export const watchEvents = pgTable("watch_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  chain: text("chain").notNull(),
+  network: text("network").notNull().default("mainnet"),
+  txHash: text("tx_hash").notNull(),
+  transactionGroupKey: text("transaction_group_key").notNull(),
+  eventIndex: text("event_index").notNull(),
+  eventKind: text("event_kind").notNull(),
+  status: text("status").notNull().default("provisional"),
+  fromAddressId: uuid("from_address_id").references(() => watchAddresses.id),
+  toAddressId: uuid("to_address_id").references(() => watchAddresses.id),
+  externalFromAddress: text("external_from_address"),
+  externalToAddress: text("external_to_address"),
+  assetSymbol: text("asset_symbol").notNull(),
+  assetContract: text("asset_contract"),
+  amountRaw: text("amount_raw").notNull(),
+  amountDecimal: numeric("amount_decimal").notNull(),
+  usdValueAtEvent: numeric("usd_value_at_event"),
+  priceSource: text("price_source"),
+  priceObservedAt: watchTsCol("price_observed_at"),
+  blockHeight: bigint("block_height", { mode: "number" }),
+  chainObservedAt: watchTsCol("chain_observed_at"),
+  confirmations: integer("confirmations"),
+  isAnchorEvent: boolean("is_anchor_event").notNull().default(false),
+  severity: text("severity").notNull().default("low"),
+  publicNote: text("public_note"),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  confirmedAt: watchTsCol("confirmed_at"),
+  publicVisibleFrom: watchTsCol("public_visible_from"),
+  retractedAt: watchTsCol("retracted_at"),
+  retractionReason: text("retraction_reason"),
+  providerPayloadHash: text("provider_payload_hash"),
+  isTest: boolean("is_test").notNull().default(false),
+  createdAt: watchTs(),
+  updatedAt: updatedAtCol(),
+});
+
+export const watchSubscriptions = pgTable("watch_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  minSeverity: text("min_severity").notNull().default("medium"),
+  telegramEnabled: boolean("telegram_enabled").notNull().default(true),
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  testExpiresAt: watchTsCol("test_expires_at"),
+  isTest: boolean("is_test").notNull().default(false),
+  createdAt: watchTs(),
+  updatedAt: updatedAtCol(),
+});
+
+export const watchDeliveries = pgTable("watch_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => watchEvents.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  channel: text("channel").notNull(),
+  status: text("status").notNull(),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  deliveredAt: watchTsCol("delivered_at"),
+  providerMessageId: text("provider_message_id"),
+  failureReason: text("failure_reason"),
+  isInternal: boolean("is_internal").notNull().default(false),
+  isTest: boolean("is_test").notNull().default(false),
+  createdAt: watchTs(),
+});
+
+export const watchCorrections = pgTable("watch_corrections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id"),
+  fieldChanged: text("field_changed").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  reason: text("reason").notNull(),
+  sourceId: uuid("source_id").references(() => watchSources.id),
+  correctedBy: text("corrected_by").notNull(),
+  approvedBy: text("approved_by"),
+  createdAt: watchTs(),
+});
+
+export const watchAdminAudit = pgTable("watch_admin_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id"),
+  beforeJson: jsonb("before_json"),
+  afterJson: jsonb("after_json"),
+  reason: text("reason"),
+  createdAt: watchTs(),
+});
+
+export const watchBountyChecks = pgTable("watch_bounty_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  caseId: uuid("case_id").notNull().references(() => watchCases.id),
+  target: text("target").notNull(),
+  checkedBy: text("checked_by").notNull(),
+  method: text("method").notNull(),
+  resultSummary: text("result_summary").notNull(),
+  sourceUrl: text("source_url"),
+  publicStatusChanged: boolean("public_status_changed").notNull().default(false),
+  approvedBy: text("approved_by"),
+  checkedAt: timestamp("checked_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+  nextCheckAt: watchTsCol("next_check_at"),
+  createdAt: watchTs(),
 });

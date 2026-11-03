@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+import { PublicWatchAddress, PublicWatchPage, WatchView } from "./Watch";
 import {
   ArrowRightIcon, BellIcon, CardIcon, ChartIcon, CloseIcon, DashboardIcon, EmptyArt,
   LogoMark, PlusIcon, RouteIcon, SwapIcon, TaxIcon, TxTypeIcon, WalletIcon,
   type EmptyArtKind,
 } from "./icons";
 
-type View = "dashboard" | "wallets" | "transactions" | "tax" | "alerts" | "billing" | "terms";
+type View = "dashboard" | "wallets" | "transactions" | "tax" | "alerts" | "billing" | "terms" | "watch";
 type AuthMode = "signup" | "login";
 type AppData = any;
 const CHAINS = ["BTC", "ETH", "SOL", "XRP", "XLM", "ADA", "AVAX", "DOT", "POL", "BSC", "ARB", "OP", "BASE", "LTC"];
@@ -243,6 +244,7 @@ const NAV_ICONS: Partial<Record<View, ReactNode>> = {
   wallets: <WalletIcon size={20} />,
   transactions: <SwapIcon size={20} />,
   tax: <TaxIcon size={20} />,
+  watch: <RouteIcon size={20} />,
 };
 
 function Shell({ token, logout, onTokenRefresh }: { token: string; logout: () => void; onTokenRefresh: (t: string) => void }) {
@@ -256,11 +258,20 @@ function Shell({ token, logout, onTokenRefresh }: { token: string; logout: () =>
   const locked=Boolean(ent) && !ent!.entitled;
   const planLabel=ent ? (ent.comped ? "Premium · Owner" : locked ? "Trial ended" : data.user.subscriptionStatus && data.user.subscriptionStatus !== "none" && data.user.subscriptionStatus !== "canceled" ? "Premium" : "Premium trial") : "Premium trial";
   if(view==="terms") return <Terms back={()=>setView("dashboard")} />;
-  return <div className="app-shell"><aside><div className="account"><span>{data.user.email.slice(0,1).toUpperCase()}</span><div><b>{data.user.email}</b><small>{planLabel}</small></div></div><nav>{(["dashboard","alerts","billing","wallets","transactions","tax"] as View[]).map((v)=><button key={v} className={view===v?"active":""} onClick={()=>setView(v)}><span className="nav-icon">{NAV_ICONS[v]}</span>{v==="tax"?"Tax Center":v[0]?.toUpperCase()+v.slice(1)}</button>)}</nav><div className="aside-bottom"><button onClick={()=>setView("terms")}>Terms</button><button onClick={logout}>Sign out</button></div></aside><main className="workspace">{locked && view!=="billing" && <div className="page" style={{ marginBottom: 22 }}><Notice tone="warn">Your free trial has ended. Your records are safe, and you can still look at everything. To add or change anything, a subscription fee is owed: $8.88/month. <button className="quiet" onClick={()=>setView("billing")}>Go to Billing</button></Notice></div>}{view==="dashboard"&&<Dashboard data={data} setView={setView}/>} {view==="wallets"&&<Wallets data={data} token={token} refresh={refresh}/>} {view==="transactions"&&<Transactions data={data} token={token} refresh={refresh}/>} {view==="tax"&&<TaxCenter data={data} token={token} refresh={refresh}/>} {view==="alerts"&&<Alerts data={data} token={token} refresh={refresh}/>} {view==="billing"&&<Billing token={token} onTokenRefresh={onTokenRefresh} refresh={refresh} onAccountDeleted={logout}/>}<footer className="app-footer">© 2026 CryptoBagTracker. All rights reserved. · <a href="mailto:info@cryptobagtracker.io">info@cryptobagtracker.io</a></footer></main><nav className="mobile-nav">{(["dashboard","alerts","billing","wallets","transactions","tax"] as View[]).map((v)=><button key={v} aria-label={v==="tax"?"Tax Center":v} className={view===v?"active":""} onClick={()=>setView(v)}><span className="nav-icon">{v==="transactions"?<PlusIcon size={20}/>:NAV_ICONS[v]}</span><small>{v==="transactions"?"Add":v==="tax"?"Tax":v[0]?.toUpperCase()+v.slice(1)}</small></button>)}</nav></div>;
+  return <div className="app-shell"><aside><div className="account"><span>{data.user.email.slice(0,1).toUpperCase()}</span><div><b>{data.user.email}</b><small>{planLabel}</small></div></div><nav>{(["dashboard","alerts","billing","wallets","transactions","tax","watch"] as View[]).map((v)=><button key={v} className={view===v?"active":""} onClick={()=>setView(v)}><span className="nav-icon">{NAV_ICONS[v]}</span>{v==="tax"?"Tax Center":v==="watch"?"Stolen-Funds Watch":v[0]?.toUpperCase()+v.slice(1)}</button>)}</nav><div className="aside-bottom"><button onClick={()=>setView("terms")}>Terms</button><button onClick={logout}>Sign out</button></div></aside><main className="workspace">{locked && view!=="billing" && <div className="page" style={{ marginBottom: 22 }}><Notice tone="warn">Your free trial has ended. Your records are safe, and you can still look at everything. To add or change anything, a subscription fee is owed: $8.88/month. <button className="quiet" onClick={()=>setView("billing")}>Go to Billing</button></Notice></div>}{view==="dashboard"&&<Dashboard data={data} setView={setView}/>} {view==="wallets"&&<Wallets data={data} token={token} refresh={refresh}/>} {view==="transactions"&&<Transactions data={data} token={token} refresh={refresh}/>} {view==="tax"&&<TaxCenter data={data} token={token} refresh={refresh}/>} {view==="alerts"&&<Alerts data={data} token={token} refresh={refresh}/>} {view==="watch"&&<WatchView token={token}/>} {view==="billing"&&<Billing token={token} onTokenRefresh={onTokenRefresh} refresh={refresh} onAccountDeleted={logout}/>}<footer className="app-footer">© 2026 CryptoBagTracker. All rights reserved. · <a href="mailto:info@cryptobagtracker.io">info@cryptobagtracker.io</a></footer></main><nav className="mobile-nav">{(["dashboard","alerts","billing","wallets","transactions","tax","watch"] as View[]).map((v)=><button key={v} aria-label={v==="tax"?"Tax Center":v==="watch"?"Stolen-Funds Watch":v} className={view===v?"active":""} onClick={()=>setView(v)}><span className="nav-icon">{v==="transactions"?<PlusIcon size={20}/>:NAV_ICONS[v]}</span><small>{v==="transactions"?"Add":v==="tax"?"Tax":v==="watch"?"Watch":v[0]?.toUpperCase()+v.slice(1)}</small></button>)}</nav></div>;
+}
+
+function parseWatchRoute() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  if (parts[0] !== "watch" || !parts[1]) return null;
+  if (parts[2] === "address" && parts[3] && parts[4]) return { kind: "address" as const, slug: parts[1], chain: parts[3], address: parts[4] };
+  return { kind: "case" as const, slug: parts[1] };
 }
 
 export function App() {
   const [token,setToken]=useState(()=>localStorage.getItem("cbt_session")||""); const [auth,setAuth]=useState<AuthMode|null>(null); const [showTerms,setShowTerms]=useState(false);
+  const [watchRoute,setWatchRoute]=useState(parseWatchRoute);
+  useEffect(()=>{const sync=()=>setWatchRoute(parseWatchRoute());window.addEventListener("popstate",sync);return ()=>window.removeEventListener("popstate",sync);},[]);
   const [resetToken,setResetToken]=useState(()=>{try{return new URLSearchParams(window.location.search).get("reset")||"";}catch{return "";}});
   const [showServices,setShowServices]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/services");
   useEffect(()=>{const sync=()=>setShowServices(window.location.pathname.replace(/\/+$/,"")==="/services");window.addEventListener("popstate",sync);return ()=>window.removeEventListener("popstate",sync);},[]);
@@ -269,8 +280,10 @@ export function App() {
   // stored on the account server-side and pre-applied at checkout.
   useEffect(()=>{try{const raw=new URLSearchParams(window.location.search).get("promo");if(raw){const code=raw.trim().toUpperCase();if(/^[A-Z0-9_-]{2,64}$/.test(code))localStorage.setItem("cbt_promo",code);}}catch{}},[]);
   const goServices=()=>{window.history.pushState(null,"","/services");setShowServices(true);window.scrollTo(0,0);};
-  const goHome=()=>{window.history.pushState(null,"","/");setShowServices(false);window.scrollTo(0,0);};
+  const goHome=()=>{window.history.pushState(null,"","/");setShowServices(false);setWatchRoute(null);window.scrollTo(0,0);};
   if(showTerms) return <Terms back={()=>setShowTerms(false)}/>;
+  if(watchRoute?.kind==="address") return <PublicWatchAddress slug={watchRoute.slug} chain={watchRoute.chain} address={watchRoute.address} onHome={goHome}/>;
+  if(watchRoute?.kind==="case") return <PublicWatchPage slug={watchRoute.slug} onAuth={(m)=>{goHome();setAuth(m);}} onHome={goHome}/>;
   if(showServices) return <Services onAuth={(m)=>{goHome();setAuth(m);}} onHome={goHome} onServices={goServices} onTerms={()=>setShowTerms(true)}/>;
   if(resetToken) return <ResetPassword resetToken={resetToken} onDone={(t)=>{window.history.replaceState(null,"","/");setResetToken("");setToken(t);}} onCancel={()=>{window.history.replaceState(null,"","/");setResetToken("");}}/>;
   if(token) return <Shell token={token} logout={()=>{localStorage.removeItem("cbt_session");setToken("");}} onTokenRefresh={(t)=>{localStorage.setItem("cbt_session",t);setToken(t);}}/>;
