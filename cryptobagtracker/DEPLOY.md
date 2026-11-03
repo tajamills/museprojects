@@ -180,6 +180,20 @@ recorded in Alert history as undelivered and logged server-side. Repeat
 fires of the same alert are throttled by `ALERT_COOLDOWN_MS` (default 24h)
 so a price sitting past the target doesn't spam.
 
+## Password-reset owner notification (Nov 3, 2026)
+
+Password resets are a manual stopgap: a customer's request is recorded
+and the owner generates the one-time link by hand from her Billing
+page. So the owner knows a request is waiting, the app can POST each
+newly recorded request to `RESET_NOTIFY_WEBHOOK_URL` (payload:
+`{event: "password_reset_requested", email, requestedAt, message,
+message_short}`). Wire it to a Zapier Catch Hook whose action texts the
+owner's phone with the `message` field. This uses a **separate** hook
+from `ALERT_WEBHOOK_URL` — the alert Zap runs its SMS step on whatever
+arrives and cannot branch on event type. Fire-and-forget: unset means
+requests are recorded silently, exactly as before, and a webhook
+failure never affects the customer's (neutral) response.
+
 ## Not yet wired up (TODO, needs keys + code)
 
 None of these are referenced by the current server code — they are listed here

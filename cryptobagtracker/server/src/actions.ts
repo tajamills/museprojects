@@ -21,6 +21,7 @@ import { fetchTransactions as fetchUpholdTransactions } from "./exchanges/uphold
 import type { ExchangeFetcher, NormalizedTx } from "./exchanges/types.js";
 import type Stripe from "stripe";
 import { baseUrl, getStripe, reconcileSubscriptionFromStripe } from "./billing.js";
+import { firePasswordResetNotify } from "./resetNotify.js";
 import { computeEntitlement, getEntitlement, isComped } from "./entitlement.js";
 import {
   build8949,
@@ -875,12 +876,19 @@ export const Actions = {
         : [];
       if (byEmail.length < 3 && byIp.length < 20) {
         const found = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+        const createdAt = new Date();
         await db.insert(schema.passwordResetRequests).values({
           email,
           userId: found[0]?.id ?? null,
           requestedIp: ctx.ip,
-          createdAt: new Date(),
+          createdAt,
         });
+        // Owner-ops notification (Nov 3, 2026): text the owner that a
+        // request landed so she can go generate the link. No-op unless
+        // RESET_NOTIFY_WEBHOOK_URL is set; fire-and-forget, so it can
+        // never change or delay this neutral response. See
+        // resetNotify.ts for why this is not ALERT_WEBHOOK_URL.
+        firePasswordResetNotify(email, createdAt);
       }
       return { ok: true };
     },
