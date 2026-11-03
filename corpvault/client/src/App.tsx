@@ -86,12 +86,42 @@ function Auth({ onAuth, defaultMode = "signin" }: {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const mutation = useMutation({ mutationFn: () => mode === "signup" ? api.signUp({ email, password }) : api.signIn({ email, password }), onSuccess: (data) => onAuth(data.token, data.email), onError: (e) => setError(errText(e)) });
+    /** Forgot-password stopgap: the request is only ever "noted" — the
+     *  response is identical whether or not the email has an account,
+     *  and support sends the actual one-time link by hand. */
+    const [forgot, setForgot] = useState<"form" | "sent" | null>(null);
+    const forgotMutation = useMutation({ mutationFn: () => api.requestPasswordReset({ email }), onSuccess: () => setForgot("sent"), onError: (e) => setError(errText(e)) });
+    if (forgot)
+        return <main className="auth-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><section className="auth-panel"><header className="auth-brand" aria-label="kovala"><BrandMark/><strong>kovala</strong></header><h1>Forgot your password?</h1>{forgot === "sent" ? <><p className="done-note">Request noted. If an account exists for that email, support can send you a one-time reset link — email <a href="mailto:kovala@cryptobagtracker.io">kovala@cryptobagtracker.io</a> from that address and ask for yours. Links work once and expire after 60 minutes.</p><button className="primary" type="button" onClick={() => { setForgot(null); setMode("signin"); }}>Back to sign in</button></> : <><p className="auth-copy">Enter your account email and we will note your request. Reset links are sent by support personally, never automatically — after this, email us from that same address to receive yours.</p><form onSubmit={(e) => { e.preventDefault(); setError(""); forgotMutation.mutate(); }}>
+    <Field label="Email"><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required/></Field>
+    {error && <p className="error-note" role="alert">{error}</p>}
+    <PrimaryButton busy={forgotMutation.isPending}>Note my request</PrimaryButton>
+  </form><p className="auth-services"><button type="button" className="text-button" onClick={() => setForgot(null)}>Back to sign in</button></p></>}</section><PublicFooter/></main>;
     return <main className="auth-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><section className="auth-panel"><header className="auth-brand" aria-label="kovala"><BrandMark/><strong>kovala</strong></header><h1>Keep the back office in order.</h1><p className="auth-copy">Deadlines, documents, and decisions—organized around each business you run.</p><div className="auth-switch" role="group" aria-label="Sign in or create a workspace"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setError(""); }}>Sign in</button><button type="button" className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setError(""); }}>Create workspace</button></div><form onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(); }}>
     <Field label="Email"><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required/></Field>
     <Field label="Password"><input type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} minLength={mode === "signup" ? 8 : 1} required/></Field>
     {mode === "signup" && <p className="field-note">Use at least 8 characters.</p>}{error && <p className="error-note" role="alert">{error}</p>}
     <PrimaryButton busy={mutation.isPending}>{mode === "signup" ? "Create workspace" : "Sign in"}</PrimaryButton>
-  </form><p className="auth-services">New to kovala? <a href="/services">See what it includes<span className="entity-open-arrow" aria-hidden="true"/></a></p></section><PublicFooter/></main>;
+  </form>{mode === "signin" && <p className="auth-services"><button type="button" className="text-button" onClick={() => { setError(""); setForgot("form"); }}>Forgot your password? Request a reset</button></p>}<p className="auth-services">New to kovala? <a href="/services">See what it includes<span className="entity-open-arrow" aria-hidden="true"/></a></p></section><PublicFooter/></main>;
+}
+/** The set-new-password screen a one-time reset link (/?reset=…) opens.
+ *  Spending the link signs the customer in; the App then reloads into
+ *  the workspace with the fresh session stored. */
+function ResetPassword({ resetToken, onAuth }: {
+    resetToken: string;
+    onAuth: (token: string, email: string) => void;
+}) {
+    const [next, setNext] = useState("");
+    const [again, setAgain] = useState("");
+    const [error, setError] = useState("");
+    const mutation = useMutation({ mutationFn: () => { if (next !== again)
+            throw new Error("The new passwords don't match."); return api.resetPassword({ reset_token: resetToken, new_password: next }); }, onSuccess: (data) => { window.history.replaceState(null, "", "/"); onAuth(data.token, data.email); }, onError: (e) => setError(errText(e)) });
+    return <main className="auth-wrap"><SafeAreaTopScrim backgroundColor="var(--bg)"/><section className="auth-panel"><header className="auth-brand" aria-label="kovala"><BrandMark/><strong>kovala</strong></header><h1>Set a new password.</h1><p className="auth-copy">This link works once. Setting a new password signs out every other device on the account.</p><form onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(); }}>
+    <Field label="New password"><input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} minLength={8} required/></Field>
+    <Field label="New password again"><input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} minLength={8} required/></Field>
+    <p className="field-note">Use at least 8 characters.</p>{error && <p className="error-note" role="alert">{error}</p>}
+    <PrimaryButton busy={mutation.isPending}>Set password and sign in</PrimaryButton>
+  </form><p className="auth-services"><a href="/">Back to sign in</a></p></section><PublicFooter/></main>;
 }
 /** The public footer shared by the sign-in surface and the services page:
  *  brand, the public-page links, and the support contact. It is the only
@@ -563,6 +593,29 @@ function AccountSettings({ token, email, onTokenRefresh, onEmailChange, onSignOu
     </form></section>
   </section>;
 }
+/** Support-only (admin accounts): password-reset requests filed from
+ *  the sign-in screen. The owner generates the one-time link here and
+ *  sends it to the customer by hand — nothing is emailed automatically.
+ *  The server enforces the admin gate; this component only renders for
+ *  accounts whose role reads back as admin. */
+function PasswordResetSupport({ token }: {
+    token: string;
+}) {
+    const qc = useQueryClient();
+    const [link, setLink] = useState("");
+    const [linkFor, setLinkFor] = useState(0);
+    const [error, setError] = useState("");
+    const query = useQuery({ queryKey: ["resetRequests", token], queryFn: () => api.listPasswordResetRequests({ token }), retry: false });
+    const gen = useMutation({ mutationFn: (requestId: number) => api.generatePasswordResetLink({ token, request_id: requestId }), onSuccess: (r, requestId) => { setLink(r.url); setLinkFor(requestId); setError(""); void qc.invalidateQueries({ queryKey: ["resetRequests", token] }); }, onError: (e) => { setError(errText(e)); setLink(""); } });
+    const requests = query.data?.requests;
+    const stateLabel = (r: { has_account: boolean; state: string }) => !r.has_account ? "No account for this email" : r.state === "waiting" ? "Waiting for a link" : r.state === "link-active" ? "Link created — still valid" : r.state === "link-expired" ? "Link expired unused" : "Link used";
+    return <section className="account-settings" aria-label="Password reset requests"><div><p className="eyebrow">Support</p><h2 className="account-settings-title">Password reset requests</h2></div>
+    <section className="panel-card account-card"><p className="quiet">Customers who forget their password file a request from the sign-in screen. Create a one-time link here and send it to the customer yourself — links work once and expire after 60 minutes. Creating a new link for a request replaces the old one.</p>
+    {query.isPending ? <p className="quiet">Loading…</p> : query.isError ? <p className="error-note" role="alert">Could not load reset requests.</p> : requests && requests.length ? <div>{requests.map((r) => <div className="books-cat-row" key={r.id}><span><strong>{r.email}</strong> <small>{new Date(r.created_at).toLocaleString()} · {stateLabel(r)}</small></span>{r.has_account && r.state !== "used" && <button className="fix-button" disabled={gen.isPending} onClick={() => gen.mutate(r.id)}>{r.state === "waiting" ? "Create reset link" : "Create a new link"}</button>}</div>)}</div> : <p className="quiet">No reset requests yet.</p>}
+    {error && <p className="error-note" role="alert">{error}</p>}
+    {link && <div><p className="done-note">Reset link for request #{linkFor} — copy it and send it to the customer:</p><p style={{ wordBreak: "break-all" }}><code>{link}</code></p><button className="fix-button" onClick={() => { void navigator.clipboard?.writeText(link); }}>Copy link</button></div>}
+    </section></section>;
+}
 function Billing({ token, email, onTokenRefresh, onEmailChange, onSignOut }: {
     token: string;
     email: string;
@@ -572,6 +625,9 @@ function Billing({ token, email, onTokenRefresh, onEmailChange, onSignOut }: {
 }) {
     const [notice, setNotice] = useState("");
     const statusQuery = useQuery({ queryKey: ["billing", token], queryFn: () => api.getBillingStatus({ token }), retry: false });
+    /** The reset-request support section shows only for admin accounts. */
+    const authQuery = useQuery({ queryKey: ["authStatus", token], queryFn: () => api.authStatus({ token }), retry: false });
+    const isAdmin = authQuery.data?.role === "admin";
     const friendly = (e: unknown) => { const msg = e instanceof Error ? e.message : "Could not continue."; return /not configured/i.test(msg) ? "Billing isn't connected yet. Check back soon." : msg; };
     const checkout = useMutation({ mutationFn: () => api.createCheckoutSession({ token }), onSuccess: (r) => { window.location.href = r.url; }, onError: (e) => setNotice(friendly(e)) });
     const portal = useMutation({ mutationFn: () => api.createPortalSession({ token }), onSuccess: (r) => { window.location.href = r.url; }, onError: (e) => setNotice(friendly(e)) });
@@ -591,7 +647,7 @@ function Billing({ token, email, onTokenRefresh, onEmailChange, onSignOut }: {
     {notice && <p className="error-note billing-alert" role="alert">{notice}</p>}
     {!subscribed && <div className="billing-actions"><button className="primary compact" disabled={checkout.isPending} onClick={() => checkout.mutate()}>{checkout.isPending ? "Working…" : "Subscribe — $199.88/yr"}</button><p className="field-note billing-note">Checkout is secured by Stripe. Your card is charged $199.88 immediately, then once a year.</p></div>}
     {hasBillingAccount && <button className="billing-invoices" disabled={portal.isPending} onClick={() => portal.mutate()}><Icon name="documents"/>View invoices<span className="entity-open-arrow" aria-hidden="true"/></button>}
-    </>}</section>}<AccountSettings token={token} email={email} onTokenRefresh={onTokenRefresh} onEmailChange={onEmailChange} onSignOut={onSignOut}/></div>;
+    </>}</section>}<AccountSettings token={token} email={email} onTokenRefresh={onTokenRefresh} onEmailChange={onEmailChange} onSignOut={onSignOut}/>{isAdmin && <PasswordResetSupport token={token}/>}</div>;
 }
 /** The public services page (/services) — the "what exactly do I get"
  *  explainer a logged-out visitor can read before creating a workspace.
@@ -648,6 +704,16 @@ export function App() {
     // state-based tab routing.
     if (typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/services")
         return <ServicesPage/>;
+    // Password-reset links land on /?reset=<token>: the set-new-password
+    // screen renders before any session state, signed in or not. On
+    // success the screen stores the fresh session and reloads into "/"
+    // — a reload rather than a state change, so this early return never
+    // has to hand off to the hooked workspace shell mid-mount.
+    if (typeof window !== "undefined") {
+        const resetParam = new URLSearchParams(window.location.search).get("reset");
+        if (resetParam)
+            return <ResetPassword resetToken={resetParam} onAuth={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); window.location.href = "/"; }}/>;
+    }
     const [token, setToken] = useState(() => localStorage.getItem("bizkeep_token") ?? "");
     const [email, setEmail] = useState(() => localStorage.getItem("bizkeep_email") ?? "");
     const [tab, setTab] = useState<Tab>("overview");

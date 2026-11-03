@@ -15,6 +15,7 @@ built React client.
 | `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` | no | — | Optional Books bank connections (Phase 2, read-only Plaid). The connect option appears in Books ONLY when all three are set (`PLAID_ENV` = `sandbox` or `production`). |
 | `STRIPE_BANK_SYNC_PRICE_ID` | no | — | Bank Sync add-on price ($8.88/mo per business; product "Kovala -Plaid- Bank Sync", prod_VWflyMfG9ZCmEE). The purchase flow appears only when a price ID resolves: this env var first, else the `BANK_SYNC_PRICE_ID_FALLBACK` constant in `server/src/billing.ts`. The owner's admin account is comped and never checks out. |
 | `TOKEN_ENCRYPTION_KEY` | no | — | 64 hex chars (`openssl rand -hex 32`). Required alongside the Plaid vars: Plaid access tokens are stored AES-256-GCM encrypted under this key (same scheme as Zepostia). Never rotate casually — stored tokens become unreadable. |
+| `RESET_NOTIFY_WEBHOOK_URL` | no | — | Owner-ops notification for the forgot-password stopgap: when a new password-reset request is recorded, the server POSTs `{event: "password_reset_request", email, requested_at}` to this URL (e.g. a Zapier hook that texts the owner). Fire-and-forget — failures never affect the customer's request. Unset = no notification. Not a customer-facing feature. |
 
 See `.env.example` for a copy-paste template.
 

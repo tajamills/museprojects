@@ -11,7 +11,7 @@
 // is dropped.
 
 import { z } from "zod";
-import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, ne } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
@@ -25,6 +25,9 @@ export interface Ctx {
   blobs: BlobStore;
   /** Request origin (for Stripe redirect URLs); null when unknown. */
   origin: string | null;
+  /** Best-effort client IP (first x-forwarded-for hop, else the socket
+   *  address) — used only for rate limiting unauthenticated requests. */
+  ip: string | null;
 }
 
 const sessionResponse = z.object({ token: z.string(), email: z.string(), role: z.string() });
@@ -47,6 +50,43 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
     if (!salt)
         return false;
     return (await hashPassword(password, salt)) === stored;
+}
+/** SHA-256 hex digest — how password-reset tokens are stored at rest, so
+ *  a database read alone never yields a usable reset link. */
+async function sha256Hex(value: string): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return hex(new Uint8Array(digest));
+}
+/**
+ * accountRecord + the support gate: only admin accounts (the owner —
+ * the 'admin' role from migration 0004, granted to the emails on the
+ * shared admin list in ./admin.js) may run support actions like listing
+ * reset requests and generating reset links.
+ */
+async function adminAccountRecord(db: Db, token: string) {
+    const account = await accountRecord(db, token);
+    if (account.role !== "admin" && !isAdminEmail(account.email))
+        throw new Error("That area is for support only.");
+    return account;
+}
+/**
+ * Owner-ops notification: when a NEW reset request is recorded, POST a
+ * small event to RESET_NOTIFY_WEBHOOK_URL (e.g. a Zapier hook that texts
+ * the owner) so she knows to go generate the link. Fire-and-forget: the
+ * customer's neutral response never waits on it and a failed webhook is
+ * swallowed. When the env var is unset this is a no-op. This notifies
+ * the OWNER only — Kovala has no customer texting anywhere.
+ */
+function notifyResetRequest(email: string): void {
+    const url = process.env.RESET_NOTIFY_WEBHOOK_URL;
+    if (!url)
+        return;
+    void fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event: "password_reset_request", email, requested_at: new Date().toISOString() }),
+        signal: AbortSignal.timeout(5000),
+    }).catch(() => undefined);
 }
 function decodeBase64(value: string): Uint8Array {
     const binary = atob(value);
@@ -1271,6 +1311,147 @@ export const actionDefs = {
             };
         },
     },
+    /**
+     * Forgot password — step 1 (public, signed-out). Records a reset
+     * REQUEST and always answers the same {ok: true}, whether or not the
+     * email belongs to an account, so the form can never be used to probe
+     * which emails are registered. This is the admin-link stopgap (no
+     * email service exists in the product): support sees the request on
+     * the Billing page and generates the actual link with
+     * generatePasswordResetLink, then sends it to the customer manually.
+     * Rate-limited to 3 requests per email and 20 per IP per hour; past
+     * the limit the request is silently not recorded (same response).
+     * When a request IS recorded and RESET_NOTIFY_WEBHOOK_URL is set, a
+     * fire-and-forget event is posted so the owner gets a text that a
+     * request is waiting (see notifyResetRequest).
+     */
+    requestPasswordReset: {
+        request: z.object({ email: z.string().email() }),
+        response: okResponse,
+        async handler(ctx: Ctx, args: { email: string }): Promise<z.infer<typeof okResponse>> {
+            const email = args.email.trim().toLowerCase();
+            const since = new Date(Date.now() - 60 * 60 * 1000);
+            const byEmail = await ctx.db.select({ id: schema.passwordResetRequests.id })
+                .from(schema.passwordResetRequests)
+                .where(and(eq(schema.passwordResetRequests.email, email), gte(schema.passwordResetRequests.createdAt, since)));
+            const byIp = ctx.ip
+                ? await ctx.db.select({ id: schema.passwordResetRequests.id })
+                    .from(schema.passwordResetRequests)
+                    .where(and(eq(schema.passwordResetRequests.requestedIp, ctx.ip), gte(schema.passwordResetRequests.createdAt, since)))
+                : [];
+            if (byEmail.length < 3 && byIp.length < 20) {
+                const found = await ctx.db.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.email, email)).limit(1);
+                await ctx.db.insert(schema.passwordResetRequests).values({
+                    email,
+                    accountId: found[0]?.id ?? null,
+                    requestedIp: ctx.ip,
+                });
+                notifyResetRequest(email);
+            }
+            return { ok: true };
+        },
+    },
+    /**
+     * Forgot password — support view (admin accounts only): the most
+     * recent reset requests, newest first, with enough state to act on
+     * each: "waiting" (no link yet), "link-active", "link-expired",
+     * or "used".
+     */
+    listPasswordResetRequests: {
+        request: z.object({ token: z.string() }),
+        response: z.object({ requests: z.array(z.object({ id: z.number(), email: z.string(), has_account: z.boolean(), created_at: z.string(), state: z.string() })) }),
+        async handler(ctx: Ctx, args: { token: string }): Promise<{ requests: { id: number; email: string; has_account: boolean; created_at: string; state: string }[] }> {
+            await adminAccountRecord(ctx.db, args.token);
+            const rows = await ctx.db.select().from(schema.passwordResetRequests)
+                .orderBy(desc(schema.passwordResetRequests.createdAt)).limit(50);
+            const now = Date.now();
+            return {
+                requests: rows.map((r) => ({
+                    id: r.id,
+                    email: r.email,
+                    has_account: r.accountId != null,
+                    created_at: r.createdAt.toISOString(),
+                    state: r.usedAt
+                        ? "used"
+                        : r.tokenHash
+                            ? r.expiresAt && r.expiresAt.getTime() > now
+                                ? "link-active"
+                                : "link-expired"
+                            : "waiting",
+                })),
+            };
+        },
+    },
+    /**
+     * Forgot password — step 2 (admin accounts only): generate the
+     * one-time reset link for a request. The raw token exists only in
+     * the returned URL; the database keeps its SHA-256 hash. Generating
+     * a link replaces any earlier one for the same request, so only the
+     * newest link can ever work. The link expires in 60 minutes.
+     */
+    generatePasswordResetLink: {
+        request: z.object({ token: z.string(), request_id: z.number().int().positive() }),
+        response: z.object({ url: z.string(), expires_at: z.string() }),
+        async handler(ctx: Ctx, args: { token: string; request_id: number }): Promise<{ url: string; expires_at: string }> {
+            await adminAccountRecord(ctx.db, args.token);
+            const rows = await ctx.db.select().from(schema.passwordResetRequests)
+                .where(eq(schema.passwordResetRequests.id, args.request_id)).limit(1);
+            const request = rows[0];
+            if (!request)
+                throw new Error("That reset request was not found.");
+            if (request.accountId == null)
+                throw new Error("There is no account for that email, so there is nothing to reset.");
+            if (request.usedAt)
+                throw new Error("That request was already used. Ask the customer to file a new one from the sign-in screen.");
+            const rawToken = hex(crypto.getRandomValues(new Uint8Array(32)));
+            const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+            await ctx.db.update(schema.passwordResetRequests)
+                .set({ tokenHash: await sha256Hex(rawToken), expiresAt })
+                .where(eq(schema.passwordResetRequests.id, request.id));
+            return { url: `${baseUrl(ctx.origin)}/?reset=${rawToken}`, expires_at: expiresAt.toISOString() };
+        },
+    },
+    /**
+     * Forgot password — step 3 (public): spend a reset link. The token
+     * is looked up by hash; an unknown, spent, or expired link gets one
+     * plain error. On success the password is rehashed with the same
+     * PBKDF2 as everywhere else, the link (and every other outstanding
+     * link for the account) is burned, and ALL existing sessions are
+     * invalidated — the same behavior as changePassword — before a
+     * fresh session is issued so the customer lands signed in.
+     */
+    resetPassword: {
+        request: z.object({ reset_token: z.string().min(16).max(256), new_password: z.string().min(8).max(128) }),
+        response: sessionResponse,
+        async handler(ctx: Ctx, args: { reset_token: string; new_password: string }): Promise<z.infer<typeof sessionResponse>> {
+            const invalid = new Error("This reset link is invalid or has expired. Request a new one from the sign-in screen.");
+            const rows = await ctx.db.select().from(schema.passwordResetRequests)
+                .where(eq(schema.passwordResetRequests.tokenHash, await sha256Hex(args.reset_token.trim()))).limit(1);
+            const request = rows[0];
+            if (!request || request.accountId == null || request.usedAt || !request.expiresAt || request.expiresAt.getTime() <= Date.now())
+                throw invalid;
+            const accountRows = await ctx.db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId)).limit(1);
+            const account = accountRows[0];
+            if (!account)
+                throw invalid;
+            const passwordHash = await hashPassword(args.new_password);
+            await ctx.db.update(schema.accounts).set({ passwordHash }).where(eq(schema.accounts.id, account.id));
+            const now = new Date();
+            await ctx.db.update(schema.passwordResetRequests).set({ usedAt: now }).where(eq(schema.passwordResetRequests.id, request.id));
+            // Any other outstanding link for this account dies with this reset.
+            await ctx.db.update(schema.passwordResetRequests)
+                .set({ usedAt: now })
+                .where(and(
+                    eq(schema.passwordResetRequests.accountId, account.id),
+                    isNull(schema.passwordResetRequests.usedAt),
+                    ne(schema.passwordResetRequests.id, request.id),
+                ));
+            await ctx.db.delete(schema.sessions).where(eq(schema.sessions.accountId, account.id));
+            const token = crypto.randomUUID();
+            await ctx.db.insert(schema.sessions).values({ token, accountId: account.id, expiresAt: new Date(Date.now() + 30 * 86400000) });
+            return { token, email: account.email, role: account.role ?? "user" };
+        },
+    },
     changePassword: {
         request: z.object({ token: z.string(), current_password: z.string().min(1).max(128), new_password: z.string().min(8).max(128) }),
         response: sessionResponse,
@@ -1344,6 +1525,7 @@ export const actionDefs = {
             //    ON DELETE CASCADE on account_id — the explicit deletes
             //    are the belt, the cascades the suspenders.)
             await ctx.db.transaction(async (tx) => {
+                await tx.delete(schema.passwordResetRequests).where(eq(schema.passwordResetRequests.accountId, account.id));
                 await tx.delete(schema.bkTransactions).where(eq(schema.bkTransactions.accountId, account.id));
                 await tx.delete(schema.bkBankConnections).where(eq(schema.bkBankConnections.accountId, account.id));
                 await tx.delete(schema.bkSyncAddons).where(eq(schema.bkSyncAddons.accountId, account.id));

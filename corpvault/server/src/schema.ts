@@ -3,7 +3,7 @@
 // logic ports 1:1. SQLite INTEGER ms timestamps became TIMESTAMPTZ, and
 // INTEGER PRIMARY KEY AUTOINCREMENT became GENERATED ALWAYS AS IDENTITY.
 
-import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const accounts = pgTable("accounts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -23,6 +23,31 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+/**
+ * Forgot-password reset requests (migration 0009, admin-link stopgap).
+ * A public request lands here first (accountId null when no account
+ * matches — the public response is identical either way); the owner
+ * generates the one-time link from the Billing page, which fills
+ * tokenHash (SHA-256 of the raw token — the raw value is only ever in
+ * the generated link) and expiresAt (60 minutes). usedAt is stamped
+ * when the link is spent, when a newer link supersedes it, or when the
+ * password is reset.
+ */
+export const passwordResetRequests = pgTable(
+  "password_reset_requests",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    accountId: integer("account_id").references(() => accounts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    requestedIp: text("requested_ip"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+  },
+  (t) => [index("password_reset_requests_created_idx").on(t.createdAt)],
+);
 
 export const entities = pgTable("entities", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
