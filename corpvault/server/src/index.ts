@@ -1,7 +1,7 @@
 // kovala Express server (Node 20).
 //
 // - POST /actions   — JSON RPC: {action, args} → {data} | {error}
-// - GET  /files/*   — token-scoped document downloads (local-disk blob store)
+// - GET  /files/*   — token-scoped document downloads (Postgres blob store)
 // - GET  /healthz   — Railway health check
 // - Static files    — the built React client from dist/client
 
@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createDb, runMigrations, type Db } from "./db.js";
 import { actionDefs, type ActionName, type Ctx } from "./actions.js";
-import { createLocalBlobStore, resolveBlobPath } from "./storage.js";
+import { createDbBlobStore } from "./storage.js";
 import { bankSyncPriceId, stripeWebhookHandler } from "./billing.js";
 import * as schema from "./schema.js";
 
@@ -29,8 +29,12 @@ function zodMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Invalid request.";
 }
 
-export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
+export function createApp(db: Db): express.Express {
   const app = express();
+  // Downloads fetch bytes through the same Postgres blob store the actions
+  // write to (migration 0010); no session token is baked into this instance —
+  // the /files route authenticates the ?token= itself before serving.
+  const fileBlobs = createDbBlobStore(db, null);
 
   // Stripe webhook: Stripe's signature covers the raw request bytes, so this
   // route MUST use express.raw() and MUST be registered before express.json().
@@ -75,7 +79,7 @@ export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
         ? parsed.token
         : null;
     const forwardedFor = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
-    const ctx: Ctx = { db, token, blobs: createLocalBlobStore(dataDir, token), origin: req.get("origin") ?? null, ip: forwardedFor || req.ip || null };
+    const ctx: Ctx = { db, token, blobs: createDbBlobStore(db, token), origin: req.get("origin") ?? null, ip: forwardedFor || req.ip || null };
 
     try {
       const result = await def.handler(ctx, parsed as never);
@@ -122,12 +126,15 @@ export function createApp(db: Db, dataDir: string = DATA_DIR): express.Express {
         return;
       }
 
-      const fullPath = resolveBlobPath(dataDir, blobKey);
+      const blob = await fileBlobs.get(blobKey);
+      if (!blob) {
+        res.status(404).json({ error: "File not found." });
+        return;
+      }
+
       res.setHeader("Content-Type", doc.mimeType);
       res.setHeader("Content-Disposition", `inline; filename="${doc.filename.replace(/"/g, "")}"`);
-      res.sendFile(fullPath, (err) => {
-        if (err && !res.headersSent) res.status(404).json({ error: "File not found." });
-      });
+      res.send(blob.bytes);
     } catch (err) {
       if (!res.headersSent) res.status(400).json({ error: (err as Error).message });
     }
@@ -153,10 +160,10 @@ async function main(): Promise<void> {
   console.log(
     `kovala bank sync add-on price: ${bankSyncPriceId() ?? "(not configured — purchase flow hidden)"} (env override: ${process.env.STRIPE_BANK_SYNC_PRICE_ID ? "set" : "unset"})`,
   );
-  const app = createApp(db, DATA_DIR);
+  const app = createApp(db);
   const port = Number(process.env.PORT ?? 3000);
   app.listen(port, () => {
-    console.log(`kovala listening on :${port} (DATA_DIR=${DATA_DIR})`);
+    console.log(`kovala listening on :${port} (blob storage: postgres)`);
   });
 }
 

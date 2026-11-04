@@ -3,7 +3,15 @@
 // logic ports 1:1. SQLite INTEGER ms timestamps became TIMESTAMPTZ, and
 // INTEGER PRIMARY KEY AUTOINCREMENT became GENERATED ALWAYS AS IDENTITY.
 
-import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+/** BYTEA column (drizzle 0.45 pg-core has no built-in bytea builder).
+ *  node-postgres reads and writes bytea as Buffer natively. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const accounts = pgTable("accounts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -72,6 +80,19 @@ export const documents = pgTable("documents", {
   mimeType: text("mime_type").notNull(),
   blobKey: text("blob_key").notNull(),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
+});
+
+/**
+ * Document file bytes (migration 0010). The blob store used to write
+ * uploads to local disk under DATA_DIR, which Railway wipes on every
+ * redeploy (no volume attached) — the documents rows survived but the
+ * files 404'd. Bytes now live in Postgres keyed by the same blob keys.
+ */
+export const documentBlobs = pgTable("document_blobs", {
+  blobKey: text("blob_key").primaryKey(),
+  contentType: text("content_type").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().$defaultFn(() => new Date()),
 });
 
 export const reminders = pgTable("reminders", {
