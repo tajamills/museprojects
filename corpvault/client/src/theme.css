@@ -237,6 +237,8 @@
 .billing-invoices{margin-top:18px;display:inline-flex;align-items:center;gap:8px;border:0;background:none;color:var(--accent);font-weight:700;font-size:14px;padding:6px 0}
 .billing-invoices svg{width:18px;height:18px}
 .billing-invoices:disabled{opacity:.45;cursor:not-allowed}
+.billing-invoice-list{margin-top:6px}
+.billing-invoice-list .books-cat-row a.fix-button{text-decoration:none}
 /* Billing, no-subscription state (2026-10-13, Layla's newest mockup): the
    offer card composes in three zones — a large pale bubble with the card
    icon, the Subscription block with a BLACK

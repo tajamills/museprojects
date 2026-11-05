@@ -1,6 +1,8 @@
-// Stripe billing helpers for kovala.
+// Stripe billing helpers for kovala — this module is Kovala's own
+// billing implementation, written for Kovala's Stripe product and no
+// other. (An earlier version classified subscriptions by exclusion and
+// adopted another product's subscription as the plan; see planPriceId.)
 //
-// Ported from CryptoBagTracker's server/src/billing.ts. Differences:
 // - The user table is `accounts` (not `users`).
 // - The $199/year plan charges IMMEDIATELY at checkout — no trial.
 // - The webhook signing secret is read from STRIPE_WEBHOOK_SECRET first,
@@ -67,6 +69,40 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
   return end ? new Date(end * 1000) : null;
 }
 
+/**
+ * The Kovala plan price: the $199.88/year price on the Kovala product in
+ * Stripe, configured via STRIPE_PRICE_ID — the same source the checkout
+ * flow (createCheckoutSession in actions.ts) charges for the plan.
+ * Plan state is anchored on THIS price, positively: a subscription is
+ * the base plan only when one of its items carries the Kovala plan
+ * price. Never classify by exclusion — the owner's Stripe account is
+ * shared across her products, so "not a Bank Sync add-on" is not
+ * evidence a subscription is the Kovala plan (a CryptoBagTracker
+ * subscription on the shared customer once posed as the plan and its
+ * period end rendered as the plan's renewal date).
+ */
+export function planPriceId(): string | null {
+  return process.env.STRIPE_PRICE_ID || null;
+}
+
+/** True when the subscription carries the Kovala plan price on any item. */
+export function isPlanSubscription(sub: Stripe.Subscription): boolean {
+  const priceId = planPriceId();
+  if (!priceId) return false;
+  return (sub.items?.data ?? []).some((item) => item.price?.id === priceId);
+}
+
+/**
+ * The owner's account is comped: stored admin role OR an email on the
+ * admin list (ADMIN_EMAILS / code list in admin.js). A comped account is
+ * never charged and never sent to checkout, for the base plan and the
+ * Bank Sync add-on alike. Every billing surface (status read, checkout
+ * creation, add-on entitlement) honors this one check.
+ */
+export function isCompedAccount(account: Pick<AccountRow, "role" | "email">): boolean {
+  return account.role === "admin" || isAdminEmail(account.email);
+}
+
 /** Copy a Stripe subscription's state onto the matching account row. */
 export async function syncSubscription(db: Db, subscription: Stripe.Subscription): Promise<void> {
   // Bank Sync add-on subscriptions belong to their per-entity row, never
@@ -84,6 +120,16 @@ export async function syncSubscription(db: Db, subscription: Stripe.Subscription
     console.warn(`stripe webhook: no account found for customer ${customerId}`);
     return;
   }
+  // Shared Stripe account: a subscription that is neither this
+  // account's recorded plan subscription nor carrying the Kovala plan
+  // price belongs to another product — its lifecycle must never write
+  // this account's plan state.
+  if (subscription.id !== account.stripeSubscriptionId && !isPlanSubscription(subscription)) {
+    console.warn(
+      `stripe webhook: ignoring subscription ${subscription.id} for account ${account.id} — not the recorded plan subscription and not the Kovala plan price`,
+    );
+    return;
+  }
   await db
     .update(schema.accounts)
     .set({
@@ -98,7 +144,14 @@ export async function syncSubscription(db: Db, subscription: Stripe.Subscription
  * Authoritative billing sync: recompute an account's local billing state
  * from Stripe's actual subscriptions in one pass and write it onto the
  * account row. Returns true when the persisted fields actually changed.
- * Ported from Zepostia's syncBillingForCustomer (single-plan version).
+ *
+ * The plan is identified by the Kovala plan price (see planPriceId),
+ * never by exclusion: on the owner's shared Stripe account, other
+ * products' subscriptions sit on the same customer and must not be
+ * mistaken for the plan. When Stripe's list (successfully fetched)
+ * holds no plan subscription for the customer, the row is cleared to
+ * match — a stale recorded grant must not survive as a phantom
+ * "active" with another product's renewal date.
  */
 export async function syncBillingForCustomer(
   db: Db,
@@ -117,10 +170,30 @@ export async function syncBillingForCustomer(
   }
 
   const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
-  // Bank Sync add-on subscriptions are reconciled separately (per entity);
-  // they must never be mistaken for the base plan here.
-  const planSubs = subs.filter((s) => s.metadata?.addon !== "bank_sync");
-  if (!planSubs.length) return false;
+  // Bank Sync add-on subscriptions are reconciled separately (per
+  // entity); among the rest, ONLY a subscription carrying the Kovala
+  // plan price is the base plan.
+  const planSubs = subs.filter((s) => s.metadata?.addon !== "bank_sync" && isPlanSubscription(s));
+  if (!planSubs.length) {
+    // Stripe answered and holds no Kovala-plan subscription for this
+    // customer (none at all, only Bank Sync add-ons, or only other
+    // products' subscriptions). The local row must say so — mirror the
+    // add-on reconcile's rule that when Stripe shows none, the local
+    // row is cleared to match.
+    const next = {
+      stripeSubscriptionId: null,
+      subscriptionStatus: "none",
+      currentPeriodEnd: null,
+    };
+    const changed =
+      next.stripeSubscriptionId !== account.stripeSubscriptionId ||
+      next.subscriptionStatus !== account.subscriptionStatus ||
+      !sameDate(next.currentPeriodEnd, account.currentPeriodEnd);
+    if (changed) {
+      await db.update(schema.accounts).set(next).where(eq(schema.accounts.id, account.id));
+    }
+    return changed;
+  }
   // Prefer a live subscription (the recorded one first, then any live
   // one — a re-subscription must win over a recorded-but-canceled
   // predecessor), falling back to the recorded / newest candidate.
@@ -160,51 +233,34 @@ export async function syncBillingForCustomer(
  *
  * Billing reads invoke this at most once per minute per account
  * (in-process throttle): in the steady state it costs one
- * subscriptions.list for the customer (plus a customer lookup when the
- * row has no Stripe customer ID yet).
+ * subscriptions.list for the customer.
  *
  * Returns true when local state was created or repaired. Never throws —
  * a Stripe outage must not break the billing page; the caller falls back
- * to the local state it already had. When no Stripe customer or
- * subscription exists for the account, the local row is left exactly
- * as-is — a grant is never fabricated.
+ * to the local state it already had. When no Stripe customer exists for
+ * the account, the local row is left exactly as-is — a grant is never
+ * fabricated. When Stripe answers but holds no Kovala-plan subscription
+ * for the customer, syncBillingForCustomer clears any stale recorded
+ * grant, so a phantom one never survives either.
  */
 export async function reconcileSubscriptionFromStripe(db: Db, account: AccountRow): Promise<boolean> {
   const nowMs = Date.now();
   const last = lastReconcileAtByAccount.get(account.id) ?? 0;
   if (nowMs - last < RECONCILE_MIN_INTERVAL_MS) return false;
   if (!process.env.STRIPE_SECRET_KEY) return false;
+  // No Stripe customer bound: nothing to reconcile. The customer is
+  // bound ONLY by Kovala's own checkout flow (the checkout actions
+  // create and record it, or a verified Kovala checkout-session webhook
+  // does). This function deliberately never searches Stripe by email:
+  // the Stripe account is shared across the owner's products, and the
+  // same email owns customers in several of them — adopting one by
+  // email is how another product's customer (and its subscriptions)
+  // once became this account's billing identity.
+  if (!account.stripeCustomerId) return false;
   lastReconcileAtByAccount.set(account.id, nowMs);
   try {
     const stripe = getStripe();
-
-    let customerId = account.stripeCustomerId;
-    if (!customerId) {
-      // The row never got its Stripe customer bound (checkout completed
-      // without the binding webhook and the session-time write was
-      // lost). Find the customer by email: prefer one that carries a
-      // live subscription, else the newest customer with any
-      // subscription on file.
-      const customers = await stripe.customers.list({ email: account.email, limit: 10 });
-      let fallbackCustomerId: string | null = null;
-      for (const customer of customers.data) {
-        if (customer.deleted) continue;
-        const subs = await stripe.subscriptions.list({ customer: customer.id, status: "all", limit: 10 });
-        if (subs.data.some((sub) => SUBSCRIBED_STATUSES.includes(sub.status))) {
-          customerId = customer.id;
-          break;
-        }
-        if (!fallbackCustomerId && subs.data.length > 0) fallbackCustomerId = customer.id;
-      }
-      customerId = customerId ?? fallbackCustomerId;
-      if (!customerId) return false;
-      await db
-        .update(schema.accounts)
-        .set({ stripeCustomerId: customerId })
-        .where(eq(schema.accounts.id, account.id));
-    }
-
-    return await syncBillingForCustomer(db, stripe, customerId);
+    return await syncBillingForCustomer(db, stripe, account.stripeCustomerId);
   } catch (err) {
     // Refund the throttle on failure so the next billing read retries
     // promptly instead of waiting out the interval on stale state.
@@ -355,7 +411,7 @@ export async function reconcileBankSyncAddon(
  * here. Everyone else needs a live add-on subscription for that entity.
  */
 export function bankSyncEntitled(addon: AddonRow | null, account: AccountRow): boolean {
-  if (account.role === "admin" || isAdminEmail(account.email)) return true;
+  if (isCompedAccount(account)) return true;
   return Boolean(addon && SUBSCRIBED_STATUSES.includes(addon.status));
 }
 
@@ -373,6 +429,15 @@ async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<
     console.warn(`stripe webhook: no account found for customer ${customerId}`);
     return;
   }
+  // Shared Stripe account: another product's subscription ending must
+  // not cancel this account's plan — only the recorded plan
+  // subscription or one carrying the Kovala plan price can.
+  if (subscription.id !== account.stripeSubscriptionId && !isPlanSubscription(subscription)) {
+    console.warn(
+      `stripe webhook: ignoring cancel of subscription ${subscription.id} for account ${account.id} — not the recorded plan subscription and not the Kovala plan price`,
+    );
+    return;
+  }
   await db
     .update(schema.accounts)
     .set({
@@ -383,13 +448,15 @@ async function markCanceled(db: Db, subscription: Stripe.Subscription): Promise<
     .where(eq(schema.accounts.id, account.id));
 }
 
-async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
+async function markPastDue(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<void> {
   // A failed payment on a Bank Sync add-on pauses only that add-on.
   const subRef = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
   const subId = typeof subRef === "string" ? subRef : subRef?.id;
-  if (subId && process.env.STRIPE_SECRET_KEY) {
+  let invoiceSub: Stripe.Subscription | null = null;
+  if (subId) {
     try {
-      const sub = await getStripe().subscriptions.retrieve(subId);
+      const sub = await stripe.subscriptions.retrieve(subId);
+      invoiceSub = sub;
       if (sub.metadata?.addon === "bank_sync") {
         await db
           .update(schema.bkSyncAddons)
@@ -414,6 +481,16 @@ async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
     console.warn(`stripe webhook: no account found for customer ${customerId}`);
     return;
   }
+  // Shared Stripe account: when the invoice's subscription is known and
+  // it is neither the recorded plan subscription nor carrying the
+  // Kovala plan price, the failed payment is another product's — it
+  // must not mark this account's plan past due.
+  if (invoiceSub && invoiceSub.id !== account.stripeSubscriptionId && !isPlanSubscription(invoiceSub)) {
+    console.warn(
+      `stripe webhook: ignoring failed payment on subscription ${invoiceSub.id} for account ${account.id} — not the recorded plan subscription and not the Kovala plan price`,
+    );
+    return;
+  }
   await db
     .update(schema.accounts)
     .set({ subscriptionStatus: "past_due" })
@@ -433,21 +510,32 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
         typeof session.customer === "string" ? session.customer : session.customer?.id;
       const subscriptionId =
         typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-      if (accountId && customerId) {
+      // Retrieve the subscription BEFORE binding anything: on the
+      // shared Stripe account, another product's checkout session can
+      // land on this endpoint, and its customer + subscription must
+      // never become this account's billing identity. The customer is
+      // bound only when the session's subscription is provably
+      // Kovala's own — the Kovala plan price, or a Bank Sync add-on
+      // (subscription or session metadata) — matching the rule that a
+      // Kovala account's Stripe customer comes from Kovala's flow only.
+      const sub = subscriptionId ? await stripe.subscriptions.retrieve(subscriptionId) : null;
+      const kovalaSession = Boolean(
+        sub && (isPlanSubscription(sub) || sub.metadata?.addon === "bank_sync" || session.metadata?.addon === "bank_sync"),
+      );
+      if (accountId && customerId && kovalaSession && sub) {
         await db
           .update(schema.accounts)
           .set({
             stripeCustomerId: customerId,
             // An add-on checkout must not rebind the account's recorded
             // base-plan subscription; syncSubscription routes it below.
-            ...(subscriptionId && session.metadata?.addon !== "bank_sync"
-              ? { stripeSubscriptionId: subscriptionId }
+            ...(session.metadata?.addon !== "bank_sync" && isPlanSubscription(sub)
+              ? { stripeSubscriptionId: sub.id }
               : {}),
           })
           .where(eq(schema.accounts.id, accountId));
       }
-      if (subscriptionId) {
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+      if (sub) {
         await syncSubscription(db, sub);
       }
       break;
@@ -462,7 +550,7 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
       break;
     }
     case "invoice.payment_failed": {
-      await markPastDue(db, event.data.object as Stripe.Invoice);
+      await markPastDue(db, stripe, event.data.object as Stripe.Invoice);
       break;
     }
     default:
@@ -505,4 +593,82 @@ export async function stripeWebhookHandler(
     return { ok: false, status: 500, error: "Webhook handler failed." };
   }
   return { ok: true };
+}
+
+/** One invoice row for the Billing page's in-app invoice list. */
+export interface BillingInvoice {
+  id: string;
+  createdAt: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  hostedUrl: string | null;
+}
+
+/** The subscription an invoice belongs to, across Stripe API shapes. */
+function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const inv = invoice as unknown as {
+    subscription?: string | { id: string } | null;
+    parent?: { subscription_details?: { subscription?: string | { id: string } | null } | null } | null;
+  };
+  const ref = inv.subscription ?? inv.parent?.subscription_details?.subscription ?? null;
+  if (!ref) return null;
+  return typeof ref === "string" ? ref : ref.id;
+}
+
+/** Price IDs charged on an invoice's lines, across Stripe API shapes. */
+function invoiceLinePriceIds(invoice: Stripe.Invoice): string[] {
+  const inv = invoice as unknown as {
+    lines?: {
+      data?: Array<{
+        price?: { id?: string } | null;
+        pricing?: { price_details?: { price?: string } | null } | null;
+      }>;
+    };
+  };
+  const ids: string[] = [];
+  for (const line of inv.lines?.data ?? []) {
+    const id = line.price?.id ?? line.pricing?.price_details?.price;
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * The customer's KOVALA invoices: only invoices belonging to a Kovala
+ * plan subscription or a Bank Sync add-on subscription. The Stripe
+ * account (and often the customer) is shared across the owner's
+ * products, and the Stripe customer portal cannot be scoped per
+ * product — so the Billing page's invoice list is built here instead:
+ * an invoice counts when its subscription is one of this customer's
+ * Kovala subscriptions, or when any of its lines charges the Kovala
+ * plan price or the Bank Sync price (the line check still recognizes
+ * invoices whose subscription has since been deleted). Other products'
+ * invoices are invisible, exactly like their subscriptions.
+ */
+export async function listKovalaInvoices(stripe: Stripe, account: AccountRow): Promise<BillingInvoice[]> {
+  if (!account.stripeCustomerId) return [];
+  const customerId = account.stripeCustomerId;
+  const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })).data;
+  const kovalaSubIds = new Set(
+    subs
+      .filter((s) => isPlanSubscription(s) || s.metadata?.addon === "bank_sync")
+      .map((s) => s.id),
+  );
+  const kovalaPriceIds = new Set([planPriceId(), bankSyncPriceId()].filter((p): p is string => Boolean(p)));
+  const invoices = (await stripe.invoices.list({ customer: customerId, limit: 100 })).data;
+  return invoices
+    .filter((inv) => {
+      const subId = invoiceSubscriptionId(inv);
+      if (subId && kovalaSubIds.has(subId)) return true;
+      return invoiceLinePriceIds(inv).some((id) => kovalaPriceIds.has(id));
+    })
+    .map((inv) => ({
+      id: inv.id ?? "",
+      createdAt: new Date((inv.created ?? 0) * 1000).toISOString(),
+      amountCents: inv.total ?? inv.amount_due ?? 0,
+      currency: inv.currency ?? "usd",
+      status: inv.status ?? "unknown",
+      hostedUrl: inv.hosted_invoice_url ?? null,
+    }));
 }

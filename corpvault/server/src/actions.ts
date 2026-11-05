@@ -15,7 +15,7 @@ import { and, asc, desc, eq, gte, isNull, lt, ne } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Db } from "./db.js";
 import type { BlobStore } from "./storage.js";
-import { bankSyncEntitled, bankSyncPriceId, baseUrl, getStripe, reconcileBankSyncAddon, reconcileSubscriptionFromStripe } from "./billing.js";
+import { bankSyncEntitled, bankSyncPriceId, baseUrl, getStripe, isCompedAccount, isPlanSubscription, listKovalaInvoices, reconcileBankSyncAddon, reconcileSubscriptionFromStripe } from "./billing.js";
 import { createPlaidLinkToken, decryptToken, encryptToken, exchangePlaidPublicToken, getPlaidAccounts, getPlaidBalances, getPlaidInstitutionName, plaidConfigured, removePlaidItem, syncPlaidTransactions, tokenEncryptionReady, type PlaidSyncTransaction } from "./plaid.js";
 
 export interface Ctx {
@@ -113,11 +113,14 @@ async function accountRecord(db: Db, token: string) {
     return account;
 }
 /**
- * Cancel every Stripe subscription attached to an account — the base plan
+ * Cancel every KOVALA subscription attached to an account — the base plan
  * plus every per-business Bank Sync add-on — ahead of account deletion.
  * Candidates come from the IDs recorded on the account / add-on rows plus,
- * when a Stripe customer is bound, an authoritative list of that
- * customer's subscriptions. Already-canceled subscriptions are skipped.
+ * when a Stripe customer is bound, that customer's subscriptions filtered
+ * to Kovala's own (plan price or Bank Sync metadata): the Stripe account
+ * is shared across the owner's products, so another product's
+ * subscription on the same customer is NOT this account's to cancel.
+ * Already-canceled subscriptions are skipped.
  * Throws (aborting the deletion) when billing cannot be reached or any
  * cancellation fails: a deleted account must never keep being charged.
  * An account with nothing recorded in Stripe has nothing to cancel and
@@ -146,7 +149,8 @@ async function cancelAllStripeSubscriptions(db: Db, account: Awaited<ReturnType<
         try {
             const subs = await stripe.subscriptions.list({ customer: account.stripeCustomerId, status: "all", limit: 100 });
             for (const sub of subs.data)
-                ids.add(sub.id);
+                if (isPlanSubscription(sub) || sub.metadata?.addon === "bank_sync")
+                    ids.add(sub.id);
         }
         catch {
             throw new Error(unreachable);
@@ -1241,6 +1245,10 @@ export const actionDefs = {
         response: z.object({ url: z.string() }),
         async handler(ctx: Ctx, args: { token: string }): Promise<{ url: string }> {
             const account = await accountRecord(ctx.db, args.token);
+            // The owner's account is comped — it never reaches a checkout.
+            if (isCompedAccount(account)) {
+                throw new Error("The plan is included on your account — no checkout needed.");
+            }
             const stripe = getStripe();
             const priceId = process.env.STRIPE_PRICE_ID;
             if (!priceId)
@@ -1273,7 +1281,12 @@ export const actionDefs = {
     },
     /**
      * Stripe Customer Portal session so subscribers can update their card or
-     * cancel without us handling payment details.
+     * cancel without us handling payment details. The portal reflects the
+     * account's bound Stripe customer — and that customer is only ever
+     * created/bound by Kovala's own checkout flow (never adopted from
+     * another product by email lookup or foreign webhook), so the portal
+     * shows Kovala billing. If the owner sets STRIPE_PORTAL_CONFIGURATION_ID
+     * to a Kovala-specific portal configuration in Stripe, it is used.
      */
     createPortalSession: {
         request: z.object({ token: z.string() }),
@@ -1286,6 +1299,9 @@ export const actionDefs = {
             const session = await stripe.billingPortal.sessions.create({
                 customer: account.stripeCustomerId,
                 return_url: baseUrl(ctx.origin),
+                ...(process.env.STRIPE_PORTAL_CONFIGURATION_ID
+                    ? { configuration: process.env.STRIPE_PORTAL_CONFIGURATION_ID }
+                    : {}),
             });
             return { url: session.url };
         },
@@ -1296,6 +1312,12 @@ export const actionDefs = {
         response: z.object({ status: z.string(), currentPeriodEnd: z.string().nullable() }),
         async handler(ctx: Ctx, args: { token: string }): Promise<{ status: string; currentPeriodEnd: string | null }> {
             let account = await accountRecord(ctx.db, args.token);
+            // The owner's account is comped: report the comp as its own
+            // status, never as a paid plan. There is no subscription to
+            // reconcile and no renewal date to show.
+            if (isCompedAccount(account)) {
+                return { status: "comped", currentPeriodEnd: null };
+            }
             // Self-heal: reconcile the local row from Stripe's actual
             // state (throttled) so a completed checkout stranded by a
             // lost webhook delivery is repaired on this read; re-read
@@ -1309,6 +1331,33 @@ export const actionDefs = {
                 status,
                 currentPeriodEnd: account.currentPeriodEnd ? account.currentPeriodEnd.toISOString() : null,
             };
+        },
+    },
+    /**
+     * The account's Kovala invoices for the Billing page's in-app list.
+     * Scoped to Kovala plan + Bank Sync add-on invoices only (see
+     * listKovalaInvoices): the Stripe customer portal cannot be scoped
+     * per product, and on the shared Stripe account an unscoped list
+     * would show other products' invoices here.
+     */
+    listBillingInvoices: {
+        request: z.object({ token: z.string() }),
+        response: z.object({
+            invoices: z.array(z.object({
+                id: z.string(),
+                createdAt: z.string(),
+                amountCents: z.number(),
+                currency: z.string(),
+                status: z.string(),
+                hostedUrl: z.string().nullable(),
+            })),
+        }),
+        async handler(ctx: Ctx, args: { token: string }): Promise<{ invoices: Awaited<ReturnType<typeof listKovalaInvoices>> }> {
+            const account = await accountRecord(ctx.db, args.token);
+            if (!account.stripeCustomerId)
+                return { invoices: [] };
+            const stripe = getStripe();
+            return { invoices: await listKovalaInvoices(stripe, account) };
         },
     },
     /**
