@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { z } from "zod";
 import { BOOK_CHECKOUT_ENABLED, BOOKING_ITEM_IDS, BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
+import { BUILD_TAG, grantVerifiedCheckoutSession, type LineItemsFetcher } from "./billing.js";
 import { CONTENT } from "./content-data.js";
 import { WORKSHEETS_DOCX_BASE64 } from "./worksheets-data.js";
 import { createStore, type Store, type User } from "./store.js";
@@ -112,37 +113,39 @@ async function startSession(res: express.Response, userId: string): Promise<void
 }
 
 /**
- * Grant the book a completed Stripe checkout paid for. Identity comes from
- * client_reference_id / metadata.userId (set by /api/checkout for signed-in
- * buyers); the fallback is the email Stripe collected, so the entitlement
- * still lands when that buyer creates an account with the same email.
- * `via` is "webhook" for the Stripe webhook and "reconciled" for the
- * self-healing lookup below — the grant itself (store call + idempotency
- * on stripe_session_id) is identical either way.
+ * Grant the book a completed Stripe checkout paid for — ONLY after the
+ * session verifies against the Abisola billing anchor (see billing.ts):
+ * a one-time payment session whose line items, read back from Stripe,
+ * match this app's own catalog amount and product name. Sessions from
+ * the other products on the shared Stripe account (subscriptions,
+ * CryptoAlerts, Kovala) verify as nothing and grant nothing.
+ * Identity comes from client_reference_id / metadata.userId (set by
+ * /api/checkout for signed-in buyers); the fallback is the email Stripe
+ * collected, so the entitlement still lands when that buyer creates an
+ * account with the same email. `via` is "webhook" for the Stripe
+ * webhook, "reconciled" for the per-user heal, and "sweep" for the
+ * global sweep — verification, the store call, and idempotency on
+ * stripe_session_id are identical on every path.
  */
+const fetchLineItems: LineItemsFetcher | null = stripe
+  ? async (sessionId: string) => {
+      const page = await stripe.checkout.sessions.listLineItems(sessionId, {
+        limit: 10,
+        expand: ["data.price.product"],
+      });
+      return page.data as unknown as import("./billing.js").LineItemLike[];
+    }
+  : null;
+
 async function grantFromCheckoutSession(
   session: Stripe.Checkout.Session,
   via: "webhook" | "reconciled" | "sweep" = "webhook",
 ): Promise<boolean> {
-  const itemId = session.metadata?.itemId ?? "";
-  if (!BOOK_ITEM_IDS.has(itemId)) return false; // only books are entitlements
-  const userId = session.client_reference_id || session.metadata?.userId || null;
-  const email = normalizeEmail(
-    session.customer_details?.email ?? session.customer_email ?? session.metadata?.email ?? "",
+  return grantVerifiedCheckoutSession(
+    { fetchLineItems, store },
+    session as unknown as import("./billing.js").CheckoutSessionLike,
+    via,
   );
-  const inserted = await store.grantEntitlement({
-    userId,
-    email: email || null,
-    bookId: itemId,
-    source: "stripe",
-    stripeSessionId: session.id,
-  });
-  if (inserted) {
-    console.log(
-      `[abisolawrites] entitlement granted via ${via}: ${itemId} -> ${userId ?? email ?? "?"} (session ${session.id})`,
-    );
-  }
-  return inserted;
 }
 
 /**
@@ -295,7 +298,7 @@ async function main() {
   const app = express();
   app.disable("x-powered-by");
 
-  app.get("/healthz", (_req, res) => res.json({ ok: true, store: store.kind }));
+  app.get("/healthz", (_req, res) => res.json({ ok: true, store: store.kind, build: BUILD_TAG }));
 
   // Stripe webhook: signature covers the raw request bytes, so this route
   // MUST use express.raw() and be registered before express.json(). Without
