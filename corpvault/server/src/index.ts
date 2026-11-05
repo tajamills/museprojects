@@ -57,7 +57,7 @@ export function createApp(db: Db): express.Express {
   // ~13.4 MB base64), so the body limit must exceed the 14 MB zod cap.
   app.use(express.json({ limit: "20mb" }));
 
-  app.get("/healthz", (_req, res) => res.json({ ok: true, build: "2026-11-05-kovala-entities-tree" }));
+  app.get("/healthz", (_req, res) => res.json({ ok: true, build: "2026-11-05-kovala-entities-home" }));
 
   app.post("/actions", async (req, res) => {
     const { action, args } = (req.body ?? {}) as { action?: unknown; args?: unknown };

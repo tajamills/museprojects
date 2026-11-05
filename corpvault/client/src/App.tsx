@@ -12,7 +12,7 @@ type Modal = "entity" | "reminder" | "document" | "meeting" | null;
 const STATES = ["WY", "FL", "GA", "TX", "CA", "AL", "AK", "AZ", "AR", "CO", "CT", "DC", "DE", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "UT", "VA", "VT", "WA", "WI", "WV"];
 const errText = (value: unknown) => value instanceof Error ? value.message : "Something went wrong. Please try again.";
 function Icon({ name }: {
-    name: Tab | "plus" | "minus" | "close" | "check" | "upload" | "download" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder" | "flag" | "bank" | "tag";
+    name: Tab | "plus" | "minus" | "close" | "check" | "upload" | "download" | "lock" | "info" | "user" | "clock" | "more" | "chevron" | "agreement" | "receipt" | "license" | "folder" | "flag" | "bank" | "tag" | "moon" | "sun";
 }) {
     const paths: Record<string, ReactNode> = {
         overview: <><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></>,
@@ -36,6 +36,8 @@ function Icon({ name }: {
         flag: <><path d="M6 21.5v-17"/><path d="M6 5h11.5l-2.8 3.7 2.8 3.8H6Z"/></>,
         bank: <><path d="m3 9.2 9-5.4 9 5.4"/><path d="M4.5 9.2h15"/><path d="M6.5 9.2V17m3.7-7.8V17m3.6-7.8V17m3.7-7.8V17"/><path d="M4 17h16M3.5 20.5h17"/></>,
         tag: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></>,
+        moon: <path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a6.8 6.8 0 0 0 9.2 9.2Z"/>,
+        sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/></>,
     };
     return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -50,6 +52,28 @@ function Field({ label, children }: {
  *  (client/brand-mark.svg carries the same drawing). */
 function BrandMark() {
     return <svg className="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="11" fill="#111114" stroke="rgba(255,255,255,.18)"/><path d="M15.5 13v22M32.5 13 17.2 23.2M19 25.4l13.8 9.6" fill="none" stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
+/** The one theme switch for the whole page (Layla's approved mockup,
+ *  Nov 5, 2026): a small moon in the top corner — one tap flips the
+ *  entire app between dark and light. It is an overall page decision,
+ *  never per business. The choice persists as kovala_theme and is
+ *  applied to <html data-theme> before first paint by the inline
+ *  script in the generated index.html; with no stored choice the OS
+ *  preference rules. In dark the glyph becomes a sun (tap for light). */
+type ThemeChoice = "dark" | "light";
+function storedTheme(): ThemeChoice | null {
+    try {
+        const t = localStorage.getItem("kovala_theme");
+        return t === "dark" || t === "light" ? t : null;
+    }
+    catch { return null; }
+}
+function systemTheme(): ThemeChoice { return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+function ThemeToggle({ theme, onToggle }: {
+    theme: ThemeChoice;
+    onToggle: () => void;
+}) {
+    return <button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch the whole page to light" : "Switch the whole page to dark"} title={theme === "dark" ? "Light" : "Dark"} onClick={onToggle}><Icon name={theme === "dark" ? "sun" : "moon"}/></button>;
 }
 /** The filing-cabinet empty-state illustration (Layla's mockup): a drawn
  *  document page — folded corner, ruled lines — with a copper circular
@@ -241,9 +265,7 @@ function StatusChip({ att }: {
         return <Chip tone="info" large><span className="chip-dot" aria-hidden="true"/>Forms {dateLabel(att.formsOn)}</Chip>;
     return <Chip tone="green" large><span className="chip-dot" aria-hidden="true"/>Active</Chip>;
 }
-type BizFilter = "all" | "active" | "action" | "archived";
-type BizSort = "recent" | "name" | "formation";
-/** The Renewal cell for a business row: the state annual date the app already
+/** The Renewal cell for a business: the state annual date the app already
  *  computes (WY anniversary-month 1st, GA April 1) when it applies, else the
  *  registered-agent renewal date on file, else null (→ "Not set" + Add date). */
 function renewalCell(e: Entity): { value: string; sub: string } | null {
@@ -257,71 +279,146 @@ function renewalCell(e: Entity): { value: string; sub: string } | null {
     const d = daysUntil(due);
     return { value: dateLabel(due), sub: d < 0 ? "Overdue" : d === 0 ? "Due today" : `${d} day${d === 1 ? "" : "s"} left` };
 }
-/** The four sections under each business in the Entities tree (Layla's
- *  sketch, Nov 5, 2026): Books · Docs · Deadlines · Minutes — each one
- *  opens scoped to that business alone. */
+/** The four sections that live under each business (Layla's sketch,
+ *  Nov 5, 2026): Books · Docs · Deadlines · Minutes. In the approved
+ *  layout (mockup v6) they open IN PLACE on the business's own page —
+ *  the section anchors are biz-books / biz-documents / biz-deadlines /
+ *  biz-minutes, and there are no separate global destinations for them. */
 type EntitySection = "books" | "documents" | "deadlines" | "minutes";
-function Entities({ data, token, open, onEdit, selectedId, onSelect, onUploadDoc, onOpenSection }: {
+/** Section counts for one business, as shown in the rail tree: filed
+ *  documents; deadlines tracked (open reminders + register entries);
+ *  minutes on record (recorded meetings + filed minutes/consents). */
+function sectionCounts(data: Workspace, e: Entity): { docs: number; deadlines: number; minutes: number } {
+    return {
+        docs: data.documents.filter((d) => d.entity_id === e.id).length,
+        deadlines: data.reminders.filter((r) => r.entity_id === e.id && r.status === "open").length + registerDeadlines(e.name).length,
+        minutes: data.meetings.filter((m) => m.entity_id === e.id).length + data.documents.filter((d) => d.entity_id === e.id && d.category === "Meeting Minutes").length,
+    };
+}
+/** The rail tree under Entities (approved mockup v6): "+ Add a business"
+ *  first, then every business with its own + / − — the open business
+ *  shows its four sections indented under its name, each with its
+ *  count. Archived businesses stay reachable under their own muted
+ *  label at the bottom of the tree. Picking a name shows that business;
+ *  picking a section shows it and scrolls to the section. */
+function RailTree({ data, selectedId, onPick, onAdd }: {
+    data: Workspace;
+    selectedId: number | null;
+    onPick: (id: number, section?: EntitySection) => void;
+    onAdd: () => void;
+}) {
+    const active = data.entities.filter((e) => !e.archived);
+    const archived = data.entities.filter((e) => e.archived);
+    const currentId = selectedId ?? active[0]?.id ?? archived[0]?.id ?? null;
+    const [openId, setOpenId] = useState<number | null>(currentId);
+    useEffect(() => { if (currentId != null)
+        setOpenId(currentId); }, [currentId]);
+    const row = (e: Entity) => {
+        const openRow = openId === e.id;
+        const c = sectionCounts(data, e);
+        return <div key={e.id}><div className="rail-tree-row"><button type="button" className="rail-tree-toggle" aria-label={openRow ? `Collapse ${e.name}` : `Expand ${e.name}`} aria-expanded={openRow} onClick={() => { if (!openRow)
+            onPick(e.id); setOpenId(openRow ? null : e.id); }}><Icon name={openRow ? "minus" : "plus"}/></button><button type="button" className={`rail-tree-name${currentId === e.id ? " current" : ""}`} onClick={() => { onPick(e.id); setOpenId(e.id); }}>{e.name}</button></div>{openRow && <div className="rail-tree-sections"><button type="button" className="rail-tree-section" onClick={() => onPick(e.id, "books")}>Books</button><button type="button" className="rail-tree-section" onClick={() => onPick(e.id, "documents")}>Docs <span>· {c.docs}</span></button><button type="button" className="rail-tree-section" onClick={() => onPick(e.id, "deadlines")}>Deadlines <span>· {c.deadlines} tracked</span></button><button type="button" className="rail-tree-section" onClick={() => onPick(e.id, "minutes")}>Minutes <span>· {c.minutes} on record</span></button></div>}</div>;
+    };
+    return <div className="rail-tree"><button type="button" className="rail-tree-row rail-tree-add" onClick={onAdd}><span className="rail-tree-tile" aria-hidden="true"><Icon name="plus"/></span><span>Add a business</span></button>{active.map(row)}{archived.length > 0 && <><p className="rail-tree-arch-label">Archived</p>{archived.map(row)}</>}</div>;
+}
+/** Docs, in place on the business's page: that business's documents
+ *  only, opened/downloaded and deleted exactly as on the old Documents
+ *  page — the list never leaves the business. */
+function EntityDocsSection({ data, token, entity, onUpload }: {
+    data: Workspace;
+    token: string;
+    entity: Entity;
+    onUpload: () => void;
+}) {
+    const qc = useQueryClient();
+    const deleteMutation = useMutation({ mutationFn: (id: number) => api.deleteDocument({ token, id }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) });
+    const docs = data.documents.filter((d) => d.entity_id === entity.id);
+    return <section className="section biz-section" id="biz-documents"><div className="section-head"><h2>Docs</h2><button onClick={onUpload}>Upload</button></div>{docs.length ? <div className="doc-list">{docs.map((d) => <div className="doc-row has-delete" key={d.id}><span className="file-stamp">{d.filename.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span><a className="doc-link" href={d.download_url} target="_blank" rel="noreferrer"><strong>{d.filename}</strong><small>{d.entity_name}</small><em>{d.category}</em></a><time>{new Date(d.uploaded_at).toLocaleDateString()}</time><button className="doc-delete" aria-label={`Delete ${d.filename}`} disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(d.id)}>Delete</button></div>)}</div> : <p className="quiet">No documents filed for this business yet — upload the first one.</p>}</section>;
+}
+/** Deadlines, in place on the business's page: the seeded register for
+ *  the business on top, then that business's own reminders — the same
+ *  content the old scoped Deadlines page showed, without leaving. */
+function EntityDeadlinesSection({ data, token, entity, open }: {
+    data: Workspace;
+    token: string;
+    entity: Entity;
+    open: (m: Modal) => void;
+}) {
+    const register = registerDeadlines(entity.name);
+    const reminders = data.reminders.filter((r) => r.entity_id === entity.id);
+    return <section className="section biz-section" id="biz-deadlines"><div className="section-head"><h2>Deadlines</h2><button onClick={() => open("reminder")}>Add</button></div>{register.length > 0 && <section className="panel-card scope-panel"><div className="panel-head"><h2>On the register</h2></div>{register.map((item) => <div className="register-item" key={item.title}><div className="register-main"><strong>{item.title}</strong><p>{item.detail}</p></div>{item.due ? <span className="due-chip">{dateLabel(item.due)} · {relativeDue(item.due)}</span> : item.tag ? <span className="due-chip">{item.tag}</span> : null}</div>)}</section>}{reminders.length ? <div className="deadline-list roomy">{reminders.map((r) => <ReminderItem key={r.id} reminder={r} token={token}/>)}</div> : <p className="quiet">No reminders on record for this business.</p>}</section>;
+}
+/** Minutes, in place on the business's page: its recorded meetings
+ *  (expandable, deletable, as on the old Minutes page) plus its filed
+ *  minutes & consents — documents in the Meeting Minutes category. */
+function EntityMinutesSection({ data, token, entity, open }: {
+    data: Workspace;
+    token: string;
+    entity: Entity;
+    open: (m: Modal) => void;
+}) {
+    const [expanded, setExpanded] = useState<number | null>(null);
+    const qc = useQueryClient();
+    const deleteMutation = useMutation({ mutationFn: (id: number) => api.deleteMeeting({ token, id }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) });
+    const meetings = data.meetings.filter((m) => m.entity_id === entity.id);
+    const filedDocs = data.documents.filter((d) => d.entity_id === entity.id && d.category === "Meeting Minutes");
+    const latest = meetings.length ? meetings.map((m) => m.meeting_date).sort().at(-1)! : null;
+    return <section className="section biz-section" id="biz-minutes"><div className="section-head"><h2>Minutes</h2><button onClick={() => open("meeting")}>Record minutes</button></div><p className="quiet">{meetings.length ? `${meetings.length} meeting${meetings.length === 1 ? "" : "s"} on record · Last recorded ${dateLabel(latest!)}` : "No minutes recorded for this business yet."}</p>{filedDocs.length > 0 && <section className="panel-card"><div className="panel-head"><h2>Filed minutes & consents</h2></div><div className="doc-list">{filedDocs.map((d) => <a className="doc-row" key={d.id} href={d.download_url} target="_blank" rel="noreferrer"><span className="file-stamp">{d.filename.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span><span><strong>{d.filename}</strong><small>{d.entity_name} · {d.category}</small></span><time>{new Date(d.uploaded_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></a>)}</div></section>}{meetings.length > 0 && <div className="minutes-list">{meetings.map((m) => <article className="minutes-card" key={m.id}><button className="minutes-summary" onClick={() => setExpanded(expanded === m.id ? null : m.id)} aria-expanded={expanded === m.id}><span className="date-block"><strong>{new Date(`${m.meeting_date}T12:00:00`).getDate()}</strong><small>{new Date(`${m.meeting_date}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</small></span><span><strong>{m.entity_name}</strong><small>{m.meeting_type} · {m.meeting_time} {m.timezone}</small></span><span className={`minutes-chevron${expanded === m.id ? " open" : ""}`} aria-hidden="true"><Icon name="chevron"/></span></button>{expanded === m.id && <div className="minutes-detail"><p><b>Location</b>{m.location || "Not recorded"}</p><p><b>Attendees</b>{m.attendees.map((a) => `${a.name} (${a.role})`).join(", ")}</p><div><b>Agenda</b><ul>{m.agenda_items.map((a, i) => <li key={i}>{a}</li>)}</ul></div><p><b>Discussion</b>{m.discussion_summary}</p>{m.decisions.length > 0 && <div><b>Decisions</b><ul>{m.decisions.map((d, i) => <li key={i}>{d}</li>)}</ul></div>}{m.action_items.length > 0 && <div><b>Action items</b><div className="mini-table">{m.action_items.map((a, i) => <div key={i}><strong>{a.action}</strong><span>{a.owner}</span><time>{dateLabel(a.due_date)}</time><em>{a.status}</em></div>)}</div></div>}<p><b>Recorded by</b>{m.recorded_by}</p>{m.next_meeting_date && <p><b>Next meeting</b>{dateLabel(m.next_meeting_date)}</p>}<button className="text-button" style={{ color: "var(--danger)" }} disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(m.id)}>Delete these minutes</button></div>}</article>)}</div>}</section>;
+}
+/** The Entities page (approved mockup v6): there is no separate list to
+ *  click back from — the page shows ONE business with everything under
+ *  it. The business on screen is the picked one, else the first active
+ *  business, else the first archived one. */
+function Entities({ data, token, open, onEdit, selectedId, onSelect, onUploadDoc, sectionScroll }: {
     data: Workspace;
     token: string;
     open: (m: Modal) => void;
     onEdit: (entity: Entity, focus?: EntityField) => void;
     selectedId: number | null;
     onSelect: (id: number | null) => void;
-    onUploadDoc: (entity: Entity, category: DocumentCategory) => void;
-    onOpenSection: (entity: Entity, section: EntitySection) => void;
+    onUploadDoc: (entity: Entity, category?: DocumentCategory) => void;
+    sectionScroll: { id: number; section: EntitySection; n: number } | null;
 }) {
-    const qc = useQueryClient();
-    const [query, setQuery] = useState("");
-    const [filter, setFilter] = useState<BizFilter>("all");
-    const [sort, setSort] = useState<BizSort>("recent");
-    const [menuFor, setMenuFor] = useState<number | null>(null);
-    /** The Entities tree: at most one business is expanded at a time; its
-     *  + / − toggle opens the four per-business sections under its row. */
-    const [expandedId, setExpandedId] = useState<number | null>(null);
-    const archiveMutation = useMutation({ mutationFn: (args: { id: number; archived: boolean }) => api.setEntityArchived({ token, id: args.id, archived: args.archived }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) });
-    const selected = selectedId != null ? data.entities.find((e) => e.id === selectedId) : undefined;
-    if (selected)
-        return <EntityDetail data={data} token={token} entity={selected} open={open} onEdit={onEdit} onUploadDoc={onUploadDoc} onBack={() => onSelect(null)}/>;
-    const atts = new Map(data.entities.map((e) => [e.id, entityAttention(e, data.documents)]));
-    const counts = {
-        active: data.entities.filter((e) => !e.archived && atts.get(e.id)!.actionCount === 0).length,
-        action: data.entities.filter((e) => !e.archived && atts.get(e.id)!.actionCount > 0).length,
-        archived: data.entities.filter((e) => e.archived).length,
-    };
-    const q = query.trim().toLowerCase();
-    const visible = data.entities
-        .filter((e) => filter === "archived" ? e.archived : filter === "active" ? !e.archived && atts.get(e.id)!.actionCount === 0 : filter === "action" ? !e.archived && atts.get(e.id)!.actionCount > 0 : !e.archived)
-        .filter((e) => !q || e.name.toLowerCase().includes(q))
-        .sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "formation" ? (a.formation_date || "9999").localeCompare(b.formation_date || "9999") : b.created_at.localeCompare(a.created_at));
-    return <div className="page"><header className="page-head biz-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1><p className="page-sub">Your companies, filings, documents and deadlines.</p></div><div className="biz-tools"><label className="search biz-search"><span className="sr-only">Search businesses</span><input aria-label="Search businesses" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search businesses..."/></label><button className="primary compact biz-add" onClick={() => open("entity")}><Icon name="plus"/>Add business</button></div></header>{data.entities.length ? <>
-    <div className="biz-filters"><div className="biz-chips" role="group" aria-label="Filter businesses"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All</button><button className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}><span className="dot dot-green" aria-hidden="true"/>Active<span className="count-badge">{counts.active}</span></button><button className={filter === "action" ? "active" : ""} onClick={() => setFilter("action")}><span className="dot dot-amber" aria-hidden="true"/>Action needed<span className="count-badge">{counts.action}</span></button><button className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}><span className="dot dot-gray" aria-hidden="true"/>Archived<span className="count-badge">{counts.archived}</span></button></div><label className="biz-sort"><span>Sort by</span><select aria-label="Sort businesses" value={sort} onChange={(e) => setSort(e.target.value as BizSort)}><option value="recent">Recent</option><option value="name">Name A–Z</option><option value="formation">Formation date</option></select></label></div>
-    {visible.length ? <div className="entity-list">{visible.map((e) => { const att = atts.get(e.id)!; const docs = data.documents.filter((d) => d.entity_id === e.id); const nextDeadline = data.reminders.find((r) => r.entity_id === e.id && r.status === "open"); const renewal = renewalCell(e); const expanded = expandedId === e.id; const openDeadlines = data.reminders.filter((r) => r.entity_id === e.id && r.status === "open").length; const registerCount = registerDeadlines(e.name).length; const minutesCount = data.meetings.filter((m) => m.entity_id === e.id).length + docs.filter((d) => d.category === "Meeting Minutes").length; return <article className="entity-card" key={e.id} role="button" tabIndex={0} aria-label={`View ${e.name}`} onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.target !== ev.currentTarget)
-            return; if (ev.key === "Enter" || ev.key === " ") {
-            ev.preventDefault();
-            onSelect(e.id);
-        } }}><div className="entity-top"><div className="entity-main"><button className="entity-toggle" aria-label={expanded ? `Collapse ${e.name}` : `Expand ${e.name}`} aria-expanded={expanded} onClick={(ev) => { ev.stopPropagation(); setExpandedId(expanded ? null : e.id); }}><Icon name={expanded ? "minus" : "plus"}/></button><div className="entity-monogram">{e.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{e.name}</h2><p>{e.entity_type} · {e.state}</p><span className="entity-status"><StatusChip att={att}/></span></div></div><div className="entity-meta"><div className="meta-cell"><span className="meta-label"><Icon name="calendar"/>Formed</span><strong>{e.formation_date ? dateLabel(e.formation_date) : "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="billing"/>EIN</span>{e.ein_masked ? <strong>{e.ein_masked}</strong> : <><strong className="meta-missing">Not added</strong><button className="meta-link" onClick={(ev) => { ev.stopPropagation(); onEdit(e, "ein"); }}>Add EIN</button></>}</div><div className="meta-cell"><span className="meta-label"><Icon name="user"/>Registered agent</span><strong>{e.registered_agent ?? "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="clock"/>Renewal</span>{renewal ? <><strong>{renewal.value}</strong><span className="meta-sub">{renewal.sub}</span></> : <><strong>Not set</strong><button className="meta-link" onClick={(ev) => { ev.stopPropagation(); onEdit(e, "renewal"); }}>Add date</button></>}</div></div><div className="entity-menu-wrap" onClick={(ev) => ev.stopPropagation()}><button className="entity-menu-button" aria-label={`More actions for ${e.name}`} aria-expanded={menuFor === e.id} onClick={() => setMenuFor(menuFor === e.id ? null : e.id)}><Icon name="more"/></button>{menuFor === e.id && <div className="entity-menu" role="menu"><button onClick={() => { setMenuFor(null); onSelect(e.id); }}>View business</button><button onClick={() => { setMenuFor(null); onEdit(e); }}>Edit details</button><button disabled={archiveMutation.isPending} onClick={() => { setMenuFor(null); archiveMutation.mutate({ id: e.id, archived: !e.archived }); }}>{e.archived ? "Unarchive" : "Archive"}</button></div>}</div></div><div className="entity-subrow"><div className="entity-subitems"><button className="sub-link" onClick={(ev) => { ev.stopPropagation(); onSelect(e.id); }}><Icon name="documents"/>{docs.length} Document{docs.length === 1 ? "" : "s"}<span className="entity-open-arrow" aria-hidden="true"/></button><span className="sub-deadline"><Icon name="calendar"/>{nextDeadline ? <><strong>1 Upcoming deadline</strong><span className="sub-muted">{nextDeadline.title} · Due {dateLabel(nextDeadline.due_date)}</span></> : <span className="sub-muted">No upcoming deadlines</span>}</span></div><button className="secondary entity-view" onClick={(ev) => { ev.stopPropagation(); onSelect(e.id); }}>View business<span className="entity-open-arrow" aria-hidden="true"/></button></div>{expanded && <div className="entity-sections"><button className="entity-section" onClick={(ev) => { ev.stopPropagation(); onOpenSection(e, "books"); }}><Icon name="books"/><strong>Books</strong><small>Money in and out</small><span className="entity-open-arrow" aria-hidden="true"/></button><button className="entity-section" onClick={(ev) => { ev.stopPropagation(); onOpenSection(e, "documents"); }}><Icon name="documents"/><strong>Docs</strong><small>{docs.length} document{docs.length === 1 ? "" : "s"}</small><span className="entity-open-arrow" aria-hidden="true"/></button><button className="entity-section" onClick={(ev) => { ev.stopPropagation(); onOpenSection(e, "deadlines"); }}><Icon name="calendar"/><strong>Deadlines</strong><small>{openDeadlines + registerCount} tracked</small><span className="entity-open-arrow" aria-hidden="true"/></button><button className="entity-section" onClick={(ev) => { ev.stopPropagation(); onOpenSection(e, "minutes"); }}><Icon name="minutes"/><strong>Minutes</strong><small>{minutesCount} on record</small><span className="entity-open-arrow" aria-hidden="true"/></button></div>}</article>; })}</div> : <Empty icon="entities" title={q ? "No matching businesses" : filter === "archived" ? "Nothing archived yet" : "No businesses in this view"} body={q ? "Try a different search, or clear the filters to see every business." : filter === "archived" ? "Archived businesses keep all of their data and can be brought back from their menu at any time." : "Businesses matching this filter will appear here."} action={<button className="secondary" onClick={() => { setQuery(""); setFilter("all"); }}>Clear filters</button>}/>}
-    </> : <Empty icon="entities" title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/>}</div>;
+    const entity = (selectedId != null ? data.entities.find((e) => e.id === selectedId) : undefined) ?? data.entities.find((e) => !e.archived) ?? data.entities[0];
+    if (!entity)
+        return <div className="page"><header className="page-head"><div><p className="eyebrow">Ownership map</p><h1>Businesses</h1><p className="page-sub">Your companies, filings, documents and deadlines.</p></div></header><Empty icon="entities" title="Add your first business" body="Keep each entity's deadlines, files, and minutes in one place." action={<button className="primary compact" onClick={() => open("entity")}>Add business</button>}/></div>;
+    return <BusinessHome key={entity.id} data={data} token={token} entity={entity} open={open} onEdit={onEdit} onUploadDoc={onUploadDoc} onSwitch={(id) => onSelect(id)} sectionScroll={sectionScroll}/>;
 }
-function EntityDetail({ data, token, entity, open, onEdit, onUploadDoc, onBack }: {
+/** One business, whole: header meta (Formed / EIN / Registered agent /
+ *  Renewal), its needs-attention list, then Books · Docs · Deadlines ·
+ *  Minutes in place on the same page, and the details record. On phone
+ *  widths a business picker stands in for the rail tree. */
+function BusinessHome({ data, token, entity, open, onEdit, onUploadDoc, onSwitch, sectionScroll }: {
     data: Workspace;
     token: string;
     entity: Entity;
     open: (m: Modal) => void;
     onEdit: (entity: Entity, focus?: EntityField) => void;
-    onUploadDoc: (entity: Entity, category: DocumentCategory) => void;
-    onBack: () => void;
+    onUploadDoc: (entity: Entity, category?: DocumentCategory) => void;
+    onSwitch: (id: number) => void;
+    sectionScroll: { id: number; section: EntitySection; n: number } | null;
 }) {
+    const qc = useQueryClient();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const archiveMutation = useMutation({ mutationFn: () => api.setEntityArchived({ token, id: entity.id, archived: !entity.archived }), onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }) });
     const att = entityAttention(entity, data.documents);
-    const deadlines = data.reminders.filter((r) => r.entity_id === entity.id && r.status === "open").slice(0, 5);
-    return <div className="page"><button className="back-button" onClick={onBack}><span className="back-arrow" aria-hidden="true"/>All businesses</button><section className="panel-card detail-head"><div className="entity-monogram">{entity.name.slice(0, 2).toUpperCase()}</div><div className="detail-head-main"><h1>{entity.name}</h1><p>{entity.entity_type} · {entity.state}</p></div><StatusChip att={att}/></section>
+    const renewal = renewalCell(entity);
+    useEffect(() => { if (sectionScroll && sectionScroll.id === entity.id) {
+        document.getElementById(`biz-${sectionScroll.section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } }, [sectionScroll, entity.id]);
+    return <div className="page"><label className="biz-switcher"><span>Business</span><select aria-label="Choose a business" value={entity.id} onChange={(e) => onSwitch(Number(e.target.value))}>{data.entities.map((e) => <option key={e.id} value={e.id}>{e.name}{e.archived ? " (archived)" : ""}</option>)}</select></label>
+    <section className="panel-card biz-home-head"><div className="entity-top"><div className="entity-main"><div className="entity-monogram">{entity.name.slice(0, 2).toUpperCase()}</div><div className="entity-title"><h2>{entity.name}</h2><p>{entity.entity_type} · {entity.state}</p><span className="entity-status"><StatusChip att={att}/></span></div></div><div className="entity-meta"><div className="meta-cell"><span className="meta-label"><Icon name="calendar"/>Formed</span><strong>{entity.formation_date ? dateLabel(entity.formation_date) : "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="billing"/>EIN</span>{entity.ein_masked ? <strong>{entity.ein_masked}</strong> : <><strong className="meta-missing">Not added</strong><button className="meta-link" onClick={() => onEdit(entity, "ein")}>Add EIN</button></>}</div><div className="meta-cell"><span className="meta-label"><Icon name="user"/>Registered agent</span><strong>{entity.registered_agent ?? "Not added"}</strong></div><div className="meta-cell"><span className="meta-label"><Icon name="clock"/>Renewal</span>{renewal ? <><strong>{renewal.value}</strong><span className="meta-sub">{renewal.sub}</span></> : <><strong>Not set</strong><button className="meta-link" onClick={() => onEdit(entity, "renewal")}>Add date</button></>}</div></div><div className="entity-menu-wrap"><button className="entity-menu-button" aria-label={`More actions for ${entity.name}`} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Icon name="more"/></button>{menuOpen && <div className="entity-menu" role="menu"><button onClick={() => { setMenuOpen(false); onEdit(entity); }}>Edit details</button><button disabled={archiveMutation.isPending} onClick={() => { setMenuOpen(false); archiveMutation.mutate(); }}>{entity.archived ? "Unarchive" : "Archive"}</button></div>}</div></div></section>
     <section className="panel-card"><div className="panel-head"><h2>Needs attention</h2>{att.actionCount > 0 && <Chip tone={att.overdueCount ? "red" : "amber"} large>{att.actionCount} to handle</Chip>}</div>{att.needs.length ? att.needs.map((i) => <div className="attention-row" key={i.key}><span className={`attention-dot tone-${i.tone}`}>{i.tone === "info" ? <Icon name="calendar"/> : "!"}</span><div className="attention-main"><strong>{i.label}</strong>{i.detail && <p>{i.detail}</p>}</div>{i.field && <button className="fix-button" onClick={() => onEdit(entity, i.field)}>{i.tone === "missing" ? "Add" : "Update"}</button>}{i.docCategory && <button className="fix-button" onClick={() => onUploadDoc(entity, i.docCategory!)}>Upload</button>}</div>) : <div className="attention-row"><span className="attention-dot tone-ok"><Icon name="check"/></span><div className="attention-main"><strong>Nothing needs attention</strong><p>This business is in good shape right now.</p></div></div>}</section>
     {att.upcoming.length > 0 && <section className="panel-card"><div className="panel-head"><h2>Coming up</h2></div>{att.upcoming.map((i) => <div className="attention-row" key={i.key}><span className="attention-dot tone-info"><Icon name="calendar"/></span><div className="attention-main"><strong>{i.label}</strong>{i.detail && <p>{i.detail}</p>}</div></div>)}</section>}
     {att.done.length > 0 && <section className="panel-card"><div className="panel-head"><h2>On file</h2></div>{att.done.map((i) => <div className="attention-row" key={i.key}><span className="attention-dot tone-ok"><Icon name="check"/></span><div className="attention-main"><strong>{i.label}</strong></div></div>)}</section>}
-    {deadlines.length > 0 && <section className="section"><div className="section-head"><h2>Deadlines on record</h2><button onClick={() => open("reminder")}>Add</button></div><div className="deadline-list">{deadlines.map((r) => <ReminderItem key={r.id} reminder={r} token={token}/>)}</div></section>}
+    <EntityBooks data={data} token={token} entity={entity} embedded/>
+    <EntityDocsSection data={data} token={token} entity={entity} onUpload={() => onUploadDoc(entity)}/>
+    <EntityDeadlinesSection data={data} token={token} entity={entity} open={open}/>
+    <EntityMinutesSection data={data} token={token} entity={entity} open={open}/>
     <section className="panel-card"><div className="panel-head"><h2>Details</h2><button className="fix-button" onClick={() => onEdit(entity)}>Edit details</button></div><dl className="details-list"><div><dt>Business name</dt><dd>{entity.name}</dd></div><div><dt>Type</dt><dd>{entity.entity_type}</dd></div><div><dt>Formation state</dt><dd>{entity.state}</dd></div><div><dt>Formation date</dt><dd>{entity.formation_date ? dateLabel(entity.formation_date) : "Not added"}</dd></div><div><dt>EIN</dt><dd>{entity.ein_masked ?? "Not added"}</dd></div><div><dt>Registered agent</dt><dd>{entity.registered_agent ?? "Not added"}</dd></div><div><dt>Agent renewal</dt><dd>{entity.agent_renewal_date ? dateLabel(entity.agent_renewal_date) : "Not set"}</dd></div></dl></section>
   </div>;
 }
+
 /** Category filters for the Documents page (Layla's mockup). The chips and
  *  the category select are two views of ONE filter state; the short chip
  *  labels map to the app's real categories as follows:
@@ -512,11 +609,15 @@ function BooksOverview({ token, entities, onOpen }: {
     return <div className="page"><header className="page-head"><div><p className="eyebrow">Bookkeeping</p><h1>Books</h1><p className="page-sub">Money in and out, kept separately for each business.</p></div></header>{summary.isPending ? <p className="quiet">Loading…</p> : summary.isError || !s ? <p className="error-note">Could not load your books. Please try again.</p> : s.entities.length === 0 ? <Empty icon="books" title="Add a business first" body="Each business gets its own books here — one company's money never mixes with another's."/> : <><section className="pulse"><div><strong>{money(s.totals.month.in_cents)}</strong><span>Money in · {monthLabel(s.month)}</span></div><div><strong>{money(s.totals.month.out_cents)}</strong><span>Money out · all businesses</span></div><div><strong>{money(s.totals.month.net_cents)}</strong><span>Left over</span></div></section><div className="books-card-list">{s.entities.map((e) => { const meta = entities.find((x) => x.id === e.entity_id); return <article className="panel-card books-card" key={e.entity_id} role="button" tabIndex={0} aria-label={`Open the books for ${e.entity_name}`} onClick={() => onOpen(e.entity_id)} onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onOpen(e.entity_id); } }}><div className="books-card-head"><div className="entity-monogram">{e.entity_name.slice(0, 2).toUpperCase()}</div><div className="books-card-title"><h2>{e.entity_name}</h2>{meta && <p>{meta.entity_type} · {meta.state}</p>}</div><span className="entity-open-arrow" aria-hidden="true"/></div><div className="books-nums"><div><span>Money in</span><strong>{money(e.month_totals.in_cents)}</strong></div><div><span>Money out</span><strong>{money(e.month_totals.out_cents)}</strong></div><div><span>Left over</span><strong>{money(e.month_totals.net_cents)}</strong></div></div></article>; })}</div></>}
   </div>;
 }
-function EntityBooks({ data, token, entity, onBack }: {
+function EntityBooks({ data, token, entity, onBack, embedded }: {
     data: Workspace;
     token: string;
     entity: Entity;
-    onBack: () => void;
+    onBack?: () => void;
+    /** In place on the business's own page (approved mockup v6): no
+     *  page chrome and no "All books" way back — the section simply
+     *  lives under the business, anchored at biz-books. */
+    embedded?: boolean;
 }) {
     const qc = useQueryClient();
     const [month, setMonth] = useState(thisMonth);
@@ -532,7 +633,7 @@ function EntityBooks({ data, token, entity, onBack }: {
     const b = books.data;
     const docs = data.documents.filter((d) => d.entity_id === entity.id);
     const catMax = Math.max(1, ...(b?.category_totals ?? []).map((c) => Math.abs(c.in_cents - c.out_cents)));
-    return <div className="page"><button className="back-button" onClick={onBack}><span className="back-arrow" aria-hidden="true"/>All books</button><header className="page-head books-head"><div><p className="eyebrow">{entity.name}</p><h1>Books</h1></div><div className="books-month-nav"><button className="books-month-btn" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}><span className="back-arrow" aria-hidden="true"/></button><strong className="books-month-label">{monthLabel(month)}</strong><button className="books-month-btn" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}><span className="entity-open-arrow" aria-hidden="true"/></button></div></header>{books.isPending ? <p className="quiet">Loading…</p> : books.isError || !b ? <p className="error-note">Could not load these books. Please try again.</p> : <>
+    return <div className={embedded ? "biz-section-embed" : "page"} id={embedded ? "biz-books" : undefined}>{!embedded && <button className="back-button" onClick={onBack}><span className="back-arrow" aria-hidden="true"/>All books</button>}<header className={embedded ? "section-head" : "page-head books-head"}>{embedded ? <h2>Books</h2> : <div><p className="eyebrow">{entity.name}</p><h1>Books</h1></div>}<div className="books-month-nav"><button className="books-month-btn" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}><span className="back-arrow" aria-hidden="true"/></button><strong className="books-month-label">{monthLabel(month)}</strong><button className="books-month-btn" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}><span className="entity-open-arrow" aria-hidden="true"/></button></div></header>{books.isPending ? <p className="quiet">Loading…</p> : books.isError || !b ? <p className="error-note">Could not load these books. Please try again.</p> : <>
     <section className="panel-card books-lead"><span className="billing-bubble books-lead-bubble"><Icon name="books"/></span><div className="books-lead-main"><div className="books-nums"><div><strong>{money(b.totals.in_cents)}</strong><span>Money in</span></div><div><strong>{money(b.totals.out_cents)}</strong><span>Money out</span></div><div><strong>{money(b.totals.net_cents)}</strong><span>Left over</span></div></div><hr className="billing-divider books-lead-divider"/><div className="books-actions"><button className="primary compact" onClick={() => setEditing("new")}><Icon name="plus"/>Add transaction</button><label className="secondary books-file-btn"><Icon name="upload"/>Import CSV<input aria-label="Import transactions from a CSV file" type="file" accept=".csv,text/csv,text/plain" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) file.text().then((text) => importMutation.mutate(text)).catch(() => setNotice("Could not read that file.")); }}/></label><button className="secondary" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}><Icon name="download"/>Export for CPA</button><button className="secondary" onClick={() => setCatsOpen(true)}><Icon name="tag"/>Categories</button></div>
     {notice && <p className="books-notice" role="status">{notice}</p>}</div></section>
     <BankCard token={token} entity={entity}/>
@@ -770,35 +871,39 @@ export function App() {
     const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
     const [docPreset, setDocPreset] = useState<{
         entityId: number;
-        category: DocumentCategory;
+        category?: DocumentCategory;
     } | null>(null);
     const [entityEdit, setEntityEdit] = useState<{
         entity: Entity;
         focus?: EntityField;
     } | null>(null);
-    /** Entities-tree deep links: each carries the target business and a
-     *  fresh nonce, so re-tapping a section re-applies the scope even when
-     *  that tab is already mounted. */
-    const [booksFocus, setBooksFocus] = useState<{ id: number; n: number } | null>(null);
-    const [docsFocus, setDocsFocus] = useState<{ id: number; category: DocumentCategory | "all"; n: number } | null>(null);
-    const [deadlinesFocus, setDeadlinesFocus] = useState<{ id: number; n: number } | null>(null);
-    const [minutesFocus, setMinutesFocus] = useState<{ id: number; n: number } | null>(null);
-    const openSection = (entity: Entity, section: EntitySection) => {
-        const n = Date.now();
-        if (section === "books") { setBooksFocus({ id: entity.id, n }); setTab("books"); }
-        else if (section === "documents") { setDocsFocus({ id: entity.id, category: "all", n }); setTab("documents"); }
-        else if (section === "deadlines") { setDeadlinesFocus({ id: entity.id, n }); setTab("calendar"); }
-        else { setMinutesFocus({ id: entity.id, n }); setTab("minutes"); }
-    };
+    /** Entities-home navigation (approved mockup v6): picking a business
+     *  in the rail tree — or one of its four sections — lands on the
+     *  Entities page showing that business in place; a section pick
+     *  also carries a fresh nonce, so BusinessHome scrolls to the
+     *  section even when the same business is already on screen. */
+    const [sectionScroll, setSectionScroll] = useState<{ id: number; section: EntitySection; n: number } | null>(null);
+    const pickBusiness = (id: number, section?: EntitySection) => { setSelectedEntityId(id); setTab("entities"); if (section)
+        setSectionScroll({ id, section, n: Date.now() }); };
+    /** The one manual theme choice for the whole page: starts from the
+     *  stored choice (already applied to <html data-theme> before first
+     *  paint), else the OS preference. Toggling stores the choice and
+     *  flips the entire app at once. */
+    const [theme, setTheme] = useState<ThemeChoice>(() => storedTheme() ?? systemTheme());
+    const toggleTheme = () => { setTheme((prev) => { const next = prev === "dark" ? "light" : "dark"; try {
+            localStorage.setItem("kovala_theme", next);
+        }
+        catch { /* storage unavailable: the flip still applies for this session */ } document.documentElement.dataset.theme = next; return next; }); };
     const workspace = useQuery({ queryKey: ["workspace", token], queryFn: () => api.getWorkspace({ token }), enabled: Boolean(token), retry: false });
     const data = workspace.data;
     const closeModal = () => { setModal(null); setDocPreset(null); };
     /** Plain modal opens never carry a document-upload preset. */
     const openModal = (m: Modal) => { setDocPreset(null); setModal(m); };
-    /** Attention-flag deep link: open the upload form set to one business + category. */
-    const openDocUpload = (entity: Entity, category: DocumentCategory) => { setDocPreset({ entityId: entity.id, category }); setModal("document"); };
-    /** Rollup click-through: jump straight to that business's detail view. */
-    const viewEntity = (id: number) => { setSelectedEntityId(id); setTab("entities"); };
+    /** Attention-flag deep link: open the upload form set to one business
+     *  (and a category, when the flag names one). */
+    const openDocUpload = (entity: Entity, category?: DocumentCategory) => { setDocPreset({ entityId: entity.id, category }); setModal("document"); };
+    /** Rollup click-through: jump straight to that business's page. */
+    const viewEntity = (id: number) => pickBusiness(id);
     /** Nav buttons always land on the Businesses list, as before. */
     const goTab = (t: Tab) => { if (t === "entities")
         setSelectedEntityId(null); setTab(t); };
@@ -813,5 +918,5 @@ export function App() {
         return <div className="loading"><span></span><p>Opening your records…</p></div>;
     if (workspace.isError || !data)
         return <main className="error-page"><h1>We couldn't open this workspace.</h1><p>{errText(workspace.error)}</p><button className="primary compact" onClick={() => { localStorage.removeItem("bizkeep_token"); localStorage.removeItem("bizkeep_email"); setToken(""); }}>Return to sign in</button></main>;
-    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span>Private workspace</span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p>{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)}><Icon name={t}/><span>{t === "overview" ? "Overview" : t === "calendar" ? "Deadlines" : t[0]?.toUpperCase() + t.slice(1)}</span></button>)}<button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className={tab === "entities" && selectedEntityId == null ? "content wide" : "content"}>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload} onOpenSection={openSection}/>}{tab === "books" && <Books data={data} token={token} focus={booksFocus}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal} focus={docsFocus}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal} focus={deadlinesFocus}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal} focus={minutesFocus}/>}{tab === "billing" && <Billing token={token} email={email} onTokenRefresh={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); setToken(next); setEmail(nextEmail); }} onEmailChange={(nextEmail) => { localStorage.setItem("bizkeep_email", nextEmail); setEmail(nextEmail); }} onSignOut={() => { localStorage.clear(); setToken(""); setEmail(""); }}/>}</main><nav className="bottom-nav" aria-label="Main navigation">{(["overview", "entities", "books", "documents", "calendar", "minutes", "billing"] as Tab[]).map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => goTab(t)} aria-label={t === "calendar" ? "Deadlines" : t}><Icon name={t}/><span>{t === "overview" ? "Home" : t === "calendar" ? "Deadlines" : t === "documents" ? "Files" : t === "billing" ? "Billing" : t}</span></button>)}</nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
+    return <div className="app-shell"><SafeAreaTopScrim backgroundColor="var(--bg)"/><header className="mobile-brand"><BrandMark/><strong>kovala</strong><span className="brand-side"><span>Private workspace</span><ThemeToggle theme={theme} onToggle={toggleTheme}/></span></header><div className="desktop-rail"><p className="rail-brand"><BrandMark/>kovala</p><p className="rail-caption">Workspace</p><p className="rail-email">{email}</p><button className={tab === "overview" ? "active" : ""} onClick={() => goTab("overview")}><Icon name="overview"/><span>Overview</span></button><button className={tab === "entities" ? "active" : ""} onClick={() => goTab("entities")}><Icon name="entities"/><span>Entities</span></button><RailTree data={data} selectedId={selectedEntityId} onPick={pickBusiness} onAdd={() => openModal("entity")}/><button className={tab === "billing" ? "active" : ""} onClick={() => goTab("billing")}><Icon name="billing"/><span>Billing</span></button><button className="signout" onClick={() => { localStorage.clear(); setToken(""); }}>Sign out</button></div><main className="content"><div className="content-topbar"><ThemeToggle theme={theme} onToggle={toggleTheme}/></div>{tab === "overview" && <Overview data={data} token={token} open={openModal} onViewEntity={viewEntity} onGoTab={goTab}/>}{tab === "entities" && <Entities data={data} token={token} open={openModal} onEdit={(entity, focus) => setEntityEdit({ entity, focus })} selectedId={selectedEntityId} onSelect={setSelectedEntityId} onUploadDoc={openDocUpload} sectionScroll={sectionScroll}/>}{tab === "books" && <Books data={data} token={token}/>}{tab === "documents" && <Documents data={data} token={token} open={openModal}/>}{tab === "calendar" && <Calendar data={data} token={token} open={openModal}/>}{tab === "minutes" && <Minutes data={data} token={token} open={openModal}/>}{tab === "billing" && <Billing token={token} email={email} onTokenRefresh={(next, nextEmail) => { localStorage.setItem("bizkeep_token", next); localStorage.setItem("bizkeep_email", nextEmail); setToken(next); setEmail(nextEmail); }} onEmailChange={(nextEmail) => { localStorage.setItem("bizkeep_email", nextEmail); setEmail(nextEmail); }} onSignOut={() => { localStorage.clear(); setToken(""); setEmail(""); }}/>}</main><nav className="bottom-nav" aria-label="Main navigation"><button className={tab === "overview" ? "active" : ""} onClick={() => goTab("overview")} aria-label="overview"><Icon name="overview"/><span>Home</span></button><button className={tab === "entities" ? "active" : ""} onClick={() => goTab("entities")} aria-label="entities"><Icon name="entities"/><span>Entities</span></button><button className={tab === "billing" ? "active" : ""} onClick={() => goTab("billing")} aria-label="billing"><Icon name="billing"/><span>Billing</span></button></nav>{modal && <Sheet title={modal === "entity" ? "Add business" : modal === "reminder" ? "Add reminder" : modal === "document" ? "Upload document" : "Record meeting minutes"} onClose={closeModal}>{modalBody}</Sheet>}{entityEdit && <Sheet title="Edit business" onClose={() => setEntityEdit(null)}><EntityForm token={token} entity={entityEdit.entity} focusField={entityEdit.focus} onDone={() => setEntityEdit(null)}/></Sheet>}</div>;
 }
