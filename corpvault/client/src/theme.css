@@ -615,23 +615,25 @@
 .content-topbar{display:flex;justify-content:flex-end;margin-bottom:2px}
 @media (max-width:799px){.content-topbar{display:none}}
 .brand-side{display:inline-flex;align-items:center;gap:10px}
-.rail-tree{margin:0 0 6px 8px;padding:4px 0 4px 12px;border-left:1px solid var(--border);display:grid;gap:1px}
-.desktop-rail .rail-tree-row{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:0;color:var(--dim);width:100%}
+.rail-tree{margin:0 0 6px 8px;padding:4px 0 4px 12px;border-left:1px solid var(--border);display:grid;gap:1px;min-width:0}
+.rail-tree-item{min-width:0}
+.desktop-rail .rail-tree-row{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:0;color:var(--dim);width:100%;min-width:0}
 .desktop-rail .rail-tree-toggle{width:20px;height:20px;flex:0 0 auto;border:1px solid var(--silver-border);background:linear-gradient(180deg,var(--silver-hi) 0%,var(--silver) 55%,var(--silver-lo) 100%);color:var(--silver-text);display:grid;place-items:center;padding:0;border-radius:0;cursor:pointer}
 .desktop-rail .rail-tree-toggle svg{width:12px;height:12px}
 .rail-tree-tile{width:20px;height:20px;flex:0 0 auto;border:1px solid var(--silver-border);background:linear-gradient(180deg,var(--silver-hi) 0%,var(--silver) 55%,var(--silver-lo) 100%);color:var(--silver-text);display:grid;place-items:center}
 .rail-tree-tile svg{width:12px;height:12px}
 .desktop-rail .rail-tree-add{font-weight:700;color:var(--text);justify-content:flex-start}
-.desktop-rail .rail-tree-name{flex:1;min-width:0;display:block;padding:3px 2px;border-radius:0;text-align:left;font-size:13.5px;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desktop-rail .rail-tree-name{flex:1 1 auto;min-width:0;display:block;padding:3px 2px;border-radius:0;text-align:left;font-size:13.5px;line-height:1.3;color:inherit;white-space:normal;overflow-wrap:anywhere}
 .desktop-rail .rail-tree-name.current{color:var(--text);font-weight:700}
-.rail-tree-sections{margin:0 0 5px 31px;display:grid}
-.desktop-rail .rail-tree-section{display:block;padding:5px 6px;border-radius:0;text-align:left;font-size:13px;color:var(--dim)}
+.rail-tree-sections{margin:0 0 5px 31px;display:grid;min-width:0}
+.desktop-rail .rail-tree-section{display:block;padding:5px 6px;border-radius:0;text-align:left;font-size:13px;color:var(--dim);min-width:0;overflow-wrap:anywhere}
 .desktop-rail .rail-tree-section:hover{color:var(--text)}
 .rail-tree-section span{color:var(--dim);opacity:.75}
 .rail-tree-arch-label{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin:9px 0 2px 4px}
 .biz-section{scroll-margin-top:16px}
 .biz-section-embed{margin-top:34px;scroll-margin-top:16px}
 .biz-home-head{margin-top:6px}
+.biz-home-head .entity-title h2{overflow-wrap:break-word}
 .biz-home-head .entity-meta{grid-template-columns:.8fr .95fr 1.55fr 1.05fr}
 .biz-home-head .meta-cell strong{overflow-wrap:break-word}
 .biz-switcher{display:grid;gap:6px;margin-bottom:16px}
