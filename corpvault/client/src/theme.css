@@ -562,3 +562,32 @@
 .danger-button:disabled{opacity:.45;cursor:not-allowed}
 .done-note{background:var(--green-soft);color:var(--green);padding:10px 12px;border-radius:10px;margin:0;font-size:12px}
 .danger-button,.done-note{border-radius:0}
+
+/* Entities tree (2026-11-05, Layla's sketch): every business row carries a
+   + / − toggle — the drawn plus/minus signs in the silver square button of
+   the app's one button system. Expanding a row opens that business's four
+   sections — Books · Docs · Deadlines · Minutes — as quiet full-width rows
+   under a hairline, each scoped to that business alone. The scoped pages
+   (Deadlines, Minutes) announce their scope in a square bar with a way
+   back to all businesses, and the Deadlines register renders as plain
+   ruled rows inside a standard panel. Colors come only from the shared
+   tokens, so light and dark both hold. */
+.entity-toggle{width:40px;height:40px;flex:0 0 auto;border:1px solid var(--silver-border);background:linear-gradient(180deg,var(--silver-hi) 0%,var(--silver) 55%,var(--silver-lo) 100%);border-radius:0;display:grid;place-items:center;color:var(--silver-text);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 2px 5px rgba(23,23,26,.10);cursor:pointer}
+.entity-toggle svg{width:20px;height:20px}
+.entity-sections{margin-top:16px;border-top:1px solid var(--border);display:grid}
+.entity-section{display:flex;align-items:center;gap:12px;width:100%;border:0;border-bottom:1px solid var(--border);background:none;padding:14px 2px;text-align:left;cursor:pointer;color:var(--text);font:inherit}
+.entity-section:last-child{border-bottom:0;padding-bottom:4px}
+.entity-section>svg{width:19px;height:19px;color:var(--accent);flex:0 0 auto}
+.entity-section strong{font-size:15px}
+.entity-section small{color:var(--dim);font-size:12.5px;margin-left:auto;text-align:right}
+.entity-section .entity-open-arrow{color:var(--accent)}
+.scope-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);font-size:13.5px}
+.scope-bar svg{width:17px;height:17px;color:var(--accent);flex:0 0 auto}
+.scope-bar .text-button{margin-left:auto}
+.scope-panel{margin-top:16px}
+.register-item{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--border)}
+.register-item:last-child{border-bottom:0;padding-bottom:2px}
+.register-main{flex:1;min-width:0}
+.register-main strong{display:block;font-size:14.5px}
+.register-main p{margin:3px 0 0;color:var(--dim);font-size:12.5px;line-height:1.45}
+.register-item .due-chip{flex:0 0 auto}
