@@ -21,7 +21,9 @@
 //   APP_BASE_URL           Public base URL, e.g. https://kovala.io.
 //                          Used for checkout success/cancel + portal return
 //                          URLs. Falls back to the request origin, then
-//                          http://localhost:3000.
+//                          https://kovala.io. Never localhost: a production
+//                          checkout must never send a paying customer to a
+//                          dead local URL.
 import Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { isAdminEmail } from "./admin.js";
@@ -59,7 +61,7 @@ export function getWebhookSecret(): string | undefined {
 
 /** Absolute base URL for Stripe redirects. */
 export function baseUrl(origin: string | null): string {
-  const raw = process.env.APP_BASE_URL || origin || "http://localhost:3000";
+  const raw = process.env.APP_BASE_URL || origin || "https://kovala.io";
   return raw.replace(/\/+$/, "");
 }
 
