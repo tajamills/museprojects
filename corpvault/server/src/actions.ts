@@ -1191,6 +1191,13 @@ export const actionDefs = {
                     mode: "subscription",
                     customer: customerId,
                     client_reference_id: String(account.id),
+                    // Owner rule (Nov 5, 2026): "A card should only be asked
+                    // for if there is a balance." The add-on charges $8.88
+                    // immediately, so a card is collected while a balance is
+                    // due; a promotion code entered on Stripe's page that
+                    // zeroes the session means no card is asked for.
+                    payment_method_collection: "if_required",
+                    allow_promotion_codes: true,
                     metadata: { addon: "bank_sync", accountId: String(account.id), entityId: String(args.entity_id) },
                     subscription_data: { metadata: { addon: "bank_sync", accountId: String(account.id), entityId: String(args.entity_id) } },
                     line_items: [{ price: priceId, quantity: 1 }],
@@ -1270,6 +1277,14 @@ export const actionDefs = {
                 mode: "subscription",
                 customer: customerId,
                 client_reference_id: String(account.id),
+                // Owner rule (Nov 5, 2026): "A card should only be asked
+                // for if there is a balance." The plan charges immediately
+                // (no trial), so with no discount the $199.88 balance is due
+                // and Stripe collects a card; when a promotion code entered
+                // on Stripe's page takes the session total to $0, no card
+                // is asked for at all.
+                payment_method_collection: "if_required",
+                allow_promotion_codes: true,
                 line_items: [{ price: priceId, quantity: 1 }],
                 success_url: `${url}/?billing=success`,
                 cancel_url: `${url}/?billing=cancelled`,
