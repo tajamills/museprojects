@@ -153,7 +153,7 @@ async function main(): Promise<void> {
       }
       testAlertProbe = { at: Date.now(), active, activeAlerts };
     }
-    res.json({ ok: true, service: "cryptobagtracker", build: "2026-11-05-checkout-coupon-bypass", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
+    res.json({ ok: true, service: "cryptobagtracker", build: "2026-11-05-checkout-card-if-balance", test_alert_active: testAlertProbe.active, active_alerts: testAlertProbe.activeAlerts });
   });
 
   app.post("/actions", async (req, res) => {

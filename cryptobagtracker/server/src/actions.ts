@@ -701,20 +701,26 @@ export const Actions = {
    * day 8, matching the "no card required to start the trial" product copy).
    * Creates and stores a Stripe customer on first use.
    *
-   * Card collection: by default Stripe demands a card up front even though
-   * the trial makes today's total $0. When the visitor's stored promo code
-   * resolves against Stripe, the session instead passes
-   * payment_method_collection: "if_required" (owner order, Nov 5, 2026: "the
-   * coupon bypasses account") so a 100%-off promotion completes end to end
-   * with no card at all. The scope is deliberately narrow — ONLY sessions
-   * carrying a resolved stored promo get if_required. Passing it on every
-   * session would also let full-price trials complete card-free (Stripe does
-   * not collect when the session total is $0, and a trial always is), and at
-   * trial end a cardless subscription's first real invoice would go unpaid
-   * (trial_settings missing_payment_method defaults to create_invoice →
-   * past_due), stranding unpaid conversions. Sessions with no promo, or a
-   * stored code that no longer resolves, keep the default "always": the card
-   * is collected at checkout and the first charge lands after the trial.
+   * Card collection (owner rule, stated Nov 5, 2026): "A card should only be
+   * asked for if there is a balance." Every checkout here starts a 7-day
+   * trial, so the session total is always $0 and no card is ever asked for
+   * up front: the session passes payment_method_collection: "if_required"
+   * unconditionally, and Stripe collects a payment method only if money is
+   * actually due. That covers the plain free trial (matching the "no card
+   * required to start the trial" product copy) and the coupon case the
+   * owner ordered the same day ("the coupon bypasses account"): a stored
+   * 100%-off promo completes end to end with no card, because with the
+   * discount attached there is never a balance.
+   *
+   * Trial-end consequence, stated plainly so it is never a surprise: a
+   * subscription that reaches day 8 still holding no payment method hits
+   * Stripe's default missing_payment_method behavior (create_invoice) — the
+   * first paid invoice is created, cannot be charged, and the subscription
+   * lands in past_due. The app's reconcile records that status and the
+   * entitlement gate treats past_due as NOT entitled (owner ruling, Oct 30,
+   * 2026), so the account locks (reads stay open) until the customer adds a
+   * card through the Billing page / portal. Nothing converts to silent free
+   * access, and nothing auto-cancels.
    */
   createCheckoutSession: {
     request: tokenRequest,
@@ -766,10 +772,9 @@ export const Actions = {
         customer: customerId,
         client_reference_id: String(user.id),
         ...(discounts ? { discounts } : { allow_promotion_codes: true }),
-        // A resolved stored promo is what earns card-free completion (see
-        // the handler comment): with the discount attached, nothing is ever
-        // due at this session for Stripe to require a card against.
-        ...(discounts ? { payment_method_collection: "if_required" as const } : {}),
+        // Owner rule (Nov 5, 2026): a card is asked for only when there is
+        // a balance. A trial session's balance is $0, so no card here, ever.
+        payment_method_collection: "if_required" as const,
         line_items: [{ price: priceId, quantity: 1 }],
         // The discount rides alongside the 7-day trial: nothing is charged
         // during the trial, and the coupon (the owner's are set to repeat)
