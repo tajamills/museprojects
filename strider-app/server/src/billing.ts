@@ -7,6 +7,23 @@
 // - The webhook signing secret is read from STRIPE_WEBHOOK_SECRET first,
 //   falling back to STRIPE_WEBHOOK (the name the owner used in Railway).
 //
+// Billing redo (Nov 5, 2026, owner order — "redo billing for ALL"): every
+// product of the owner's shares ONE Stripe account, so a Stripe customer
+// can hold subscriptions for several products at once. This module now
+// classifies subscriptions by PRICE, never by elimination:
+//   - the base plan is ONLY a subscription carrying STRIPE_PRICE_ID;
+//   - the X add-on's own subscription is ONLY a non-base subscription
+//     carrying the zepostia_x_addon metadata marker or one of the
+//     configured STRIPE_X_TIERS prices;
+//   - every other subscription (CryptoAlerts, the Kovala plan, Kovala
+//     Bank Sync, anything else on the shared account) is FOREIGN and
+//     invisible: it is never written to a user row, and its webhook
+//     events change nothing here.
+// The read-time reconcile stays the authority (webhooks are a sync
+// path, never the only truth), and a Stripe customer binds to a user
+// ONLY through zepostia's own checkout flows — there is deliberately
+// no find-customer-by-email fallback (see reconcileSubscriptionFromStripe).
+//
 // All Stripe access is lazy: nothing is constructed at import time, and every
 // entry point fails with a clear "Billing is not configured yet." message when
 // STRIPE_SECRET_KEY is absent — the app boots and runs fine without Stripe.
@@ -153,9 +170,66 @@ export function isCompEmail(email: string): boolean {
  *  subscription (as opposed to the base plan's subscription). */
 export const X_ADDON_SUBSCRIPTION_METADATA = "zepostia_x_addon";
 
-/** True when the subscription is the X add-on's own subscription. */
+/* ------------------------------------------------------------------ */
+/* Product anchors (billing redo, Nov 5, 2026)                         */
+/*                                                                     */
+/* Every subscription classification in this module goes through       */
+/* these helpers. Selection is by PRICE, in both directions: a         */
+/* foreign subscription is never the base plan, an X add-on            */
+/* subscription is never the base plan, and the base subscription      */
+/* is never the add-on's — no matter what metadata says.               */
+/* ------------------------------------------------------------------ */
+
+/** The zepostia base plan price ID — the product anchor for the plan. */
+export function basePriceId(): string | null {
+  return process.env.STRIPE_PRICE_ID?.trim() || null;
+}
+
+/** The set of Stripe price IDs a subscription's items carry. */
+export function subscriptionPriceIds(subscription: Stripe.Subscription): Set<string> {
+  return new Set(
+    (subscription.items?.data ?? [])
+      .map((item) => item.price?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+}
+
+/**
+ * True when this subscription IS the zepostia base plan: one of its
+ * items carries the base price. Every other subscription on the
+ * shared Stripe account (other products, the X add-on, anything else)
+ * returns false and must be treated as if it did not exist. (A legacy
+ * base subscription may ALSO carry a tier item — it is still the base;
+ * the tier is read off it by xAddonTierForSubscription.)
+ */
+export function isBasePlanSubscription(subscription: Stripe.Subscription): boolean {
+  const priceId = basePriceId();
+  if (!priceId) return false;
+  return subscriptionPriceIds(subscription).has(priceId);
+}
+
+/** True when one of the subscription's items carries a configured
+ *  X add-on tier price. */
+export function subscriptionCarriesTierPrice(subscription: Stripe.Subscription): boolean {
+  const tiers = xAddonTiers();
+  if (!tiers.length) return false;
+  const ids = subscriptionPriceIds(subscription);
+  return tiers.some((tier) => ids.has(tier.priceId));
+}
+
+/**
+ * True when the subscription is the X add-on's own subscription: it
+ * carries the zepostia_x_addon metadata marker OR a configured tier
+ * price, AND it is not the base plan subscription. The base
+ * subscription is never the add-on's — not even when a tier item rides
+ * on it (the legacy representation) or the marker was set on it.
+ */
 export function isXAddonSubscription(subscription: Stripe.Subscription): boolean {
-  return subscription.metadata?.[X_ADDON_SUBSCRIPTION_METADATA] === "1";
+  if (isBasePlanSubscription(subscription)) return false;
+  return (
+    subscription.metadata?.[X_ADDON_SUBSCRIPTION_METADATA] === "1" ||
+    subscriptionCarriesTierPrice(subscription)
+  );
 }
 
 export interface XAddonTier {
@@ -521,11 +595,15 @@ function sameDate(a: Date | null | undefined, b: Date | null | undefined): boole
  * billing state from Stripe in one pass — the base plan subscription
  * AND the X add-on's own subscription — and write it onto the user row.
  *
- * Classification: a subscription is the add-on's when it carries the
- * zepostia_x_addon metadata marker; the base is a live non-add-on
- * subscription (the recorded one preferred), else the recorded or
- * newest non-add-on one. The tier entitlement comes from the add-on
- * subscription when one exists; otherwise it falls back to the legacy
+ * Classification is by PRICE (see the product anchors above): the
+ * base is a live base-priced subscription (the recorded one
+ * preferred), else the recorded or newest base-priced one; the
+ * add-on's is a live marker/tier-priced non-base subscription. A
+ * subscription priced as another product is invisible — if Stripe
+ * holds no zepostia-priced subscription of a kind, that kind's stored
+ * state clears to match, so no phantom plan or phantom add-on
+ * survives. The tier entitlement comes from the add-on subscription
+ * when one exists; otherwise it falls back to the legacy
  * representation (a tier item riding on the base subscription).
  *
  * Cascade: a tier never bills without a live base plan — if the base
@@ -559,9 +637,20 @@ export async function syncBillingForCustomer(
     return { changed, baseLive: true, baseSubscription: null, xAddonTierPriceId: user.xAddonTierPriceId ?? null };
   }
 
+  if (!basePriceId()) {
+    // Without the anchor price there is no safe way to tell this
+    // product's subscriptions from another product's on the shared
+    // Stripe account: touch nothing.
+    return { changed: false, baseLive: false, baseSubscription: null, xAddonTierPriceId: user.xAddonTierPriceId ?? null };
+  }
+
   const subs = (await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 })).data;
+  // Product anchors: only base-priced subscriptions can be the base
+  // plan; only marker/tier-priced non-base subscriptions can be the
+  // add-on's own. Foreign subscriptions fall into neither list and
+  // are treated as if they did not exist.
   const addonSubs = subs.filter(isXAddonSubscription);
-  const baseCandidates = subs.filter((s) => !isXAddonSubscription(s));
+  const baseCandidates = subs.filter(isBasePlanSubscription);
   // Prefer a live base subscription (the recorded one first, then any
   // live one — a re-subscription must win over a recorded-but-canceled
   // predecessor), falling back to the recorded / newest candidate.
@@ -606,7 +695,7 @@ export async function syncBillingForCustomer(
   }
 
   const next = {
-    stripeSubscriptionId: base ? base.id : user.stripeSubscriptionId,
+    stripeSubscriptionId: base ? base.id : null,
     subscriptionStatus: base
       ? base.status
       : user.subscriptionStatus === "none"
@@ -684,9 +773,12 @@ export async function ensureXAddonSubscription(
   try {
     const subs = (await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "all", limit: 20 })).data;
     if (subs.some(isXAddonSubscription)) return false;
+    // The base subscription is found by PRICE: a foreign subscription
+    // (or the recorded id, if it no longer names a base-priced
+    // subscription) can never anchor an add-on creation.
     const base =
-      subs.find((s) => s.id === user.stripeSubscriptionId && !isXAddonSubscription(s)) ??
-      subs.find((s) => !isXAddonSubscription(s) && SUBSCRIBED_STATUSES.includes(s.status));
+      subs.find((s) => s.id === user.stripeSubscriptionId && isBasePlanSubscription(s)) ??
+      subs.find((s) => isBasePlanSubscription(s) && SUBSCRIBED_STATUSES.includes(s.status));
     if (!base || !SUBSCRIBED_STATUSES.includes(base.status)) return false;
 
     const prepaidUntil = addMonths(new Date(base.created * 1000), 1);
@@ -732,8 +824,18 @@ export async function ensureXAddonSubscription(
  * prepaid a tier whenever the completion webhook was missed.
  *
  * Billing reads invoke this on every call: in the steady state it
- * costs one subscriptions.list for the customer (plus a customer
- * lookup when the row has no Stripe customer ID yet).
+ * costs one subscriptions.list for the customer already bound to the
+ * user row.
+ *
+ * The Stripe customer is bound ONLY by zepostia's own checkout flows
+ * (the checkout actions create the customer and store its ID on the
+ * user row in the same request; the anchored checkout.session.completed
+ * handler re-binds it as a backstop). There is deliberately NO
+ * find-customer-by-email fallback: on the shared Stripe account an
+ * email search can surface a customer created by another product's
+ * flow, and binding it would import that product's billing history
+ * into this account. A row with no bound customer has nothing to
+ * reconcile.
  *
  * Returns true when local state was created or repaired. Never
  * throws — a Stripe outage must not break the billing page; the
@@ -750,34 +852,12 @@ export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Pr
     return false;
   }
   if (!process.env.STRIPE_SECRET_KEY) return false;
+  // No customer bound through zepostia's own checkout → nothing to
+  // reconcile. Never go looking for one by email (see header note).
+  const customerId = user.stripeCustomerId;
+  if (!customerId) return false;
   try {
     const stripe = getStripe();
-
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      // The row never got its Stripe customer bound (checkout completed
-      // without the binding webhook and the session-time write was
-      // lost). Find the customer by email: prefer one that carries a
-      // live subscription, else the newest customer with any
-      // subscription on file.
-      const customers = await stripe.customers.list({ email: user.email, limit: 10 });
-      let fallbackCustomerId: string | null = null;
-      for (const customer of customers.data) {
-        if (customer.deleted) continue;
-        const subs = await stripe.subscriptions.list({ customer: customer.id, status: "all", limit: 10 });
-        if (subs.data.some((sub) => SUBSCRIBED_STATUSES.includes(sub.status))) {
-          customerId = customer.id;
-          break;
-        }
-        if (!fallbackCustomerId && subs.data.length > 0) fallbackCustomerId = customer.id;
-      }
-      customerId = customerId ?? fallbackCustomerId;
-      if (!customerId) return false;
-      await db
-        .update(schema.users)
-        .set({ stripeCustomerId: customerId })
-        .where(eq(schema.users.id, user.id));
-    }
 
     const summary = await syncBillingForCustomer(db, stripe, customerId);
     let created = false;
@@ -803,7 +883,33 @@ export async function reconcileSubscriptionFromStripe(db: Db, user: UserRow): Pr
   }
 }
 
-async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
+/** The subscription ID an invoice belongs to, across Stripe API shapes:
+ *  the legacy top-level field, or the current parent.subscription_details. */
+function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const inv = invoice as unknown as {
+    subscription?: string | { id: string } | null;
+    parent?: { subscription_details?: { subscription?: string | { id: string } | null } | null } | null;
+  };
+  const ref = inv.subscription ?? inv.parent?.subscription_details?.subscription ?? null;
+  if (!ref) return null;
+  return typeof ref === "string" ? ref : ref.id;
+}
+
+/**
+ * Handle an invoice.payment_failed for a customer. A failed payment
+ * marks the user past due ONLY when the invoice is for zepostia's
+ * base plan: the recorded base subscription, or a subscription
+ * carrying the base price. The shared Stripe account delivers every
+ * product's failures to this endpoint — another product's failed
+ * invoice must never stain this product's account.
+ *
+ * A failed ADD-ON invoice never marks the base plan past due either:
+ * it re-syncs instead (the add-on subscription's own status drives
+ * the entitlement). An invoice whose subscription cannot be
+ * attributed or verified changes nothing — the read-time reconcile
+ * from Stripe remains the authority.
+ */
+async function markPastDue(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<void> {
   const customerId =
     typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   if (!customerId) return;
@@ -816,6 +922,24 @@ async function markPastDue(db: Db, invoice: Stripe.Invoice): Promise<void> {
   if (!user) {
     console.warn(`stripe webhook: no user found for customer ${customerId}`);
     return;
+  }
+  if (isCompEmail(user.email)) return;
+  const subId = invoiceSubscriptionId(invoice);
+  if (!subId) return;
+  if (subId === user.stripeXAddonSubscriptionId) {
+    await syncBillingForCustomer(db, stripe, customerId);
+    return;
+  }
+  if (subId !== user.stripeSubscriptionId) {
+    let sub: Stripe.Subscription;
+    try {
+      sub = await stripe.subscriptions.retrieve(subId);
+    } catch {
+      // Cannot verify the invoice's subscription — leave the row
+      // alone; the read-time reconcile remains the authority.
+      return;
+    }
+    if (!isBasePlanSubscription(sub)) return;
   }
   await db
     .update(schema.users)
@@ -948,7 +1072,10 @@ export async function verifyBfPackSession(
 
 /**
  * Handle a verified Stripe webhook event. The caller is responsible for
- * signature verification; this only applies the business logic.
+ * signature verification; this only applies the business logic. The shared
+ * Stripe account delivers events for ALL of the owner's products to this
+ * endpoint — the product anchors inside each path are what keep other
+ * products' events from touching zepostia's accounts.
  */
 export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Event): Promise<void> {
   switch (event.type) {
@@ -959,7 +1086,27 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
         typeof session.customer === "string" ? session.customer : session.customer?.id;
       const subscriptionId =
         typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-      if (userId && customerId) {
+      // A session binds its customer to a user ONLY when it is
+      // verifiably zepostia's own: a subscription session whose
+      // subscription carries the base price (the plan and Black
+      // Friday checkouts), or a setup-booking session (zepostia's own
+      // metadata kind). Another product's session can carry a
+      // client_reference_id that numerically matches one of this
+      // app's user ids — the anchor, not the reference, decides.
+      let zepostiaSession = session.metadata?.kind === SETUP_BOOKING_KIND;
+      if (subscriptionId) {
+        zepostiaSession = false;
+        try {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+          zepostiaSession = isBasePlanSubscription(sub);
+        } catch {
+          // Unverifiable → not ours for binding purposes; the sync
+          // below still runs (it is price-anchored and repairs only
+          // state that Stripe proves is zepostia's).
+          zepostiaSession = false;
+        }
+      }
+      if (userId && customerId && zepostiaSession) {
         await db
           .update(schema.users)
           .set({
@@ -1002,26 +1149,11 @@ export async function handleStripeEvent(db: Db, stripe: Stripe, event: Stripe.Ev
       break;
     }
     case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const customerId =
-        typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
-      const invoiceSub = invoice.parent?.subscription_details?.subscription;
-      const invoiceSubId = typeof invoiceSub === "string" ? invoiceSub : invoiceSub?.id;
-      if (customerId && invoiceSubId) {
-        // A failed ADD-ON invoice must not mark the base plan past
-        // due — re-sync from Stripe instead (the add-on subscription's
-        // own status drives the entitlement).
-        const rows = await db
-          .select()
-          .from(schema.users)
-          .where(eq(schema.users.stripeCustomerId, customerId))
-          .limit(1);
-        if (rows[0] && rows[0].stripeXAddonSubscriptionId === invoiceSubId) {
-          await syncBillingForCustomer(db, stripe, customerId);
-          break;
-        }
-      }
-      await markPastDue(db, invoice);
+      // Classification lives in markPastDue: only a failed invoice
+      // for zepostia's base plan marks the user past due; a failed
+      // add-on invoice re-syncs; a foreign product's failure (or one
+      // that cannot be attributed) changes nothing.
+      await markPastDue(db, stripe, event.data.object as Stripe.Invoice);
       break;
     }
     default:
