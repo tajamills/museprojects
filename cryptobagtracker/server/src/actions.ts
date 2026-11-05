@@ -698,9 +698,23 @@ export const Actions = {
   },
   /**
    * Start a Stripe Checkout subscription with a 7-day trial (no charge until
-   * day 8, matching the "no card required to start the trial" product copy —
-   * the card is collected here, the first charge lands after the trial).
+   * day 8, matching the "no card required to start the trial" product copy).
    * Creates and stores a Stripe customer on first use.
+   *
+   * Card collection: by default Stripe demands a card up front even though
+   * the trial makes today's total $0. When the visitor's stored promo code
+   * resolves against Stripe, the session instead passes
+   * payment_method_collection: "if_required" (owner order, Nov 5, 2026: "the
+   * coupon bypasses account") so a 100%-off promotion completes end to end
+   * with no card at all. The scope is deliberately narrow — ONLY sessions
+   * carrying a resolved stored promo get if_required. Passing it on every
+   * session would also let full-price trials complete card-free (Stripe does
+   * not collect when the session total is $0, and a trial always is), and at
+   * trial end a cardless subscription's first real invoice would go unpaid
+   * (trial_settings missing_payment_method defaults to create_invoice →
+   * past_due), stranding unpaid conversions. Sessions with no promo, or a
+   * stored code that no longer resolves, keep the default "always": the card
+   * is collected at checkout and the first charge lands after the trial.
    */
   createCheckoutSession: {
     request: tokenRequest,
@@ -752,6 +766,10 @@ export const Actions = {
         customer: customerId,
         client_reference_id: String(user.id),
         ...(discounts ? { discounts } : { allow_promotion_codes: true }),
+        // A resolved stored promo is what earns card-free completion (see
+        // the handler comment): with the discount attached, nothing is ever
+        // due at this session for Stripe to require a card against.
+        ...(discounts ? { payment_method_collection: "if_required" as const } : {}),
         line_items: [{ price: priceId, quantity: 1 }],
         // The discount rides alongside the 7-day trial: nothing is charged
         // during the trial, and the coupon (the owner's are set to repeat)
