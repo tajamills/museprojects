@@ -38,6 +38,10 @@ export const users = pgTable("users", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "date" }),
+  // True when the live plan subscription is set to cancel at period end
+  // (migration 0014): status stays "active" until the end date, and the
+  // Billing page must say "ends <date>", never "renews".
+  subscriptionCancelAtPeriodEnd: boolean("subscription_cancel_at_period_end").notNull().default(false),
   trialStartedAt: timestamp("trial_started_at", { withTimezone: true, mode: "date" })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -294,7 +294,7 @@ const setPriceAlertActiveRequest = z.object({ token: z.string(), alertId: z.numb
 const walletIdRequest = z.object({ token: z.string(), walletId: z.number().int().positive() });
 const transactionIdRequest = z.object({ token: z.string(), transactionId: z.number().int().positive() });
 const taxFormsRequest = z.object({ token: z.string(), taxYear: z.number().int().min(2000).max(2100).default(2026), taxpayerName: z.string().max(120).optional() });
-const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable(), signupTrialEndsAt: z.string(), entitled: z.boolean(), comped: z.boolean(), promoCode: z.string().nullable() });
+const billingStatusResponse = z.object({ status: z.string(), trialEndsAt: z.string().nullable(), currentPeriodEnd: z.string().nullable(), cancelAtPeriodEnd: z.boolean(), signupTrialEndsAt: z.string(), entitled: z.boolean(), comped: z.boolean(), promoCode: z.string().nullable() });
 const redirectResponse = z.object({ url: z.string() });
 
 export const Actions = {
@@ -818,6 +818,9 @@ export const Actions = {
         // During a trial, Stripe sets current_period_end to the trial's end.
         trialEndsAt: status === "trialing" ? periodEnd : null,
         currentPeriodEnd: periodEnd,
+        // An active plan set to cancel must read as ending on
+        // currentPeriodEnd, never as renewing (billing redo, Nov 5, 2026).
+        cancelAtPeriodEnd: user.subscriptionCancelAtPeriodEnd === true,
         signupTrialEndsAt: entitlement.trialEndsAt.toISOString(),
         entitled: entitlement.entitled,
         comped: entitlement.comped,
