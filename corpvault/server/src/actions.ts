@@ -84,7 +84,7 @@ function notifyResetRequest(email: string): void {
     void fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "password_reset_request", email, requested_at: new Date().toISOString() }),
+        body: JSON.stringify({ event: "password_reset_request", email, requested_at: new Date().toISOString(), message: `Password reset requested for ${email} on Kovala — open the Billing page to generate the link.`, message_short: `Password reset requested for ${email} on Kovala — open the Billing page to generate the link.` }),
         signal: AbortSignal.timeout(5000),
     }).catch(() => undefined);
 }
