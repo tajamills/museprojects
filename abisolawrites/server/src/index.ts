@@ -5,7 +5,16 @@ import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { z } from "zod";
 import { BOOK_CHECKOUT_ENABLED, BOOKING_ITEM_IDS, BOOK_ITEM_IDS, CATALOG } from "./catalog.js";
-import { BUILD_TAG, grantVerifiedCheckoutSession, type LineItemsFetcher } from "./billing.js";
+import {
+  BUILD_TAG,
+  collectSessions,
+  constructEventWithSecrets,
+  grantVerifiedCheckoutSession,
+  parseWebhookSecrets,
+  sessionMatchesUser,
+  type CheckoutSessionLike,
+  type LineItemsFetcher,
+} from "./billing.js";
 import { CONTENT } from "./content-data.js";
 import { WORKSHEETS_DOCX_BASE64 } from "./worksheets-data.js";
 import { createStore, type Store, type User } from "./store.js";
@@ -31,7 +40,14 @@ const PORT = Number(process.env.PORT ?? 3000);
 const COOKIE_SECURE = SITE_URL.startsWith("https://");
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "";
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+// One secret per webhook endpoint pointing at this app — the env var
+// may hold a comma-separated list (a second endpoint was added to the
+// shared Stripe account on Nov 15, 2026, and each endpoint signs with
+// its own secret; see parseWebhookSecrets in billing.ts).
+const STRIPE_WEBHOOK_SECRETS = parseWebhookSecrets(
+  process.env.STRIPE_WEBHOOK_SECRET,
+  process.env.STRIPE_WEBHOOK_SECRETS,
+);
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
@@ -164,22 +180,38 @@ async function grantFromCheckoutSession(
  * recorded under their account email — and grant any book they paid for
  * but don't own yet, through the same grant path as the webhook.
  *
- * Cost control: an in-memory per-user throttle (at most one scan per user
- * per RECONCILE_MIN_INTERVAL_MS) plus an early exit when the user already
- * owns every book, so this is never a Stripe call on every page load. The
- * buyer's post-checkout return (?checkout=success) hits /api/me, which
- * reconciles before answering, so the unlock heals on that first load.
- * Failures are logged and swallowed — reconciliation must never break the
- * request that triggered it.
+ * Cost control: an in-memory per-user throttle plus an early exit when
+ * the user already owns every book, so this is never a Stripe call on
+ * every page load. The buyer's post-checkout return (?checkout=success)
+ * hits /api/me, which reconciles before answering, so the unlock heals
+ * on that first load. Failures are logged and swallowed —
+ * reconciliation must never break the request that triggered it.
+ *
+ * Throttle shape (revised Nov 15, 2026): the Oct 27 diagnosis found the
+ * pre-set throttle timestamp suppressing the post-purchase refresh for
+ * 5 minutes after a pre-purchase /api/me — and the fix then only
+ * cleared the timestamp when the scan THREW. A successful scan that
+ * simply found nothing (buyer browsed signed-in, then bought a minute
+ * later) still burned the full window, and the returning buyer's first
+ * loads all skipped the heal. Now: a scan that grants nothing while
+ * the user still misses books earns only a short retry cooldown
+ * (RECONCILE_EMPTY_RETRY_MS); the full interval applies after a scan
+ * that granted something, and a thrown scan clears the throttle
+ * entirely. The interval sweep (below) is the backstop that does not
+ * depend on the buyer returning at all.
  */
 const RECONCILE_MIN_INTERVAL_MS = 5 * 60 * 1000;
-const lastReconcileAtByUser = new Map<string, number>();
+const RECONCILE_EMPTY_RETRY_MS = 60 * 1000;
+const reconcileNextAllowedAtByUser = new Map<string, number>();
 
 async function reconcileEntitlements(user: User): Promise<void> {
   if (!stripe) return;
+  const stripeClient = stripe;
   const now = Date.now();
-  if (now - (lastReconcileAtByUser.get(user.id) ?? 0) < RECONCILE_MIN_INTERVAL_MS) return;
-  lastReconcileAtByUser.set(user.id, now); // set before awaiting: no stampede
+  if (now < (reconcileNextAllowedAtByUser.get(user.id) ?? 0)) return;
+  // Set before awaiting: no stampede. Tentatively the full interval;
+  // an empty-handed scan shortens it below.
+  reconcileNextAllowedAtByUser.set(user.id, now + RECONCILE_MIN_INTERVAL_MS);
   try {
     const owned = new Set((await store.listEntitlements(user)).map((e) => e.bookId));
     const missing = [...BOOK_ITEM_IDS].filter((id) => !owned.has(id));
@@ -189,35 +221,56 @@ async function reconcileEntitlements(user: User): Promise<void> {
     // real buyer's heal failed twice): the original code made a SECOND
     // list call filtered by customer_details.email BEFORE granting
     // anything, so any error from that call aborted the whole reconcile —
-    // including client_reference_id matches already in hand — and the
-    // pre-set throttle timestamp then suppressed every retry for 5
-    // minutes (e.g. a pre-purchase /api/me burned the window the
-    // post-purchase refresh needed). Server-side email filtering is also
-    // not relied on anymore: matching is done here, by normalized email,
-    // against the session's own recorded emails.
-    const recent = await stripe.checkout.sessions.list({ status: "complete", limit: 100 });
-    const sessionEmail = (s: Stripe.Checkout.Session): string =>
-      normalizeEmail(s.customer_details?.email ?? s.customer_email ?? s.metadata?.email ?? "");
-    const matches = recent.data.filter(
-      (s) => s.client_reference_id === user.id || (sessionEmail(s) !== "" && sessionEmail(s) === user.email),
+    // including client_reference_id matches already in hand. Server-side
+    // email filtering is also not relied on anymore: matching is done
+    // here (sessionMatchesUser: client_reference_id, then
+    // metadata.userId, then normalized email against the session's own
+    // recorded emails). The scan window is the newest page of completes;
+    // anything deeper is the sweep's job (it paginates to 500 and runs
+    // every few minutes, buyer or no buyer).
+    const recent = await collectSessions<Stripe.Checkout.Session>(
+      async (startingAfter) => {
+        const page = await stripeClient.checkout.sessions.list({
+          status: "complete",
+          limit: 100,
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        });
+        return { data: page.data, has_more: page.has_more };
+      },
+      100,
     );
-    // client_reference_id matches first (strongest identity), then email.
-    matches.sort((a, b) =>
-      (b.client_reference_id === user.id ? 1 : 0) - (a.client_reference_id === user.id ? 1 : 0),
+    const matches = recent.filter((s) =>
+      sessionMatchesUser(s as unknown as CheckoutSessionLike, user.id, user.email),
     );
+    // Strongest identity first (client_reference_id / metadata.userId),
+    // then email-only matches.
+    const strong = (s: Stripe.Checkout.Session): number =>
+      s.client_reference_id === user.id || s.metadata?.userId === user.id ? 1 : 0;
+    matches.sort((a, b) => strong(b) - strong(a));
+    let granted = 0;
     for (const s of matches) {
       const itemId = s.metadata?.itemId ?? "";
       if (!BOOK_ITEM_IDS.has(itemId) || owned.has(itemId)) continue;
       try {
-        if (await grantFromCheckoutSession(s, "reconciled")) owned.add(itemId);
+        if (await grantFromCheckoutSession(s, "reconciled")) {
+          owned.add(itemId);
+          granted++;
+        }
       } catch (err) {
         console.error(`[abisolawrites] reconcile grant failed for session ${s.id}`, err);
       }
     }
+    if (granted === 0) {
+      // Empty scan: do NOT burn the full window (the Oct 27 failure
+      // mode). The buyer may have completed checkout seconds after a
+      // pre-purchase page load; let the next load retry within a
+      // minute instead of five.
+      reconcileNextAllowedAtByUser.set(user.id, Date.now() + RECONCILE_EMPTY_RETRY_MS);
+    }
   } catch (err) {
-    // A failed scan must not burn the throttle window: clear the timestamp
-    // so the buyer's very next request retries instead of waiting 5 min.
-    lastReconcileAtByUser.delete(user.id);
+    // A failed scan must not burn the throttle window: clear the entry
+    // so the buyer's very next request retries instead of waiting.
+    reconcileNextAllowedAtByUser.delete(user.id);
     console.error("[abisolawrites] entitlement reconciliation failed", err);
   }
 }
@@ -236,11 +289,25 @@ async function reconcileEntitlements(user: User): Promise<void> {
  * (client_reference_id / customer email). The store dedupes on
  * stripe_session_id and on book+user/email, so re-running is harmless
  * and open/unpaid sessions are never touched (status filter is
- * "complete" only). Runs once shortly after boot and on demand via the
+ * "complete" only). Runs shortly after boot, EVERY
+ * SWEEP_INTERVAL_MS thereafter, and on demand via the
  * ADMIN_TOKEN-guarded endpoint. Never throws to its caller.
+ *
+ * Why the interval matters (Nov 15, 2026 incident): the sweep used to
+ * run ONLY at boot and on admin demand. A purchase completed after the
+ * day's last deploy therefore had no sweep behind it — if the webhook
+ * didn't land it and the buyer's own page loads didn't reconcile it
+ * (throttle window, newest-100 window), it sat ungranted indefinitely
+ * while every individual piece looked "built". The sweep is the one
+ * path that needs nothing from the buyer and nothing from webhook
+ * delivery, so it now runs on a timer: any completed purchase of any
+ * book registers within one interval, whoever the buyer is and
+ * whichever account they later view with (the grant keys off the
+ * session's own stored identifiers).
  */
 const SWEEP_MAX_SESSIONS = 500;
 const SWEEP_PAGE_SIZE = 100;
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 interface SweepSummary {
   scanned: number;
@@ -248,39 +315,47 @@ interface SweepSummary {
   grants: string[];
 }
 
+let sweepInFlight = false;
+
 async function sweepCompletedSessions(trigger: string): Promise<SweepSummary> {
   const summary: SweepSummary = { scanned: 0, bookSessions: 0, grants: [] };
   if (!stripe) {
     console.log(`[abisolawrites] entitlement sweep (${trigger}): skipped — Stripe not configured`);
     return summary;
   }
+  if (sweepInFlight) {
+    console.log(`[abisolawrites] entitlement sweep (${trigger}): skipped — a sweep is already running`);
+    return summary;
+  }
+  sweepInFlight = true;
   try {
-    let startingAfter: string | undefined;
-    while (summary.scanned < SWEEP_MAX_SESSIONS) {
-      const page = await stripe.checkout.sessions.list({
-        status: "complete",
-        limit: SWEEP_PAGE_SIZE,
-        ...(startingAfter ? { starting_after: startingAfter } : {}),
-      });
-      if (page.data.length === 0) break;
-      for (const s of page.data) {
-        summary.scanned++;
-        const itemId = s.metadata?.itemId ?? "";
-        if (!BOOK_ITEM_IDS.has(itemId)) continue;
-        summary.bookSessions++;
-        try {
-          if (await grantFromCheckoutSession(s, "sweep")) {
-            const target = s.client_reference_id || s.metadata?.userId || normalizeEmail(
-              s.customer_details?.email ?? s.customer_email ?? s.metadata?.email ?? "",
-            ) || "?";
-            summary.grants.push(`${itemId} -> ${target}`);
-          }
-        } catch (err) {
-          console.error(`[abisolawrites] sweep grant failed for session ${s.id}`, err);
+    const stripeClient = stripe;
+    const sessions = await collectSessions<Stripe.Checkout.Session>(
+      async (startingAfter) => {
+        const page = await stripeClient.checkout.sessions.list({
+          status: "complete",
+          limit: SWEEP_PAGE_SIZE,
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        });
+        return { data: page.data, has_more: page.has_more };
+      },
+      SWEEP_MAX_SESSIONS,
+    );
+    summary.scanned = sessions.length;
+    for (const s of sessions) {
+      const itemId = s.metadata?.itemId ?? "";
+      if (!BOOK_ITEM_IDS.has(itemId)) continue;
+      summary.bookSessions++;
+      try {
+        if (await grantFromCheckoutSession(s, "sweep")) {
+          const target = s.client_reference_id || s.metadata?.userId || normalizeEmail(
+            s.customer_details?.email ?? s.customer_email ?? s.metadata?.email ?? "",
+          ) || "?";
+          summary.grants.push(`${itemId} -> ${target}`);
         }
+      } catch (err) {
+        console.error(`[abisolawrites] sweep grant failed for session ${s.id}`, err);
       }
-      if (!page.has_more) break;
-      startingAfter = page.data[page.data.length - 1].id;
     }
     console.log(
       `[abisolawrites] entitlement sweep (${trigger}): scanned ${summary.scanned} complete sessions, ` +
@@ -289,6 +364,8 @@ async function sweepCompletedSessions(trigger: string): Promise<SweepSummary> {
     );
   } catch (err) {
     console.error(`[abisolawrites] entitlement sweep (${trigger}) failed`, err);
+  } finally {
+    sweepInFlight = false;
   }
   return summary;
 }
@@ -313,7 +390,7 @@ async function main() {
   // a webhook secret configured there is nothing trustworthy to verify
   // against, so the endpoint refuses rather than pretending.
   app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
-    if (!stripe || !STRIPE_WEBHOOK_SECRET) {
+    if (!stripe || STRIPE_WEBHOOK_SECRETS.length === 0) {
       res.status(503).json({ error: "Stripe webhook is not configured yet." });
       return;
     }
@@ -323,7 +400,18 @@ async function main() {
       return;
     }
     try {
-      const event = stripe.webhooks.constructEvent(req.body as Buffer, signature, STRIPE_WEBHOOK_SECRET);
+      // More than one endpoint can point at this URL (a second was
+      // added Nov 15, 2026), each signing with its own secret — accept
+      // the payload if ANY configured secret verifies it. A copy
+      // signed with an unconfigured secret 400s below, which is safe:
+      // Stripe delivers each endpoint's copy independently and grants
+      // are idempotent, so a rejected duplicate can never shadow the
+      // copy that verifies.
+      const stripeClient = stripe;
+      const event = constructEventWithSecrets(
+        (secret) => stripeClient.webhooks.constructEvent(req.body as Buffer, signature, secret),
+        STRIPE_WEBHOOK_SECRETS,
+      );
       if (event.type === "checkout.session.completed") {
         await grantFromCheckoutSession(event.data.object as Stripe.Checkout.Session, "webhook");
       }
@@ -741,6 +829,18 @@ async function main() {
       );
     }, 15_000);
     timer.unref?.();
+    // Interval sweep: the boot sweep alone leaves every purchase made
+    // between deploys riding on the webhook and the buyer's own page
+    // loads (Nov 15, 2026: a completed purchase sat ungranted because
+    // no sweep had run since that morning's deploy). Re-scan every
+    // SWEEP_INTERVAL_MS so a completed purchase registers on its own,
+    // promptly, with no buyer action and no webhook dependence.
+    const sweepTimer = setInterval(() => {
+      sweepCompletedSessions("interval").catch((err) =>
+        console.error("[abisolawrites] interval entitlement sweep failed", err),
+      );
+    }, SWEEP_INTERVAL_MS);
+    sweepTimer.unref?.();
   });
 }
 

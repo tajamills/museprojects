@@ -4,7 +4,11 @@
 // fixtures. Bundled+run by scripts/run-billing-tests.mjs; DATA_FILE must
 // point at a throwaway path.
 import {
+  collectSessions,
+  constructEventWithSecrets,
   grantVerifiedCheckoutSession,
+  parseWebhookSecrets,
+  sessionMatchesUser,
   verifyAbisolaBookSession,
   type CheckoutSessionLike,
   type LineItemLike,
@@ -204,6 +208,185 @@ async function main() {
   // Verifier unit sanity: no stripe fetcher -> nothing verifies.
   const noFetch = await verifyAbisolaBookSession(null, fxA.genuineQuietly.session);
   check("no Stripe configured verifies nothing", noFetch === null);
+
+  // ---------------------------------------------------------------
+  // Nov 15, 2026 incident reproductions: a REAL purchase of the FB
+  // Guide completed but never showed as bought. Each block below pins
+  // one failure mode found in the grant machinery that day.
+  console.log("incident reproductions (Nov 15, 2026):");
+
+  // (1) LIVE-SHAPE line item: the line item's `description` carries the
+  // product DESCRIPTION text (which this app's checkout sets:
+  // "All 8 chapters, yours to keep, forever.") while the catalog name
+  // lives on the expanded price.product.name. The pre-fix verifier read
+  // `description` first, so this shape verified as NOTHING on every
+  // path at once. It must grant.
+  const d = await store.createUser("buyer-d@example.com", "hash");
+  const liveShapeSession: CheckoutSessionLike = {
+    id: "cs_live_shape_fbguide",
+    mode: "payment", status: "complete", payment_status: "paid",
+    client_reference_id: d.id,
+    metadata: { itemId: "fbguide", userId: d.id, email: d.email },
+    customer_details: { email: "Buyer-D@Example.com" }, // buyer typed it mixed-case
+  };
+  const liveShapeLines: LineItemLike[] = [
+    {
+      quantity: 1,
+      description: "All 8 chapters, yours to keep, forever.",
+      price: {
+        unit_amount: 99, currency: "usd",
+        product: { name: "How to Get Muse to Write Your Facebook Posts (full unlock)" },
+      },
+    },
+  ];
+  const fetchLiveShape = async (sid: string): Promise<LineItemLike[]> => {
+    if (sid === liveShapeSession.id) return liveShapeLines;
+    throw new Error("unknown session (fixture)");
+  };
+  check(
+    "live-shape line item (description = product description, name on expanded product) verifies",
+    (await verifyAbisolaBookSession(fetchLiveShape, liveShapeSession))?.id === "fbguide",
+  );
+  check(
+    "live-shape FB Guide purchase grants via webhook",
+    (await grantVerifiedCheckoutSession({ fetchLineItems: fetchLiveShape, store }, liveShapeSession, "webhook")) === true,
+  );
+  check(
+    "buyer D owns fbguide after the live-shape grant",
+    JSON.stringify(await booksOf(store, d.id, d.email)) === JSON.stringify(["fbguide"]),
+  );
+
+  // (1b) Name available ONLY from the expanded product (description
+  // null) must also grant; name available from NEITHER source (product
+  // unexpanded + description carrying prose) must fail closed.
+  const e = await store.createUser("buyer-e@example.com", "hash");
+  const expansionOnlySession: CheckoutSessionLike = {
+    id: "cs_expansion_only_doors",
+    mode: "payment", status: "complete", payment_status: "paid",
+    client_reference_id: e.id,
+    metadata: { itemId: "doors1", userId: e.id, email: e.email },
+    customer_details: { email: e.email },
+  };
+  const fetchExpansionOnly = async (): Promise<LineItemLike[]> => [
+    {
+      quantity: 1, description: null,
+      price: { unit_amount: 299, currency: "usd", product: { name: "Doors — Book One (full unlock)" } },
+    },
+  ];
+  check(
+    "name from expanded product only (description null) grants",
+    (await grantVerifiedCheckoutSession({ fetchLineItems: fetchExpansionOnly, store }, expansionOnlySession, "webhook")) === true,
+  );
+  const noNameSession: CheckoutSessionLike = { ...expansionOnlySession, id: "cs_no_name_doors" };
+  const fetchNoName = async (): Promise<LineItemLike[]> => [
+    {
+      quantity: 1, description: "All 18 chapters, yours to keep, forever.",
+      price: { unit_amount: 299, currency: "usd", product: "prod_unexpanded" },
+    },
+  ];
+  check(
+    "no name source matches (unexpanded product + prose description) grants nothing",
+    (await grantVerifiedCheckoutSession({ fetchLineItems: fetchNoName, store }, noNameSession, "webhook")) === false,
+  );
+
+  // (2) DUPLICATE WEBHOOK ENDPOINTS, two signing secrets: Stripe
+  // delivers one copy per endpoint, each signed with that endpoint's
+  // secret. Verification must accept a payload signed by ANY
+  // configured secret, reject when none matches, and the duplicate
+  // delivery of the same event must still grant exactly once.
+  check(
+    "parseWebhookSecrets merges, trims, dedupes",
+    JSON.stringify(parseWebhookSecrets(" whsec_a , whsec_b ", "whsec_b,whsec_c", undefined)) ===
+      JSON.stringify(["whsec_a", "whsec_b", "whsec_c"]),
+  );
+  const fakeConstruct = (goodSecret: string) => (secret: string) => {
+    if (secret !== goodSecret) throw new Error("No signatures found matching the expected signature for payload.");
+    return { type: "checkout.session.completed" };
+  };
+  check(
+    "event signed with the SECOND endpoint's secret verifies when both are configured",
+    constructEventWithSecrets(fakeConstruct("whsec_b"), parseWebhookSecrets("whsec_a,whsec_b")).type ===
+      "checkout.session.completed",
+  );
+  let rejected = false;
+  try {
+    constructEventWithSecrets(fakeConstruct("whsec_b"), parseWebhookSecrets("whsec_a"));
+  } catch {
+    rejected = true;
+  }
+  check("event signed with an unconfigured secret is rejected", rejected);
+  check(
+    "duplicate delivery of the same session (second endpoint's copy) dedupes",
+    (await grantVerifiedCheckoutSession({ fetchLineItems: fetchLiveShape, store }, liveShapeSession, "webhook")) === false &&
+      JSON.stringify(await booksOf(store, d.id, d.email)) === JSON.stringify(["fbguide"]),
+  );
+
+  // (3) IDENTITY MATCHING for the reconcile: the session must find its
+  // buyer by client_reference_id or metadata.userId even when the
+  // emails differ, and by email across case differences (a buyer who
+  // signed up as Tmara@Gmail.com vs the session's tmara@gmail.com).
+  const idSession: CheckoutSessionLike = {
+    id: "cs_identity", mode: "payment", status: "complete", payment_status: "paid",
+    client_reference_id: "user-123", metadata: { itemId: "fbguide", userId: "user-123" },
+    customer_details: { email: "someone-else@example.com" },
+  };
+  check("session matches by client_reference_id despite a different email",
+    sessionMatchesUser(idSession, "user-123", "tmara@gmail.com") === true);
+  check("session matches by metadata.userId",
+    sessionMatchesUser({ ...idSession, client_reference_id: null }, "user-123", "x@example.com") === true);
+  check("session matches by email across case (Tmara@Gmail.com vs tmara@gmail.com)",
+    sessionMatchesUser(
+      { id: "cs_email", customer_details: { email: "Tmara@Gmail.com" }, metadata: {} },
+      "user-999", "tmara@gmail.com",
+    ) === true);
+  check("session does not match a stranger",
+    sessionMatchesUser(idSession, "user-999", "nobody@example.com") === false);
+
+  // (4) SHARED-ACCOUNT WINDOW: on a Stripe account shared by four
+  // stores, a buyer's completed session can sit far below the newest
+  // 100 completes. A newest-100 scan (the reconcile's window) misses
+  // it; the paginated collector the sweep uses (max 500) finds it, and
+  // a sweep-style grant pass over the collected sessions lands the
+  // book with NO buyer action at all.
+  const f = await store.createUser("buyer-f@example.com", "hash");
+  const windowSessions: CheckoutSessionLike[] = [];
+  for (let i = 0; i < 250; i++) {
+    windowSessions.push({
+      id: `cs_win_${String(i).padStart(4, "0")}`,
+      mode: "payment", status: "complete", payment_status: "paid", metadata: {},
+    });
+  }
+  const buriedGuide: CheckoutSessionLike = {
+    id: "cs_win_buried_fbguide",
+    mode: "payment", status: "complete", payment_status: "paid",
+    client_reference_id: f.id,
+    metadata: { itemId: "fbguide", userId: f.id, email: f.email },
+    customer_details: { email: f.email },
+  };
+  windowSessions[230] = buriedGuide;
+  const fakePager = async (startingAfter?: string) => {
+    const start = startingAfter
+      ? windowSessions.findIndex((s) => s.id === startingAfter) + 1
+      : 0;
+    const data = windowSessions.slice(start, start + 100);
+    return { data, has_more: start + data.length < windowSessions.length };
+  };
+  const newest100 = await collectSessions(fakePager, 100);
+  check("newest-100 scan misses the session buried at position 230",
+    newest100.length === 100 && !newest100.some((s) => s.id === buriedGuide.id));
+  const deepScan = await collectSessions(fakePager, 500);
+  check("paginated 500 scan finds the buried session",
+    deepScan.length === 250 && deepScan.some((s) => s.id === buriedGuide.id));
+  const fetchBuried = async (sid: string): Promise<LineItemLike[]> => {
+    if (sid === buriedGuide.id) return liveShapeLines;
+    throw new Error("not a book session (fixture)");
+  };
+  let sweepGrants = 0;
+  for (const s of deepScan) {
+    if (await grantVerifiedCheckoutSession({ fetchLineItems: fetchBuried, store }, s, "sweep")) sweepGrants++;
+  }
+  check("sweep-style pass over the deep scan grants the buried purchase exactly once",
+    sweepGrants === 1 && JSON.stringify(await booksOf(store, f.id, f.email)) === JSON.stringify(["fbguide"]));
 
   console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

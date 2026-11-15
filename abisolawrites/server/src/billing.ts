@@ -42,7 +42,7 @@ import { normalizeEmail } from "./auth.js";
 import type { Store } from "./store.js";
 
 /** Build marker surfaced on /healthz so a deploy is provable from outside. */
-export const BUILD_TAG = "2026-11-05-abisola-billing-product-anchor";
+export const BUILD_TAG = "2026-11-15-billing-grant-reliability";
 
 /** The subset of a Stripe Checkout Session this module reads. */
 export interface CheckoutSessionLike {
@@ -110,11 +110,132 @@ export async function verifyAbisolaBookSession(
   if (!price) return null;
   if (price.currency !== "usd") return null;
   if (price.unit_amount !== item.amountCents) return null;
-  const productName =
-    li.description ??
-    (typeof price.product === "object" && price.product ? price.product.name : null);
-  if (productName !== item.name) return null;
+  // The catalog name can surface in two places on a live line item: the
+  // expanded price.product.name (authoritative — the Product Stripe
+  // actually sold) and the line item's own description. Stripe's spec
+  // default for the description is the product name, but this app's
+  // checkout also sets a product description ("All 8 chapters, yours to
+  // keep, forever."), and which string a live payload puts in
+  // `description` was never provable from fixtures — the original code
+  // read `description` FIRST, so if it ever carries the product
+  // description instead of the name, every grant path fails at once
+  // (Nov 15, 2026 incident review). Accept the catalog name from EITHER
+  // source: a foreign product still matches neither at the catalog
+  // amount carrying this app's metadata.itemId, so the anchor's
+  // strength is unchanged.
+  const nameCandidates: string[] = [];
+  if (typeof price.product === "object" && price.product && price.product.name) {
+    nameCandidates.push(price.product.name);
+  }
+  if (li.description) nameCandidates.push(li.description);
+  if (!nameCandidates.includes(item.name)) return null;
   return item;
+}
+
+/**
+ * Parse webhook signing secrets from env values. STRIPE_WEBHOOK_SECRET
+ * may hold ONE secret or a comma-separated list: the shared Stripe
+ * account can carry more than one endpoint pointing at this app (a
+ * second endpoint was added Nov 15, 2026), and each endpoint signs its
+ * deliveries with its OWN secret. Extra raw values (e.g. a dedicated
+ * STRIPE_WEBHOOK_SECRETS) are merged in. Returns deduped, non-empty
+ * secrets in order.
+ */
+export function parseWebhookSecrets(...raws: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const raw of raws) {
+    for (const part of (raw ?? "").split(",")) {
+      const s = part.trim();
+      if (s && !out.includes(s)) out.push(s);
+    }
+  }
+  return out;
+}
+
+/**
+ * Try a Stripe webhook signature verification against each configured
+ * secret until one accepts the payload. Stripe delivers each endpoint's
+ * copy of an event independently, signed with that endpoint's secret,
+ * so with two endpoints pointing here, half the deliveries carry the
+ * "other" secret — a single-secret check 400s those copies (harmless:
+ * the matching copy still arrives and grants are idempotent, so a 400
+ * can never shadow a grant). Trying every configured secret makes both
+ * copies verifiable. Throws the last verification error when none
+ * accepts (or a clear error when no secret is configured).
+ */
+export function constructEventWithSecrets<T>(
+  construct: (secret: string) => T,
+  secrets: readonly string[],
+): T {
+  if (secrets.length === 0) {
+    throw new Error("No webhook secret configured.");
+  }
+  let lastErr: unknown = new Error("Webhook signature verification failed.");
+  for (const secret of secrets) {
+    try {
+      return construct(secret);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+/** The buyer's email as recorded on a session (normalized), or "". */
+export function sessionEmailOf(session: CheckoutSessionLike): string {
+  return normalizeEmail(
+    session.customer_details?.email ?? session.customer_email ?? session.metadata?.email ?? "",
+  );
+}
+
+/**
+ * Does a completed session belong to this user? Identity anchors, in
+ * the order /api/checkout stamps them: client_reference_id, then
+ * metadata.userId, then the email Stripe recorded (normalized on both
+ * sides — a buyer who typed "Tmara@Gmail.com" at signup still matches
+ * the session's copy). Used by the per-user reconcile; the sweep and
+ * webhook instead key the grant by the session's own identifiers.
+ */
+export function sessionMatchesUser(
+  session: CheckoutSessionLike,
+  userId: string,
+  email: string,
+): boolean {
+  if (session.client_reference_id && session.client_reference_id === userId) return true;
+  if (session.metadata?.userId && session.metadata.userId === userId) return true;
+  const e = sessionEmailOf(session);
+  return e !== "" && e === normalizeEmail(email);
+}
+
+export interface SessionListPage<T> {
+  data: T[];
+  has_more: boolean;
+}
+
+/**
+ * Walk a paginated Stripe list newest-first until `max` items are
+ * collected or the list is exhausted. Shared by the reconcile (small
+ * max: the newest page only) and the sweep (deep max: on an account
+ * shared by four stores, a buyer's session can sit far below the
+ * newest 100 completes, and only a paginated scan still finds it).
+ */
+export async function collectSessions<T extends { id: string }>(
+  listPage: (startingAfter?: string) => Promise<SessionListPage<T>>,
+  max: number,
+): Promise<T[]> {
+  const out: T[] = [];
+  let startingAfter: string | undefined;
+  while (out.length < max) {
+    const page = await listPage(startingAfter);
+    if (page.data.length === 0) break;
+    for (const item of page.data) {
+      if (out.length >= max) break;
+      out.push(item);
+    }
+    if (!page.has_more) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+  return out;
 }
 
 export interface GrantDeps {
