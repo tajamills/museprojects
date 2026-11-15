@@ -20,6 +20,10 @@
 //                  "The-Trust-I-Built-Before-I-Needed-It": all 10 chapters,
 //                  ~7.1k words.)
 //   Quietly Ready  ~/workspace/goals/30-day-household-preparedness-build/files/survival-guide-draft.md
+//   FB Guide       ~/workspace/your_files/guides/how-to-get-muse-to-write-facebook-posts.md
+//                  ("How to Get Muse to Write Your Facebook Posts", added
+//                  Nov 15, 2026: Introduction + Step 1 free, Steps 2–6 and
+//                  the closing chapter paid — the Doors two-free-units model.)
 //
 // Chapter order/labels/free flags mirror client/src/data/books.ts exactly.
 // Run: node scripts/build-content.mjs  (re-run whenever a manuscript changes)
@@ -158,10 +162,45 @@ async function buildTrust() {
   }));
 }
 
+async function buildFbGuide() {
+  const raw = await readFile(path.join(HOME, "workspace/your_files/guides/how-to-get-muse-to-write-facebook-posts.md"), "utf8");
+  // The Step 3 schedule is a markdown table in the source; the reader is
+  // plain text, so turn each data row into a bullet line BEFORE cleaning
+  // (header and separator rows are dropped).
+  const md = raw.split("\n").map((line) => {
+    const t = line.trim();
+    if (!/^\|.*\|$/.test(t)) return line;
+    if (/^\|[\s:|-]+\|$/.test(t)) return "";
+    const cells = t.slice(1, -1).split("|").map((c) => c.trim());
+    if (cells[0].toLowerCase() === "slot") return "";
+    return `- ${cells.join(" — ")}`;
+  }).join("\n");
+  const map = sectionMap(md);
+  // Introduction = everything before the first `## ` heading, minus the
+  // `#`/`###` title lines and `---` rules.
+  const preamble = md.split(/^## /m)[0].split("\n")
+    .filter((l) => !l.trim().startsWith("#") && l.trim() !== "---");
+  // Access model mirrors Doors: the first TWO units are free (here the
+  // Introduction and Step One), the rest are paid. Labels/free flags
+  // mirror client/src/data/books.ts exactly.
+  const chapters = [
+    { label: "Introduction", free: true, text: cleanText(preamble) },
+    { label: "Step 1: Connect the account once", free: true, text: findSection(map, (h) => h.startsWith("step 1:"), "FB Guide Step 1") },
+    { label: "Step 2: Give Muse your voice, not a script", free: false, text: findSection(map, (h) => h.startsWith("step 2:"), "FB Guide Step 2") },
+    { label: "Step 3: Put it on a schedule", free: false, text: findSection(map, (h) => h.startsWith("step 3:"), "FB Guide Step 3") },
+    { label: "Step 4: Pre-approve the system, not every post", free: false, text: findSection(map, (h) => h.startsWith("step 4:"), "FB Guide Step 4") },
+    { label: "Step 5: Set your guardrails in writing", free: false, text: findSection(map, (h) => h.startsWith("step 5:"), "FB Guide Step 5") },
+    { label: "Step 6: Keep one report a day", free: false, text: findSection(map, (h) => h.startsWith("step 6:"), "FB Guide Step 6") },
+    { label: "What It Costs You", free: false, text: findSection(map, (h) => h.startsWith("what it costs you"), "FB Guide closing") },
+  ];
+  return chapters;
+}
+
 const content = {
   doors1: { chapters: await buildDoors() },
   trust: { chapters: await buildTrust() },
   quietlyready: { chapters: await buildQuietlyReady() },
+  fbguide: { chapters: await buildFbGuide() },
 };
 
 for (const [id, book] of Object.entries(content)) {

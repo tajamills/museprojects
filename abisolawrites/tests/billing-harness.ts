@@ -94,6 +94,24 @@ function fixtures(userId: string, email: string): Record<string, Fixture> {
       },
       lines: LI(299, "Doors — Book One (full unlock)"),
     },
+    // (b) Genuine FB Guide purchase (added Nov 15, 2026 with the product):
+    // $0.99 one-time, its own catalog amount + product name.
+    genuineFbGuide: {
+      session: {
+        id: `cs_fbguide_${userId}`, mode: "payment", ...base,
+        client_reference_id: userId, metadata: { itemId: "fbguide", userId, email }, customer_details: { email },
+      },
+      lines: LI(99, "How to Get Muse to Write Your Facebook Posts (full unlock)"),
+    },
+    // (a) Foreign payment carrying the guide's metadata but another
+    // product's amount/name: must grant nothing.
+    foreignFbGuideWrongAmount: {
+      session: {
+        id: `cs_ffb_${userId}`, mode: "payment", ...base,
+        client_reference_id: userId, metadata: { itemId: "fbguide", userId }, customer_details: { email },
+      },
+      lines: LI(999, "Some Other Guide"),
+    },
   };
 }
 
@@ -142,15 +160,17 @@ async function main() {
   check("stripe read failure grants nothing (fail closed)", wa.get("stripeReadFails") === false);
   check("genuine Quietly Ready grants", wa.get("genuineQuietly") === true);
   check("100%-off promo Doors grants", wa.get("promoDoors") === true);
+  check("genuine FB Guide grants", wa.get("genuineFbGuide") === true);
+  check("foreign amount w/ guide metadata grants nothing", wa.get("foreignFbGuideWrongAmount") === false);
   const aBooks = await booksOf(store, a.id, a.email);
-  check("buyer A owns exactly {doors1, quietlyready}", JSON.stringify(aBooks) === JSON.stringify(["doors1", "quietlyready"]), aBooks.join(","));
+  check("buyer A owns exactly {doors1, fbguide, quietlyready}", JSON.stringify(aBooks) === JSON.stringify(["doors1", "fbguide", "quietlyready"]), aBooks.join(","));
 
   console.log("reconcile path (same fixtures, fresh buyer):");
   const rb = await runPath(store, b.id, b.email, "reconciled");
-  check("reconcile grants genuine items", rb.get("genuineQuietly") === true && rb.get("promoDoors") === true);
+  check("reconcile grants genuine items", rb.get("genuineQuietly") === true && rb.get("promoDoors") === true && rb.get("genuineFbGuide") === true);
   check(
     "reconcile grants no foreign items",
-    ["foreignSubscription", "foreignSubWithBookMetadata", "foreignWrongAmount", "foreignWrongName", "unpaid", "stripeReadFails"].every(
+    ["foreignSubscription", "foreignSubWithBookMetadata", "foreignWrongAmount", "foreignWrongName", "foreignFbGuideWrongAmount", "unpaid", "stripeReadFails"].every(
       (k) => rb.get(k) === false,
     ),
   );
@@ -177,7 +197,7 @@ async function main() {
   const cBooks = await booksOf(store, c.id, c.email);
   check(
     "existing buyer keeps comp + legacy grant, gains genuine sweep grants only",
-    JSON.stringify(cBooks) === JSON.stringify(["doors1", "quietlyready", "trust"]),
+    JSON.stringify(cBooks) === JSON.stringify(["doors1", "fbguide", "quietlyready", "trust"]),
     cBooks.join(","),
   );
 

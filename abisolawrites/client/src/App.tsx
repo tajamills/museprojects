@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DOORS, QUIETLY_READY, TRUST } from "./data/books";
+import { DOORS, FB_GUIDE, QUIETLY_READY, TRUST } from "./data/books";
 import { handleLinkClick, useLocation } from "./nav";
 import { DoorIcon, MoonIcon, SunIcon } from "./icons";
 import { HomePage } from "./pages/Home";
@@ -134,7 +134,7 @@ function Footer() {
           </span>
           <div>
             <p className="footer-name">The Abisola Writes Library</p>
-            <p className="footer-line">Three books. One threshold. Yours to keep, forever.</p>
+            <p className="footer-line">Four books. One threshold. Yours to keep, forever.</p>
           </div>
         </div>
         <nav className="footer-nav" aria-label="Footer">
@@ -171,6 +171,9 @@ export function App() {
     case "/book/quietly-ready":
       page = <BookPage book={QUIETLY_READY} search={search} />;
       break;
+    case "/book/muse-facebook-guide":
+      page = <BookPage book={FB_GUIDE} search={search} />;
+      break;
     case "/reader/doors1":
       page = <ReaderPage book={DOORS} search={search} />;
       break;
@@ -179,6 +182,9 @@ export function App() {
       break;
     case "/reader/quietlyready":
       page = <ReaderPage book={QUIETLY_READY} search={search} />;
+      break;
+    case "/reader/fbguide":
+      page = <ReaderPage book={FB_GUIDE} search={search} />;
       break;
     case "/services":
       page = <ServicesPage search={search} />;

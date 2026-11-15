@@ -264,5 +264,49 @@ export const CONTENT: Record<string, { chapters: ChapterContent[] }> = {
     "text": "Everything in this appendix is drawn from the author's own working plans. Fill them in with your household's real numbers — that act, not any purchase, is where preparedness actually starts.\n\nWorksheet A — My household\n\n• People in the house (count): [FILL-IN]\n\n• Animals (count, type, weight): [FILL-IN]\n\n• Water source: ☐ City water ☐ Well (if well: my no-power way to draw water is: [FILL-IN])\n\n• My Layer 1 target date: [FILL-IN] · Layer 2 (60–90 days): [FILL-IN]\n\n• My anchor bulk source (storage center / co-op drop / warehouse): [FILL-IN]\n\nWorksheet B — Water\n\n• Minimum need: 1 gal × [FILL-IN] people = [FILL-IN] gal/day; with cooking, plan ~2 gal/person/day\n\n• Stored buffer: drums: [FILL-IN] × 55 gal = [FILL-IN] gal · bottled cases: [FILL-IN] · rain barrels: [FILL-IN]\n\n• Animals' draw: ~1 oz per lb body weight/day — my animals: [FILL-IN] oz/day total\n\n• Gravity filter: [FILL-IN] · spare filter sets on hand: [FILL-IN] · squeeze filters: [FILL-IN]\n\n• Treatment: tablets for [FILL-IN] gallons · bleach (dated): [FILL-IN] · preserver refill date for drums: [FILL-IN]\n\nWorksheet C — Food (per-adult lines; multiply by your people count)\n\nTwo-year lines I used per adult — write your adjusted numbers beside them:\n\n• Wheat berries 300 lbs → mine: [FILL-IN] · White rice 200 → [FILL-IN] · Rolled oats 100 → [FILL-IN] · Pasta 100 → [FILL-IN] · Cornmeal 50 → [FILL-IN] · Flour 50 → [FILL-IN]\n\n• Pinto 50 → [FILL-IN] · Black beans 30 → [FILL-IN] · Lentils 40 → [FILL-IN] · Split peas 20 → [FILL-IN]\n\n• Powdered milk 120 → [FILL-IN] · Sugar 80 → [FILL-IN] · Honey 24 → [FILL-IN] · Salt 15–20 (house) → [FILL-IN]\n\n• Fats (rotate yearly): coconut oil ~4 gal → [FILL-IN] · ghee/shortening → [FILL-IN] · PB powder 20 → [FILL-IN]\n\n• Cans (rotate): meat/fish ~300 → [FILL-IN] · fruit/veg ~300 → [FILL-IN]\n\n• Foods my household will NOT eat (be honest, cross them off above): [FILL-IN]\n\nChecklist D — Layer 1, week by week (the author's build)\n\nWeek 1 ☐ Water: 14 gal/person stored, dated ☐ Gravity filter chosen/ordered ☐ Treatment backup (bleach or tablets) ☐ Camp stove + spare fuel ☐ Manual can opener ☐ No-cook layer ☐ First food layer (rice, beans, oats, pasta) ☐ Cash in small bills ☐ Light-leak check ☐ Go-bag started ☐ Documents folder started ☐ Car above half a tank\n\nWeek 2 ☐ Food completed to 30 days ☐ Canned layer in ☐ Animal rotation started (bags ahead, oldest first) ☐ N95 box per person ☐ Soap, bleach, gloves ☐ Laundry/dish/paper basics for a month ☐ Mind layer started (cards, games, puzzles, paints, crayons, coloring books) ☐ Go-bag complete per person ☐ Documents folder complete in paper\n\nWeek 3 ☐ Doctor conversation: 90-day buffer ask ☐ Doctor conversation: household emergency kit ☐ Medical cards written per person ☐ Printed references in the house ☐ Stove fuel depth\n\nWeek 4 ☐ Documents checked complete ☐ Food nudged toward 60–90 days ☐ Full gap review written down: [FILL-IN]\n\nWorksheet E — Animals\n\n• Animal 1: [FILL-IN] — food: [FILL-IN] · cups/day: [FILL-IN] · bags ahead target: [FILL-IN] · vet: [FILL-IN] · meds: [FILL-IN]\n\n• Animal 2: [FILL-IN] — food: [FILL-IN] · cups/day: [FILL-IN] · bags ahead target: [FILL-IN] · vet: [FILL-IN] · meds: [FILL-IN]\n\n• Carrier location: [FILL-IN] · Spare leash/collar in go-bag: ☐ · Animals' plan at each leaving ring: [FILL-IN]\n\nWorksheet F — Documents, cash, and numbers\n\n• Folder location (house copy): [FILL-IN] · Go-bag copy: ☐ · Phone/drive scan: ☐\n\n• ☐ IDs ☐ Insurance (home/auto/health) ☐ Property records ☐ Medical cards ☐ Account proof ☐ Titles/registrations\n\n• Cash layer: my one-week-of-basics number: $[FILL-IN] · in small bills ($1/$5/$10/$20): ☐\n\n• Numbers page: utility [FILL-IN] · water [FILL-IN] · insurance [FILL-IN] · doctor [FILL-IN] · pharmacy [FILL-IN] · out-of-area contact [FILL-IN]\n\n• Passport/document expiry dates checked: [FILL-IN]\n\nWorksheet G — Power, communications, and leaving\n\n• Sleeping-room light: [FILL-IN] · Kitchen work light: [FILL-IN] · Blackout curtains where needed: ☐\n\n• Phone charging setup (one known place): [FILL-IN] · Power banks charged & dated: [FILL-IN]\n\n• My leaving rings: Ring 1 (driving distance, people I know): [FILL-IN] · Ring 2: [FILL-IN] · Outer ring: [FILL-IN]\n\n• My written leave triggers: [FILL-IN]\n\n• Car rule: never below half a tank ☐\n\nChecklist H — The yearly rotation pass\n\n☐ Fats replaced ☐ Bleach fresh ☐ Vitamins checked ☐ Kibble rotation verified ☐ Drum preserver dates noted ☐ Filter sets counted ☐ Go-bags opened & refreshed ☐ Documents folder updated ☐ Cash counted ☐ Mind layer checked (games, puzzles, coloring supplies) ☐ Gap review written: [FILL-IN]\n\nEnd of draft manuscript. © AbisolaWrites — draft, not for distribution."
    }
   ]
+ },
+ "fbguide": {
+  "chapters": [
+   {
+    "label": "Introduction",
+    "free": true,
+    "text": "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. Here's how I set Muse up to run my Facebook page, and how you can do the same."
+   },
+   {
+    "label": "Step 1: Connect the account once",
+    "free": true,
+    "text": "Muse posts through your connected Facebook account. You connect it one time, in the app, with your own login — Muse never sees your password and never asks for it in chat. After that, Muse can publish text posts and comments as you.\n\nThe rule that matters: identity stays yours. Muse never changes your password, your settings, or anything money-related. It writes and posts. That's the whole job."
+   },
+   {
+    "label": "Step 2: Give Muse your voice, not a script",
+    "free": false,
+    "text": "Don't hand Muse finished posts. Hand it the ingredients:\n\n• Your topics. Mine are crypto news in the morning, my product at noon, a teaching tip in the afternoon, and an engagement question at night.\n\n• Your angle. Plain English. No hype, no income promises, nothing I wouldn't say myself.\n\n• Your hashtags and links. Mine are set: two standing hashtags on every post, my product link only where it belongs.\n\nMuse drafts from the day's actual news — not from a content calendar written last month. Yesterday's story is expired. Same-day or it doesn't post."
+   },
+   {
+    "label": "Step 3: Put it on a schedule",
+    "free": false,
+    "text": "This is where it stops being a chore. My page runs on standing times:\n\n• 9 AM — The day's news story\n\n• 12 PM — My product, a different angle every day\n\n• 3 PM — A short teaching tip\n\n• 9 PM — A question my audience can answer\n\nMuse checks a checklist before every slot so nothing posts twice and nothing gets skipped silently. If a post fails, I hear about it — I don't find out three days later."
+   },
+   {
+    "label": "Step 4: Pre-approve the system, not every post",
+    "free": false,
+    "text": "I approved the system once: the topics, the voice, the schedule, the rules. After that, scheduled posts go up on their own — no approval tap for every single one. Muse only stops and asks me for the things that should always stop: money, anything irreversible, anything off-topic.\n\nThat's the difference between an assistant and another inbox."
+   },
+   {
+    "label": "Step 5: Set your guardrails in writing",
+    "free": false,
+    "text": "These are mine. Yours will rhyme:\n\n• Privacy: Muse never posts my personal business — my accounts, my holdings, my plans. It promotes the product, never my private life.\n\n• Truth: no made-up numbers, no invented features, no fake screenshots. If it can't be shown truthfully, it doesn't get posted.\n\n• Platform rules: titles and captions follow each platform's rules — clean language where the platform requires it.\n\n• Comments: every post gets follow-up comments in my voice — spaced out over days, the way a person actually comments, not dumped all at once.\n\nWrite your guardrails down once. Muse follows them every run, including the runs you're not watching."
+   },
+   {
+    "label": "Step 6: Keep one report a day",
+    "free": false,
+    "text": "I get one close-out report at night: what posted, what the stories were, what failed, and what needs me. Not twenty notifications. One report, everything in it, nothing claimed that wasn't verified."
+   },
+   {
+    "label": "What It Costs You",
+    "free": false,
+    "text": "About an hour of setup conversation, once. After that: your voice, your page, your rules — posting four times a day whether you're watching or not.\n\nThe posts are mine. The discipline is Muse's. That's the whole trick.\n\n— Abisola Writes"
+   }
+  ]
  }
 };

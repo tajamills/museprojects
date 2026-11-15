@@ -25,7 +25,7 @@ export interface Chapter {
 }
 
 export interface Book {
-  id: "doors1" | "trust" | "quietlyready";
+  id: "doors1" | "trust" | "quietlyready" | "fbguide";
   bookPath: string;
   readerPath: string;
   genre: string;
@@ -168,7 +168,33 @@ export const QUIETLY_READY: Book = {
   ],
 };
 
-export const BOOKS: Book[] = [DOORS, TRUST, QUIETLY_READY];
+export const FB_GUIDE: Book = {
+  id: "fbguide",
+  bookPath: "/book/muse-facebook-guide",
+  readerPath: "/reader/fbguide",
+  genre: "A Practical Guide · AI & Social Media",
+  title: "How to Get Muse to Write Your Facebook Posts",
+  tagline: "your voice, your page, your rules",
+  blurb:
+    "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. The exact system, set up once, that runs a Facebook page four posts a day.",
+  chaptersLabel: "8 Chapters",
+  wordsLabel: "530 Words",
+  priceLabel: "$0.99",
+  priceCents: 99,
+  freeLabel: "Start with the free Introduction & Step One",
+  chapters: [
+    ch("Introduction", true),
+    ch("Step 1: Connect the account once", true),
+    ch("Step 2: Give Muse your voice, not a script", false),
+    ch("Step 3: Put it on a schedule", false),
+    ch("Step 4: Pre-approve the system, not every post", false),
+    ch("Step 5: Set your guardrails in writing", false),
+    ch("Step 6: Keep one report a day", false),
+    ch("What It Costs You", false),
+  ],
+};
+
+export const BOOKS: Book[] = [DOORS, TRUST, QUIETLY_READY, FB_GUIDE];
 
 export function bookByReaderId(id: string): Book {
   return BOOKS.find((b) => b.id === id) ?? DOORS;

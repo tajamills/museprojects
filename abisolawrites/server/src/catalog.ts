@@ -26,6 +26,7 @@ export const BOOK_ITEM_IDS: ReadonlySet<string> = new Set([
   "doors1",
   "trust",
   "quietlyready",
+  "fbguide",
 ]);
 
 // 1-to-1 booking checkout is DISABLED (audit finding, Oct 27, 2026): the
@@ -59,6 +60,13 @@ export const CATALOG: Record<string, CatalogItem> = {
     description: "All 14 chapters plus the appendix worksheets, yours to keep, forever.",
     amountCents: 1888,
     returnPath: "/reader/quietlyready",
+  },
+  fbguide: {
+    id: "fbguide",
+    name: "How to Get Muse to Write Your Facebook Posts (full unlock)",
+    description: "All 8 chapters, yours to keep, forever.",
+    amountCents: 99,
+    returnPath: "/reader/fbguide",
   },
   "service-strategy": {
     id: "service-strategy",

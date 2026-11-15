@@ -21,7 +21,7 @@ function BookCard({ book }: { book: Book }) {
   // never a buy button; everyone else keeps the free/unlock pair.
   const meLoading = me === undefined;
   const owned = me?.entitlements.includes(book.id) ?? false;
-  const CoverIcon = book.id === "doors1" ? DoorIcon : ShieldIcon;
+  const CoverIcon = book.id === "doors1" ? DoorIcon : book.id === "fbguide" ? SparklesIcon : ShieldIcon;
   const freeLabel =
     book.id === "doors1"
       ? "Read the Prologue & Chapter One free"
@@ -126,11 +126,12 @@ export function HomePage() {
       <section className="hero">
         <p className="hero-badge">The Abisola Writes Library</p>
         <h1 className="hero-title">The doors remember you.</h1>
-        <p className="hero-sub">Three books. One threshold.</p>
+        <p className="hero-sub">Four books. One threshold.</p>
         <p className="hero-copy">
-          A spiritual mystery, a personal blueprint for lasting wealth, and a calm,
-          staged guide to household preparedness. Read the opening of each for free —
-          unlock the rest whenever you're ready. Yours to keep, forever.
+          A spiritual mystery, a personal blueprint for lasting wealth, a calm,
+          staged guide to household preparedness, and a practical guide to
+          putting Muse to work on your Facebook page. Read the opening of each
+          for free — unlock the rest whenever you're ready. Yours to keep, forever.
         </p>
       </section>
 

@@ -41,8 +41,8 @@ const store: Store = createStore();
 interface RouteMeta { title: string; description: string; }
 const ROUTE_META: Record<string, RouteMeta> = {
   "/": {
-    title: "The Abisola Writes Library — Three books. One threshold.",
-    description: "A spiritual mystery, a personal blueprint for lasting wealth, and a calm guide to household preparedness. Read the opening of each for free — unlock the rest whenever you're ready. Yours to keep, forever.",
+    title: "The Abisola Writes Library — Four books. One threshold.",
+    description: "A spiritual mystery, a personal blueprint for lasting wealth, a calm guide to household preparedness, and a practical guide to putting Muse to work on your Facebook page. Read the opening of each for free — unlock the rest whenever you're ready. Yours to keep, forever.",
   },
   "/book/doors": {
     title: "Doors — Book One | A Spiritual Mystery — Abisola Writes",
@@ -67,6 +67,14 @@ const ROUTE_META: Record<string, RouteMeta> = {
   "/reader/quietlyready": {
     title: "Read Quietly Ready — Abisola Writes",
     description: "Read Quietly Ready in the Abisola Writes Library. The opening is free; unlock all 14 chapters plus the appendix worksheets for $18.88, one-time.",
+  },
+  "/book/muse-facebook-guide": {
+    title: "How to Get Muse to Write Your Facebook Posts — Abisola Writes",
+    description: "You don't need a social media manager — you need an assistant who knows your voice, your rules, and your schedule, and then actually posts. 8 chapters. Read the Introduction and Step One free; unlock the full guide for $0.99, one-time.",
+  },
+  "/reader/fbguide": {
+    title: "Read How to Get Muse to Write Your Facebook Posts — Abisola Writes",
+    description: "Read How to Get Muse to Write Your Facebook Posts in the Abisola Writes Library. The Introduction and Step One are free; unlock all 8 chapters for $0.99, one-time.",
   },
   "/services": {
     title: "Services — Choose your kind of magic. — Abisola Writes",
@@ -94,7 +102,7 @@ const ROUTE_META: Record<string, RouteMeta> = {
   },
 };
 const DEFAULT_META: RouteMeta = ROUTE_META["/"];
-const SITEMAP_PATHS = ["/", "/book/doors", "/book/trust", "/book/quietly-ready", "/reader/doors1", "/reader/trust", "/reader/quietlyready", "/services", "/resume", "/music", "/booking"];
+const SITEMAP_PATHS = ["/", "/book/doors", "/book/trust", "/book/quietly-ready", "/book/muse-facebook-guide", "/reader/doors1", "/reader/trust", "/reader/quietlyready", "/reader/fbguide", "/services", "/resume", "/music", "/booking"];
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -546,7 +554,7 @@ async function main() {
     }
     const parsed = adminBody.safeParse(req.body);
     if (!parsed.success || !BOOK_ITEM_IDS.has(parsed.data.bookId)) {
-      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready)." });
+      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready, fbguide)." });
       return;
     }
     const email = normalizeEmail(parsed.data.email);
@@ -581,7 +589,7 @@ async function main() {
     }
     const parsed = adminBody.safeParse(req.body);
     if (!parsed.success || !BOOK_ITEM_IDS.has(parsed.data.bookId)) {
-      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready)." });
+      res.status(400).json({ error: "Enter a buyer email and a book id (doors1, trust, quietlyready, fbguide)." });
       return;
     }
     const email = normalizeEmail(parsed.data.email);
