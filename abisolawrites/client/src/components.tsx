@@ -68,9 +68,10 @@ export function CheckoutBanner({ search }: { search: string }) {
   if (state === "success") {
     return (
       <div className="notice-banner" role="status">
-        Payment confirmed by Stripe — thank you. If you bought a book, sign in
-        with the email you used at checkout and your chapters will be open in
-        the reader — yours to keep, forever.
+        Payment confirmed by Stripe — thank you. If you bought a book, your
+        chapters open right here in the reader — yours to keep, forever. (If
+        you checked out in a different browser, sign in with the email you
+        used at checkout and they will be open.)
       </div>
     );
   }

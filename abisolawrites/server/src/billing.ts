@@ -39,10 +39,10 @@
 // POST /api/admin/grant (source "manual") are likewise untouched.
 import { BOOK_ITEM_IDS, CATALOG, type CatalogItem } from "./catalog.js";
 import { normalizeEmail } from "./auth.js";
-import type { Store } from "./store.js";
+import type { Store, User } from "./store.js";
 
 /** Build marker surfaced on /healthz so a deploy is provable from outside. */
-export const BUILD_TAG = "2026-11-15-billing-grant-reliability";
+export const BUILD_TAG = "2026-11-15-instant-purchase-open";
 
 /** The subset of a Stripe Checkout Session this module reads. */
 export interface CheckoutSessionLike {
@@ -256,7 +256,7 @@ export interface GrantDeps {
 export async function grantVerifiedCheckoutSession(
   deps: GrantDeps,
   session: CheckoutSessionLike,
-  via: "webhook" | "reconciled" | "sweep",
+  via: "webhook" | "reconciled" | "sweep" | "return",
 ): Promise<boolean> {
   const item = await verifyAbisolaBookSession(deps.fetchLineItems, session);
   if (!item) return false;
@@ -277,4 +277,61 @@ export async function grantVerifiedCheckoutSession(
     );
   }
   return inserted;
+}
+
+export interface CheckoutReturnDeps extends GrantDeps {
+  /** Reads ONE session back from Stripe by id. Null when Stripe is off. */
+  retrieveSession: ((sessionId: string) => Promise<CheckoutSessionLike | null>) | null;
+}
+
+export type CheckoutReturnOutcome =
+  | { status: "owned"; bookId: string; granted: boolean }
+  | { status: "rejected"; bookId: null; granted: false };
+
+/** Stripe Checkout Session ids are `cs_…` tokens; anything else is not one. */
+const SESSION_ID_SHAPE = /^cs_[A-Za-z0-9_-]{6,200}$/;
+
+/**
+ * INSTANT OPEN on the checkout return (Nov 15, 2026): the grant paths
+ * above all land eventually (webhook, 5-minute sweep, per-user
+ * reconcile), but the page the buyer lands on after Stripe still showed
+ * the book as locked until a manual refresh — the reconcile that first
+ * load triggered could scan before the session read as complete, and
+ * nothing re-asked. This is the targeted fix: the success_url carries
+ * the session id, the returning (signed-in) buyer presents it, and the
+ * server reads THAT session back from Stripe directly — no list scan,
+ * no throttle — and grants through the exact same anchor + identity
+ * matcher as every other path.
+ *
+ * Security shape: the client supplies ONLY a session id. The grant is
+ * decided entirely by Stripe's own record of that session: it must
+ * belong to the signed-in user (sessionMatchesUser — client_reference_id
+ * → metadata.userId → normalized email) AND verify as a genuine Abisola
+ * book purchase (verifyAbisolaBookSession, inside the grant seam:
+ * payment mode, complete, paid, catalog amount + product name read back
+ * from Stripe). A forged id retrieves nothing; an unpaid or foreign
+ * session verifies as nothing; another buyer's session matches nobody
+ * here. All three grant nothing.
+ */
+export async function confirmCheckoutReturn(
+  deps: CheckoutReturnDeps,
+  sessionId: string,
+  user: User,
+): Promise<CheckoutReturnOutcome> {
+  const rejected: CheckoutReturnOutcome = { status: "rejected", bookId: null, granted: false };
+  if (!deps.retrieveSession) return rejected;
+  if (!SESSION_ID_SHAPE.test(sessionId)) return rejected;
+  let session: CheckoutSessionLike | null;
+  try {
+    session = await deps.retrieveSession(sessionId);
+  } catch {
+    return rejected;
+  }
+  if (!session || session.id !== sessionId) return rejected;
+  if (!sessionMatchesUser(session, user.id, user.email)) return rejected;
+  const item = claimedBookItem(session);
+  if (!item) return rejected;
+  const granted = await grantVerifiedCheckoutSession(deps, session, "return");
+  if (!granted && !(await deps.store.hasEntitlement(user, item.id))) return rejected;
+  return { status: "owned", bookId: item.id, granted };
 }

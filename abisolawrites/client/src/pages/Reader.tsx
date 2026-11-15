@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Book } from "../data/books";
-import { fetchChapter, type ChapterResult } from "../api";
-import { useMe } from "../auth";
+import { confirmCheckoutReturn, fetchChapter, type ChapterResult } from "../api";
+import { refreshMe, setMe, useMe } from "../auth";
 import { handleLinkClick } from "../nav";
 import { CheckoutBanner, UnlockButton } from "../components";
 import { WorksheetAppendix } from "./WorksheetAppendix";
@@ -26,6 +26,57 @@ export function ReaderPage({ book, search }: { book: Book; search: string }) {
   const me = useMe();
   const chapter = book.chapters[index];
   const owned = me?.entitlements.includes(book.id) ?? false;
+
+  // Instant open on the checkout return (Nov 15, 2026): Stripe sends the
+  // buyer back here with ?checkout=success&session_id=cs_… — but the
+  // entitlement used to land only after a manual refresh, because the
+  // first /api/me could reconcile before Stripe read the session as
+  // complete and nothing re-asked. Now the reader hands the session id
+  // to the server (which verifies it against Stripe itself and grants),
+  // publishes the fresh identity, and — belt-and-braces — keeps
+  // re-checking briefly until ownership shows. The buyer never has to
+  // press refresh. Returns without a session id (older links) still get
+  // the /api/me re-check poll.
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (params.get("checkout") !== "success" || owned) return;
+    const sessionId = params.get("session_id");
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const tick = async () => {
+      if (!live) return;
+      tries += 1;
+      if (sessionId) {
+        const result = await confirmCheckoutReturn(sessionId);
+        if (!live) return;
+        if (result) {
+          setMe(result.info);
+          if (result.owned) return; // ownership published; effect deps end the loop
+        }
+      } else {
+        refreshMe();
+      }
+      if (live && tries < 8) timer = setTimeout(() => void tick(), 1500);
+    };
+    void tick();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [search, owned, book.id]);
+
+  // When ownership lands while a locked chapter is on screen, refetch
+  // that chapter once so it opens in place (guarded per chapter so a
+  // still-locked answer can't loop).
+  const healedChapterRef = useRef("");
+  useEffect(() => {
+    if (!owned || result?.status !== "locked") return;
+    const key = `${book.id}:${index}`;
+    if (healedChapterRef.current === key) return;
+    healedChapterRef.current = key;
+    setAttempt((a) => a + 1);
+  }, [owned, result, book.id, index]);
 
   // Meta pixel Purchase event: Stripe sends book buyers back to this
   // reader with ?checkout=success (server success_url). Fire once per

@@ -5,6 +5,7 @@
 // point at a throwaway path.
 import {
   collectSessions,
+  confirmCheckoutReturn,
   constructEventWithSecrets,
   grantVerifiedCheckoutSession,
   parseWebhookSecrets,
@@ -123,7 +124,7 @@ async function runPath(
   store: Store,
   userId: string,
   email: string,
-  via: "webhook" | "reconciled" | "sweep",
+  via: "webhook" | "reconciled" | "sweep" | "return",
 ): Promise<Map<string, boolean>> {
   const fx = fixtures(userId, email);
   const fetchLineItems = async (sessionId: string): Promise<LineItemLike[]> => {
@@ -387,6 +388,108 @@ async function main() {
   }
   check("sweep-style pass over the deep scan grants the buried purchase exactly once",
     sweepGrants === 1 && JSON.stringify(await booksOf(store, f.id, f.email)) === JSON.stringify(["fbguide"]));
+
+  // ---------------------------------------------------------------
+  // INSTANT OPEN (Nov 15, 2026): the buyer returns from Stripe with
+  // ?checkout=success&session_id=cs_… and the reader confirms the
+  // session server-side. The grant must land on that FIRST view — no
+  // refresh — and the confirm must be exactly as strict as every other
+  // path: only a session Stripe itself reports as this user's paid,
+  // genuine Abisola book purchase grants anything.
+  console.log("checkout return — instant open (Nov 15, 2026):");
+
+  const g = await store.createUser("buyer-g@example.com", "hash");
+  const fxG = fixtures(g.id, g.email);
+  const returnDeps = {
+    fetchLineItems: async (sid: string): Promise<LineItemLike[]> => {
+      const fx = Object.values(fxG).find((x) => x.session.id === sid);
+      if (!fx || fx.lines === "throws") throw new Error("stripe read failed (fixture)");
+      return fx.lines;
+    },
+    store,
+    retrieveSession: async (sid: string): Promise<CheckoutSessionLike | null> => {
+      const fx = Object.values(fxG).find((x) => x.session.id === sid);
+      return fx ? fx.session : null; // unknown id: Stripe has no such session
+    },
+  };
+
+  // (i) Paid session return: grants on the spot, and the outcome the
+  // endpoint answers with already says owned — the first view shows it.
+  const ret1 = await confirmCheckoutReturn(returnDeps, fxG.genuineFbGuide.session.id, g);
+  check("paid session return grants instantly (outcome owned, granted)",
+    ret1.status === "owned" && ret1.granted === true && ret1.bookId === "fbguide");
+  check("buyer G owns fbguide immediately after the return confirm",
+    JSON.stringify(await booksOf(store, g.id, g.email)) === JSON.stringify(["fbguide"]));
+  // (ii) Re-confirming the same return (reader poll, double submit):
+  // still owned, no duplicate grant.
+  const ret2 = await confirmCheckoutReturn(returnDeps, fxG.genuineFbGuide.session.id, g);
+  check("re-confirm of the same session: owned, deduped (granted=false)",
+    ret2.status === "owned" && ret2.granted === false && ret2.bookId === "fbguide");
+
+  // (iii) Unpaid session: the buyer bailed mid-payment — nothing.
+  const retUnpaid = await confirmCheckoutReturn(returnDeps, fxG.unpaid.session.id, g);
+  check("unpaid session return grants nothing", retUnpaid.status === "rejected" && retUnpaid.bookId === null);
+  check("buyer G state unchanged after the unpaid return",
+    JSON.stringify(await booksOf(store, g.id, g.email)) === JSON.stringify(["fbguide"]));
+
+  // (iv) Forged / unknown / malformed ids: Stripe has no such session,
+  // or the id isn't a session id at all — nothing, and no crash.
+  check("forged session id (well-shaped, unknown to Stripe) grants nothing",
+    (await confirmCheckoutReturn(returnDeps, "cs_live_forged000000", g)).status === "rejected");
+  check("malformed session id grants nothing",
+    (await confirmCheckoutReturn(returnDeps, "fbguide", g)).status === "rejected");
+  check("no Stripe configured: return confirm grants nothing",
+    (await confirmCheckoutReturn({ ...returnDeps, retrieveSession: null }, fxG.genuineQuietly.session.id, g)).status === "rejected");
+
+  // (v) Foreign-product sessions presented at the return: a Kovala /
+  // CryptoAlerts-shaped session carrying book metadata at the wrong
+  // amount, and a subscription completion — both rejected even though
+  // they carry buyer G's own identifiers.
+  check("foreign session (book metadata, wrong amount/name) grants nothing at return",
+    (await confirmCheckoutReturn(returnDeps, fxG.foreignWrongAmount.session.id, g)).status === "rejected");
+  check("foreign subscription session grants nothing at return",
+    (await confirmCheckoutReturn(returnDeps, fxG.foreignSubWithBookMetadata.session.id, g)).status === "rejected");
+  check("buyer G still owns exactly {fbguide} after the foreign returns",
+    JSON.stringify(await booksOf(store, g.id, g.email)) === JSON.stringify(["fbguide"]));
+
+  // (vi) SOMEONE ELSE'S paid session: buyer H presents buyer G's (now
+  // granted) session id — the identity matcher refuses; and a fresh
+  // paid session keyed to G presented by H also grants H nothing.
+  const h = await store.createUser("buyer-h@example.com", "hash");
+  check("another buyer's session id confirms nothing for the presenter",
+    (await confirmCheckoutReturn(returnDeps, fxG.genuineFbGuide.session.id, h)).status === "rejected");
+  check("buyer H owns nothing after presenting G's session",
+    JSON.stringify(await booksOf(store, h.id, h.email)) === JSON.stringify([]));
+  const retOther = await confirmCheckoutReturn(returnDeps, fxG.genuineQuietly.session.id, h);
+  check("G's paid Quietly Ready session presented by H grants H nothing",
+    retOther.status === "rejected" &&
+      JSON.stringify(await booksOf(store, h.id, h.email)) === JSON.stringify([]));
+
+  // (vii) EMAIL-ONLY identity across case (the Tmara shape): the
+  // session carries no client_reference_id / metadata.userId — only
+  // the email Stripe collected, typed in mixed case — and the account
+  // email is lower-case. The return confirm must still match + grant.
+  const tmara = await store.createUser("tmara@gmail.com", "hash");
+  const tmaraSession: CheckoutSessionLike = {
+    id: "cs_tmara_fbguide",
+    mode: "payment", status: "complete", payment_status: "paid",
+    metadata: { itemId: "fbguide" },
+    customer_details: { email: "Tmara@Gmail.com" },
+  };
+  const tmaraDeps = {
+    fetchLineItems: async (sid: string): Promise<LineItemLike[]> => {
+      if (sid === tmaraSession.id) return liveShapeLines;
+      throw new Error("unknown session (fixture)");
+    },
+    store,
+    retrieveSession: async (sid: string): Promise<CheckoutSessionLike | null> =>
+      sid === tmaraSession.id ? tmaraSession : null,
+  };
+  const retTmara = await confirmCheckoutReturn(tmaraDeps, tmaraSession.id, tmara);
+  check("email-only session matches across case (Tmara@Gmail.com) and grants at return",
+    retTmara.status === "owned" && retTmara.granted === true && retTmara.bookId === "fbguide");
+  check("Tmara-shaped buyer owns fbguide after the return confirm",
+    JSON.stringify(await booksOf(store, tmara.id, tmara.email)) === JSON.stringify(["fbguide"]));
 
   console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

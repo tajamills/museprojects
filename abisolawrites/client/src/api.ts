@@ -68,6 +68,46 @@ export async function fetchMe(): Promise<MeInfo> {
   }
 }
 
+export interface CheckoutConfirmResult {
+  /** The session's book is owned by this account after the confirm. */
+  owned: boolean;
+  bookId: string | null;
+  /** Fresh identity snapshot (same payload as /api/me). */
+  info: MeInfo;
+}
+
+/**
+ * Instant open on the checkout return: hand the server the Stripe
+ * session id from the success URL and let IT verify the session against
+ * Stripe and grant the book. The id alone proves nothing client-side —
+ * the server decides. Returns null when the call itself failed (caller
+ * may retry); a refused session comes back as owned:false.
+ */
+export async function confirmCheckoutReturn(sessionId: string): Promise<CheckoutConfirmResult | null> {
+  try {
+    const res = await fetch("/api/checkout/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      owned?: boolean;
+      bookId?: string | null;
+      user?: { email: string } | null;
+      entitlements?: string[];
+    };
+    return {
+      owned: data.owned === true,
+      bookId: data.bookId ?? null,
+      info: { user: data.user ?? null, entitlements: data.entitlements ?? [] },
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function authPost(path: string, email: string, password: string): Promise<MeInfo> {
   const res = await fetch(path, {
     method: "POST",

@@ -8,6 +8,7 @@ import { BOOK_CHECKOUT_ENABLED, BOOKING_ITEM_IDS, BOOK_ITEM_IDS, CATALOG } from 
 import {
   BUILD_TAG,
   collectSessions,
+  confirmCheckoutReturn,
   constructEventWithSecrets,
   grantVerifiedCheckoutSession,
   parseWebhookSecrets,
@@ -161,9 +162,25 @@ const fetchLineItems: LineItemsFetcher | null = stripe
     }
   : null;
 
+/**
+ * Read ONE Checkout Session back from Stripe by id (the checkout-return
+ * confirm path). Any Stripe failure reads as null — an unreadable
+ * session verifies nothing and grants nothing.
+ */
+const retrieveSession = stripe
+  ? async (sessionId: string): Promise<CheckoutSessionLike | null> => {
+      try {
+        const s = await stripe.checkout.sessions.retrieve(sessionId);
+        return s as unknown as CheckoutSessionLike;
+      } catch {
+        return null;
+      }
+    }
+  : null;
+
 async function grantFromCheckoutSession(
   session: Stripe.Checkout.Session,
-  via: "webhook" | "reconciled" | "sweep" = "webhook",
+  via: "webhook" | "reconciled" | "sweep" | "return" = "webhook",
 ): Promise<boolean> {
   return grantVerifiedCheckoutSession(
     { fetchLineItems, store },
@@ -505,6 +522,42 @@ async function main() {
     res.json({ user: { email: user.email }, entitlements: entitlements.map((e) => e.bookId) });
   });
 
+  // Instant open on the checkout return (Nov 15, 2026): Stripe sends the
+  // buyer back to the reader with ?checkout=success&session_id=cs_… and
+  // the reader posts that id here. The server reads the session back
+  // from Stripe itself and grants through the same anchor + identity
+  // matcher as the webhook/reconcile/sweep (see confirmCheckoutReturn in
+  // billing.ts) — the buyer sees the book as owned on the FIRST view, no
+  // manual refresh. The client-supplied id alone decides nothing: an
+  // unpaid, forged, foreign, or someone-else's session grants nothing.
+  // The response carries the same payload as /api/me so the client can
+  // publish the fresh identity snapshot in one step.
+  app.post("/api/checkout/confirm", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const user = await currentUser(req);
+    if (!user) {
+      res.status(401).json({ error: "sign_in_required" });
+      return;
+    }
+    const sessionId = (req.body as { sessionId?: unknown } | undefined)?.sessionId;
+    if (typeof sessionId !== "string" || sessionId.length === 0) {
+      res.status(400).json({ error: "session_id_required" });
+      return;
+    }
+    const outcome = await confirmCheckoutReturn(
+      { fetchLineItems, store, retrieveSession },
+      sessionId,
+      user,
+    );
+    const entitlements = await store.listEntitlements(user);
+    res.json({
+      owned: outcome.status === "owned",
+      bookId: outcome.bookId,
+      user: { email: user.email },
+      entitlements: entitlements.map((e) => e.bookId),
+    });
+  });
+
   // ------------------------------------------------------- chapter delivery
   // Free chapters: served publicly (real text, server-side only).
   // Paid chapters: served ONLY to a signed-in account with a lifetime
@@ -769,7 +822,7 @@ async function main() {
           : {
               metadata: parsed.data.note ? { note: parsed.data.note.slice(0, 500) } : undefined,
             }),
-        success_url: `${SITE_URL}${item.returnPath}?checkout=success`,
+        success_url: `${SITE_URL}${item.returnPath}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${SITE_URL}${item.returnPath}?checkout=cancelled`,
       });
       res.json({ url: session.url });
