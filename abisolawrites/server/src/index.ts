@@ -87,11 +87,11 @@ const ROUTE_META: Record<string, RouteMeta> = {
   },
   "/book/muse-facebook-guide": {
     title: "How to Get Muse to Write Your Facebook Posts — Abisola Writes",
-    description: "You don't need a social media manager — you need an assistant who knows your voice, your rules, and your schedule, and then actually posts. 8 chapters. Read the Introduction and Step One free; unlock the full guide for $0.99, one-time.",
+    description: "You don't need a social media manager — you need an assistant who knows your voice, your rules, and your schedule, and then actually posts. 9 chapters. Read the Introduction and Step One free; unlock the full guide for $0.99, one-time.",
   },
   "/reader/fbguide": {
     title: "Read How to Get Muse to Write Your Facebook Posts — Abisola Writes",
-    description: "Read How to Get Muse to Write Your Facebook Posts in the Abisola Writes Library. The Introduction and Step One are free; unlock all 8 chapters for $0.99, one-time.",
+    description: "Read How to Get Muse to Write Your Facebook Posts in the Abisola Writes Library. The Introduction and Step One are free; unlock all 9 chapters for $0.99, one-time.",
   },
   "/services": {
     title: "Services — Choose your kind of magic. — Abisola Writes",

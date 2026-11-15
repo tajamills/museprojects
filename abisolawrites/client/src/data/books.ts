@@ -177,8 +177,8 @@ export const FB_GUIDE: Book = {
   tagline: "your voice, your page, your rules",
   blurb:
     "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. The exact system, set up once, that runs a Facebook page four posts a day.",
-  chaptersLabel: "8 Chapters",
-  wordsLabel: "530 Words",
+  chaptersLabel: "9 Chapters",
+  wordsLabel: "955 Words",
   priceLabel: "$0.99",
   priceCents: 99,
   freeLabel: "Start with the free Introduction & Step One",
@@ -190,6 +190,7 @@ export const FB_GUIDE: Book = {
     ch("Step 4: Pre-approve the system, not every post", false),
     ch("Step 5: Set your guardrails in writing", false),
     ch("Step 6: Keep one report a day", false),
+    ch("Step 7: The Prompt", false),
     ch("What It Costs You", false),
   ],
 };

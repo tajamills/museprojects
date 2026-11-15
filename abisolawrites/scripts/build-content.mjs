@@ -22,8 +22,10 @@
 //   Quietly Ready  ~/workspace/goals/30-day-household-preparedness-build/files/survival-guide-draft.md
 //   FB Guide       ~/workspace/your_files/guides/how-to-get-muse-to-write-facebook-posts.md
 //                  ("How to Get Muse to Write Your Facebook Posts", added
-//                  Nov 15, 2026: Introduction + Step 1 free, Steps 2–6 and
-//                  the closing chapter paid — the Doors two-free-units model.)
+//                  Nov 15, 2026: Introduction + Step 1 free, Steps 2–7 and
+//                  the closing chapter paid — the Doors two-free-units model.
+//                  Step 7, "The Prompt", added later the same day at Layla's
+//                  direction: the literal copy-paste prompt the guide teaches.)
 //
 // Chapter order/labels/free flags mirror client/src/data/books.ts exactly.
 // Run: node scripts/build-content.mjs  (re-run whenever a manuscript changes)
@@ -169,6 +171,10 @@ async function buildFbGuide() {
   // (header and separator rows are dropped).
   const md = raw.split("\n").map((line) => {
     const t = line.trim();
+    // Step 7's prompt sits in a fenced block in the source (so it reads as
+    // one copyable block there); the reader is plain text, so drop the
+    // fence markers and let the prompt's own paragraphs/bullets through.
+    if (t.startsWith("```")) return "";
     if (!/^\|.*\|$/.test(t)) return line;
     if (/^\|[\s:|-]+\|$/.test(t)) return "";
     const cells = t.slice(1, -1).split("|").map((c) => c.trim());
@@ -191,6 +197,7 @@ async function buildFbGuide() {
     { label: "Step 4: Pre-approve the system, not every post", free: false, text: findSection(map, (h) => h.startsWith("step 4:"), "FB Guide Step 4") },
     { label: "Step 5: Set your guardrails in writing", free: false, text: findSection(map, (h) => h.startsWith("step 5:"), "FB Guide Step 5") },
     { label: "Step 6: Keep one report a day", free: false, text: findSection(map, (h) => h.startsWith("step 6:"), "FB Guide Step 6") },
+    { label: "Step 7: The Prompt", free: false, text: findSection(map, (h) => h.startsWith("step 7:"), "FB Guide Step 7") },
     { label: "What It Costs You", free: false, text: findSection(map, (h) => h.startsWith("what it costs you"), "FB Guide closing") },
   ];
   return chapters;

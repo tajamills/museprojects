@@ -42,7 +42,7 @@ import { normalizeEmail } from "./auth.js";
 import type { Store, User } from "./store.js";
 
 /** Build marker surfaced on /healthz so a deploy is provable from outside. */
-export const BUILD_TAG = "2026-11-15-instant-purchase-open";
+export const BUILD_TAG = "2026-11-15-fbguide-prompt-chapter";
 
 /** The subset of a Stripe Checkout Session this module reads. */
 export interface CheckoutSessionLike {
@@ -114,7 +114,7 @@ export async function verifyAbisolaBookSession(
   // expanded price.product.name (authoritative — the Product Stripe
   // actually sold) and the line item's own description. Stripe's spec
   // default for the description is the product name, but this app's
-  // checkout also sets a product description ("All 8 chapters, yours to
+  // checkout also sets a product description ("All 9 chapters, yours to
   // keep, forever."), and which string a live payload puts in
   // `description` was never provable from fixtures — the original code
   // read `description` FIRST, so if it ever carries the product

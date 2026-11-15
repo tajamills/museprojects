@@ -218,7 +218,7 @@ async function main() {
 
   // (1) LIVE-SHAPE line item: the line item's `description` carries the
   // product DESCRIPTION text (which this app's checkout sets:
-  // "All 8 chapters, yours to keep, forever.") while the catalog name
+  // "All 9 chapters, yours to keep, forever.") while the catalog name
   // lives on the expanded price.product.name. The pre-fix verifier read
   // `description` first, so this shape verified as NOTHING on every
   // path at once. It must grant.
@@ -233,7 +233,7 @@ async function main() {
   const liveShapeLines: LineItemLike[] = [
     {
       quantity: 1,
-      description: "All 8 chapters, yours to keep, forever.",
+      description: "All 9 chapters, yours to keep, forever.",
       price: {
         unit_amount: 99, currency: "usd",
         product: { name: "How to Get Muse to Write Your Facebook Posts (full unlock)" },

@@ -64,7 +64,7 @@ export const CATALOG: Record<string, CatalogItem> = {
   fbguide: {
     id: "fbguide",
     name: "How to Get Muse to Write Your Facebook Posts (full unlock)",
-    description: "All 8 chapters, yours to keep, forever.",
+    description: "All 9 chapters, yours to keep, forever.",
     amountCents: 99,
     returnPath: "/reader/fbguide",
   },
