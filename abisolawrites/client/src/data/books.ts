@@ -178,7 +178,7 @@ export const FB_GUIDE: Book = {
   blurb:
     "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. The exact system, set up once, that runs a Facebook page four posts a day.",
   chaptersLabel: "9 Chapters",
-  wordsLabel: "955 Words",
+  wordsLabel: "987 Words",
   priceLabel: "$0.99",
   priceCents: 99,
   freeLabel: "Start with the free Introduction & Step One",

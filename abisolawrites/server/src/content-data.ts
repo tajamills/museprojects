@@ -270,7 +270,7 @@ export const CONTENT: Record<string, { chapters: ChapterContent[] }> = {
    {
     "label": "Introduction",
     "free": true,
-    "text": "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. Here's how I set Muse up to run my Facebook page, and how you can do the same."
+    "text": "You don't need a social media manager. You need an assistant who knows your voice, your rules, and your schedule — and then actually posts. Here's how I set Muse up to run my Facebook page, and how you can do the same.\n\nDon't have Muse yet? Check out Muse, your personal AI agent. Redeem my code in Settings within 48 hours of joining and we'll both get 1 billion Muse tokens.\n\nCode: 7DEFFF https://muse.ai/join"
    },
    {
     "label": "Step 1: Connect the account once",
